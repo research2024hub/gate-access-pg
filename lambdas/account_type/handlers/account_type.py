@@ -1,0 +1,133 @@
+import json
+from psycopg2.extras import RealDictCursor
+from utils import _error_response, _success_response, process_db_results, log
+from middleware import verify_token
+
+def create_account_type(conn, body, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    is_admin = payload.get("is_admin", False)
+    user_id = payload.get("user_id")
+
+    if not is_admin:
+        return _error_response(403, "Access denied. Only admins can create account types.")
+
+    name = body.get("name")
+
+    if not name:
+        return _error_response(400, "Missing 'name'.")
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO account_types (name)
+            VALUES (%s)
+            RETURNING id
+        """, (name,))
+
+        account_type_id = cur.fetchone()[0]
+
+        log(conn, "ACCOUNT_TYPE_CREATED", f"Account type '{name}' created", user_id, None, None)
+
+        conn.commit()
+
+    return _success_response(201, {"message": "Account Type created successfully.", "account_type_id": account_type_id})
+
+
+def update_account_type(conn, body, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    is_admin = payload.get("is_admin", False)
+    user_id = payload.get("user_id")
+    
+    if not is_admin:
+        return _error_response(403, "Access denied. Only admins can update account types.")
+
+    account_type_id = body.get("id")
+    name = body.get("name")
+
+    if not account_type_id or not name:
+        return _error_response(400, "Missing 'id' or 'name'.")
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            UPDATE account_types
+            SET name = %s, date_updated = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING id
+        """, (name, account_type_id))
+        if not cur.fetchone():
+            return _error_response(404, "Account Type not found.")
+        
+        log(conn, "ACCOUNT_TYPE_UPDATED", f"Account type '{name}' updated", user_id, None, None)
+
+        conn.commit()
+
+    return _success_response(200, {"message": "Account Type updated successfully.", "account_type_id": account_type_id})
+
+
+def delete_account_type(conn, body, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    is_admin = payload.get("is_admin", False)
+    user_id = payload.get("user_id")
+    
+    if not is_admin:
+        return _error_response(403, "Access denied. Only admins can delete account types.")
+
+    account_type_id = body.get("id")
+    if not account_type_id:
+        return _error_response(400, "Missing 'id'.")
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            DELETE FROM account_types WHERE id = %s RETURNING name
+        """, (account_type_id,))
+
+        result = cur.fetchone()
+        if not result:
+            return _error_response(404, "Account Type not found.")
+        
+        log(conn, "ACCOUNT_TYPE_DELETED", f"Account type '{result[0]}' created", user_id, None, None)
+
+        conn.commit()
+
+    return _success_response(200, {"message": "Account Type deleted successfully."})
+
+
+def get_account_types(conn, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT id, name, date_created, date_updated FROM account_types")
+        account_types = cur.fetchall()
+
+    return _success_response(200, {"account_types": process_db_results(account_types)})
+
+
+def get_account_type_by_id(conn, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    account_type_id = event.get("pathParameters", {}).get("id")
+    if not account_type_id:
+        return _error_response(400, "Missing account type ID.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""
+            SELECT id, name, date_created, date_updated
+            FROM account_types WHERE id = %s
+        """, (account_type_id,))
+        account_type = cur.fetchone()
+        if not account_type:
+            return _error_response(404, "Account Type not found.")
+
+    return _success_response(200, {"account_type": process_db_results([account_type])})

@@ -1,0 +1,4 @@
+# requests
+bcrypt 
+# pyjwt
+psycopg2-binary
