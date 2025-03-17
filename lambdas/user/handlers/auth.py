@@ -6,6 +6,8 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 from utils import _error_response, _success_response, process_db_results, log
 from middleware import verify_token
+from psycopg2 import sql
+
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")  # Replace with a secure key in production
 
@@ -26,17 +28,18 @@ def register_user(conn, body):
         print(f"DEBUG: Attempting to insert user with email: {email}")  # 🔍 Debug print
 
         try:
-            query = """
+            query = sql.SQL("""
                 INSERT INTO users (email, password)
-                VALUES (%(email)s, %(password)s)
+                VALUES ({email}, {password})
                 RETURNING id
-            """
-            values = {"email": str(email), "password": str(hashed_password)}
+            """).format(
+                email=sql.Literal(email),
+                password=sql.Literal(hashed_password)
+            )
 
-            print(f"DEBUG: SQL Query: {query}")
-            print(f"DEBUG: SQL Values: {values}")
+            print(f"DEBUG: SQL Query: {query.as_string(conn)}")  # Print the exact SQL query for debugging
 
-            cur.execute(query, values)
+            cur.execute(query)
 
 
             user_id = cur.fetchone()["id"]
