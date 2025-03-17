@@ -30,7 +30,7 @@ def register_user(conn, body):
                 INSERT INTO users (email, password)
                 VALUES (%(email)s, %(password)s)
                 RETURNING id
-            """, {"email": str(email), "password": str(hashed_password)})
+            """, {"email": str(email), "password": "hi"})
 
 
             user_id = cur.fetchone()["id"]
