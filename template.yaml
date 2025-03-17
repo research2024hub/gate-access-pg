@@ -80,8 +80,8 @@ Resources:
             Method: POST
       Environment:  # ✅ Global environment variables apply to all Lambda functions
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   EstateFunction:
     Type: AWS::Serverless::Function
@@ -121,8 +121,8 @@ Resources:
             Method: GET
       Environment:
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   GateFunction:
     Type: AWS::Serverless::Function
@@ -192,8 +192,8 @@ Resources:
             Method: GET
       Environment:
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   AccessGroupFunction:
     Type: AWS::Serverless::Function
@@ -233,8 +233,8 @@ Resources:
             Method: GET  
       Environment:
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   AccountTypeFunction:
     Type: AWS::Serverless::Function
@@ -274,8 +274,8 @@ Resources:
             Method: GET
       Environment:
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   PrivilegeFunction:
     Type: AWS::Serverless::Function
@@ -315,8 +315,8 @@ Resources:
             Method: GET
       Environment:
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   AccountFunction:
     Type: AWS::Serverless::Function
@@ -376,8 +376,8 @@ Resources:
             Method: DELETE
       Environment:  # ✅ Environment variables for database and JWT
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   AccountTypePrivilegeLinkFunction:
     Type: AWS::Serverless::Function
@@ -407,8 +407,8 @@ Resources:
             Method: GET
       Environment:
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   GateAccessGroupLinkFunction:
     Type: AWS::Serverless::Function
@@ -443,8 +443,8 @@ Resources:
             Method: GET
       Environment:
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   GuestFunction:
     Type: AWS::Serverless::Function
@@ -494,8 +494,8 @@ Resources:
             Method: GET
       Environment:
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
   
   VehicleFunction:
     Type: AWS::Serverless::Function
@@ -535,8 +535,8 @@ Resources:
             Method: GET
       Environment:  # ✅ Global environment variables apply to all Lambda functions
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
           
   EventFunction:
     Type: AWS::Serverless::Function
@@ -581,8 +581,8 @@ Resources:
             Method: GET
       Environment:  # ✅ Global environment variables apply to all Lambda functions
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
   
   EventRegisterFunction:
     Type: AWS::Serverless::Function
@@ -612,8 +612,8 @@ Resources:
             Method: DELETE
       Environment:  # ✅ Global environment variables apply to all Lambda functions
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   FaceFunction:
     Type: AWS::Serverless::Function
@@ -649,8 +649,8 @@ Resources:
             Resource: '*'
       Environment:  # ✅ Global environment variables apply to all Lambda functions
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   DeviceTokensFunction:
     Type: AWS::Serverless::Function
@@ -675,8 +675,8 @@ Resources:
             Method: POST
       Environment:  # ✅ Global environment variables apply to all Lambda functions
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
   
   LogFunction:
     Type: AWS::Serverless::Function
@@ -701,8 +701,8 @@ Resources:
             Method: GET
       Environment:  # ✅ Global environment variables apply to all Lambda functions
         Variables:
-          DATABASE_URL: "postgresql://postgres:082001@host.docker.internal/gate_access"
-          JWT_SECRET: "your-secret-key"
+          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
+          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
 
 
