@@ -705,7 +705,6 @@ Resources:
           JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
 
-
 Outputs:
   ApiBaseUrl:
     Description: Base API Gateway endpoint URL for user authentication
@@ -742,3 +741,99 @@ Outputs:
   AccessGroupFunctionIamRole:
     Description: Implicit IAM Role created for Access Group function
     Value: !GetAtt AccessGroupFunctionRole.Arn
+
+  AccountTypeFunctionArn:
+    Description: Account Type Lambda Function ARN
+    Value: !GetAtt AccountTypeFunction.Arn
+
+  AccountTypeFunctionIamRole:
+    Description: Implicit IAM Role created for Account Type function
+    Value: !GetAtt AccountTypeFunctionRole.Arn
+
+  PrivilegeFunctionArn:
+    Description: Privilege Lambda Function ARN
+    Value: !GetAtt PrivilegeFunction.Arn
+
+  PrivilegeFunctionIamRole:
+    Description: Implicit IAM Role created for Privilege function
+    Value: !GetAtt PrivilegeFunctionRole.Arn
+
+  AccountFunctionArn:
+    Description: Account Lambda Function ARN
+    Value: !GetAtt AccountFunction.Arn
+
+  AccountFunctionIamRole:
+    Description: Implicit IAM Role created for Account function
+    Value: !GetAtt AccountFunctionRole.Arn
+
+  AccountTypePrivilegeLinkFunctionArn:
+    Description: Account Type Privilege Link Lambda Function ARN
+    Value: !GetAtt AccountTypePrivilegeLinkFunction.Arn
+
+  AccountTypePrivilegeLinkFunctionIamRole:
+    Description: Implicit IAM Role created for Account Type Privilege Link function
+    Value: !GetAtt AccountTypePrivilegeLinkFunctionRole.Arn
+
+  GateAccessGroupLinkFunctionArn:
+    Description: Gate Access Group Link Lambda Function ARN
+    Value: !GetAtt GateAccessGroupLinkFunction.Arn
+
+  GateAccessGroupLinkFunctionIamRole:
+    Description: Implicit IAM Role created for Gate Access Group Link function
+    Value: !GetAtt GateAccessGroupLinkFunctionRole.Arn
+
+  GuestFunctionArn:
+    Description: Guest Lambda Function ARN
+    Value: !GetAtt GuestFunction.Arn
+
+  GuestFunctionIamRole:
+    Description: Implicit IAM Role created for Guest function
+    Value: !GetAtt GuestFunctionRole.Arn
+
+  VehicleFunctionArn:
+    Description: Vehicle Lambda Function ARN
+    Value: !GetAtt VehicleFunction.Arn
+
+  VehicleFunctionIamRole:
+    Description: Implicit IAM Role created for Vehicle function
+    Value: !GetAtt VehicleFunctionRole.Arn
+
+  EventFunctionArn:
+    Description: Event Lambda Function ARN
+    Value: !GetAtt EventFunction.Arn
+
+  EventFunctionIamRole:
+    Description: Implicit IAM Role created for Event function
+    Value: !GetAtt EventFunctionRole.Arn
+
+  EventRegisterFunctionArn:
+    Description: Event Register Lambda Function ARN
+    Value: !GetAtt EventRegisterFunction.Arn
+
+  EventRegisterFunctionIamRole:
+    Description: Implicit IAM Role created for Event Register function
+    Value: !GetAtt EventRegisterFunctionRole.Arn
+
+  FaceFunctionArn:
+    Description: Face Lambda Function ARN
+    Value: !GetAtt FaceFunction.Arn
+
+  FaceFunctionIamRole:
+    Description: Implicit IAM Role created for Face function
+    Value: !GetAtt FaceFunctionRole.Arn
+
+  DeviceTokensFunctionArn:
+    Description: Device Tokens Lambda Function ARN
+    Value: !GetAtt DeviceTokensFunction.Arn
+
+  DeviceTokensFunctionIamRole:
+    Description: Implicit IAM Role created for Device Tokens function
+    Value: !GetAtt DeviceTokensFunctionRole.Arn
+
+  LogFunctionArn:
+    Description: Log Lambda Function ARN
+    Value: !GetAtt LogFunction.Arn
+
+  LogFunctionIamRole:
+    Description: Implicit IAM Role created for Log function
+    Value: !GetAtt LogFunctionRole.Arn
