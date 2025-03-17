@@ -2,7 +2,6 @@ import bcrypt
 import jwt
 import os
 import json
-from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 from utils import _error_response, _success_response, process_db_results, log
 from middleware import verify_token
@@ -10,9 +9,6 @@ from middleware import verify_token
 JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")  # Replace with a secure key in production
 
 def register_user(conn, body):
-    """
-    Registers a new user with hashed password.
-    """
     email = body.get("email")
     password = body.get("password")
 
@@ -21,23 +17,29 @@ def register_user(conn, body):
 
     hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor() as cur:
         cur.execute("SELECT id FROM users WHERE email = %s", (email,))
         if cur.fetchone():
             return _error_response(409, "User already exists.")
 
-        cur.execute("""
-            INSERT INTO users (email, password)
-            VALUES (%s, %s)
-            RETURNING id
-        """, (email, hashed_password))
-        user_id = cur.fetchone()["id"]
+        print(f"DEBUG: Attempting to insert user with email: {email}")  # 🔍 Debug print
 
-        log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
-        
-        conn.commit()
+        try:
+            cur.execute("""
+                INSERT INTO users (email, password)
+                VALUES (%s, %s)
+                RETURNING id
+            """, (email, hashed_password))  # Ensure this is a tuple
 
-    return _success_response(201, {"message": "User registered successfully.", "user_id": user_id})
+            user_id = cur.fetchone()[0]
+
+            log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
+            conn.commit()
+            return _success_response(201, {"message": "User registered successfully.", "user_id": user_id})
+
+        except Exception as e:
+            print(f"ERROR: Failed to insert user: {e}") 
+            return _error_response(500, str(e))
 
 
 def login_user(conn, body):
