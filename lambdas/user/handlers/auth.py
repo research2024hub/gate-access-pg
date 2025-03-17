@@ -28,9 +28,9 @@ def register_user(conn, body):
         try:
             cur.execute("""
                 INSERT INTO users (email, password)
-                VALUES (%(email)s, %(password)s)
+                VALUES (%s, %s)
                 RETURNING id
-            """, {"email": email, "password": hashed_password})
+            """, (str(email), str(hashed_password),))  # Ensure this is a tuple
 
             user_id = cur.fetchone()["id"]
 
