@@ -26,11 +26,17 @@ def register_user(conn, body):
         print(f"DEBUG: Attempting to insert user with email: {email}")  # 🔍 Debug print
 
         try:
-            cur.execute("""
+            query = """
                 INSERT INTO users (email, password)
                 VALUES (%(email)s, %(password)s)
                 RETURNING id
-            """, {"email": str(email), "password": "hi"})
+            """
+            values = {"email": str(email), "password": str(hashed_password)}
+
+            print(f"DEBUG: SQL Query: {query}")
+            print(f"DEBUG: SQL Values: {values}")
+
+            cur.execute(query, values)
 
 
             user_id = cur.fetchone()["id"]
