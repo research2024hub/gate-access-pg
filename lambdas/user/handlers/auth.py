@@ -44,8 +44,6 @@ def register_user(conn, body):
 
             user_id = cur.fetchone()["id"]
 
-            print(f"DEBUG: latest email={email} (type: {type(email)}), password={hashed_password} (type: {type(hashed_password)})")
-
             log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
             conn.commit()
             return _success_response(201, {"message": "User registered successfully.", "user_id": user_id})
