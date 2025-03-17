@@ -22732,7 +22732,7 @@
 "organizationSecurityPolicies": {
 "methods": {
 "addAssociation": {
-"description": "Inserts an association for the specified security policy.",
+"description": "Inserts an association for the specified security policy. Use of this API to modify firewall policies is deprecated. Use firewallPolicies.addAssociation instead if possible.",
 "flatPath": "locations/global/securityPolicies/{securityPolicy}/addAssociation",
 "httpMethod": "POST",
 "id": "compute.organizationSecurityPolicies.addAssociation",
@@ -22805,7 +22805,7 @@
 ]
 },
 "copyRules": {
-"description": "Copies rules to the specified security policy.",
+"description": "Copies rules to the specified security policy. Use of this API to modify firewall policies is deprecated. Use firewallPolicies.copyRules instead.",
 "flatPath": "locations/global/securityPolicies/{securityPolicy}/copyRules",
 "httpMethod": "POST",
 "id": "compute.organizationSecurityPolicies.copyRules",
@@ -22841,7 +22841,7 @@
 ]
 },
 "delete": {
-"description": "Deletes the specified policy.",
+"description": "Deletes the specified policy. Use of this API to remove firewall policies is deprecated. Use firewallPolicies.delete instead.",
 "flatPath": "locations/global/securityPolicies/{securityPolicy}",
 "httpMethod": "DELETE",
 "id": "compute.organizationSecurityPolicies.delete",
@@ -22872,7 +22872,7 @@
 ]
 },
 "get": {
-"description": "List all of the ordered rules present in a single specified policy.",
+"description": "List all of the ordered rules present in a single specified policy. Use of this API to read firewall policies is deprecated. Use firewallPolicies.get instead.",
 "flatPath": "locations/global/securityPolicies/{securityPolicy}",
 "httpMethod": "GET",
 "id": "compute.organizationSecurityPolicies.get",
@@ -22899,7 +22899,7 @@
 ]
 },
 "getAssociation": {
-"description": "Gets an association with the specified name.",
+"description": "Gets an association with the specified name. Use of this API to read firewall policies is deprecated. Use firewallPolicies.getAssociation instead if possible.",
 "flatPath": "locations/global/securityPolicies/{securityPolicy}/getAssociation",
 "httpMethod": "GET",
 "id": "compute.organizationSecurityPolicies.getAssociation",
@@ -22931,7 +22931,7 @@
 ]
 },
 "getRule": {
-"description": "Gets a rule at the specified priority.",
+"description": "Gets a rule at the specified priority. Use of this API to read firewall policies is deprecated. Use firewallPolicies.getRule instead.",
 "flatPath": "locations/global/securityPolicies/{securityPolicy}/getRule",
 "httpMethod": "GET",
 "id": "compute.organizationSecurityPolicies.getRule",
@@ -22964,7 +22964,7 @@
 ]
 },
 "insert": {
-"description": "Creates a new policy in the specified project using the data included in the request.",
+"description": "Creates a new policy in the specified project using the data included in the request. Use of this API to insert firewall policies is deprecated. Use firewallPolicies.insert instead.",
 "flatPath": "locations/global/securityPolicies",
 "httpMethod": "POST",
 "id": "compute.organizationSecurityPolicies.insert",
@@ -22993,7 +22993,7 @@
 ]
 },
 "list": {
-"description": "List all the policies that have been configured for the specified project.",
+"description": "List all the policies that have been configured for the specified project. Use of this API to read firewall policies is deprecated. Use firewallPolicies.list instead.",
 "flatPath": "locations/global/securityPolicies",
 "httpMethod": "GET",
 "id": "compute.organizationSecurityPolicies.list",
@@ -23043,7 +23043,7 @@
 ]
 },
 "listAssociations": {
-"description": "Lists associations of a specified target, i.e., organization or folder.",
+"description": "Lists associations of a specified target, i.e., organization or folder. Use of this API to read firewall policies is deprecated. Use firewallPolicies.listAssociations instead if possible.",
 "flatPath": "locations/global/securityPolicies/listAssociations",
 "httpMethod": "GET",
 "id": "compute.organizationSecurityPolicies.listAssociations",
@@ -23115,7 +23115,7 @@
 ]
 },
 "move": {
-"description": "Moves the specified security policy.",
+"description": "Moves the specified security policy. Use of this API to modify firewall policies is deprecated. Use firewallPolicies.move instead.",
 "flatPath": "locations/global/securityPolicies/{securityPolicy}/move",
 "httpMethod": "POST",
 "id": "compute.organizationSecurityPolicies.move",
@@ -23151,7 +23151,7 @@
 ]
 },
 "patch": {
-"description": "Patches the specified policy with the data included in the request.",
+"description": "Patches the specified policy with the data included in the request. Use of this API to modify firewall policies is deprecated. Use firewallPolicies.patch instead.",
 "flatPath": "locations/global/securityPolicies/{securityPolicy}",
 "httpMethod": "PATCH",
 "id": "compute.organizationSecurityPolicies.patch",
@@ -23185,7 +23185,7 @@
 ]
 },
 "patchRule": {
-"description": "Patches a rule at the specified priority.",
+"description": "Patches a rule at the specified priority. Use of this API to modify firewall policies is deprecated. Use firewallPolicies.patchRule instead.",
 "flatPath": "locations/global/securityPolicies/{securityPolicy}/patchRule",
 "httpMethod": "POST",
 "id": "compute.organizationSecurityPolicies.patchRule",
@@ -23225,7 +23225,7 @@
 ]
 },
 "removeAssociation": {
-"description": "Removes an association for the specified security policy.",
+"description": "Removes an association for the specified security policy. Use of this API to modify firewall policies is deprecated. Use firewallPolicies.removeAssociation instead if possible.",
 "flatPath": "locations/global/securityPolicies/{securityPolicy}/removeAssociation",
 "httpMethod": "POST",
 "id": "compute.organizationSecurityPolicies.removeAssociation",
@@ -26329,6 +26329,366 @@
 }
 }
 },
+"regionCompositeHealthChecks": {
+"methods": {
+"aggregatedList": {
+"description": "Retrieves the list of all CompositeHealthCheck resources (all regional) available to the specified project. To prevent failure, Google recommends that you set the `returnPartialSuccess` parameter to `true`.",
+"flatPath": "projects/{project}/aggregated/compositeHealthChecks",
+"httpMethod": "GET",
+"id": "compute.regionCompositeHealthChecks.aggregatedList",
+"parameterOrder": [
+"project"
+],
+"parameters": {
+"filter": {
+"description": "A filter expression that filters resources listed in the response. Most Compute resources support two types of filter expressions: expressions that support regular expressions and expressions that follow API improvement proposal AIP-160. These two types of filter expressions cannot be mixed in one request. If you want to use AIP-160, your expression must specify the field name, an operator, and the value that you want to use for filtering. The value must be a string, a number, or a boolean. The operator must be either `=`, `!=`, `>`, `<`, `<=`, `>=` or `:`. For example, if you are filtering Compute Engine instances, you can exclude instances named `example-instance` by specifying `name != example-instance`. The `:*` comparison can be used to test whether a key has been defined. For example, to find all objects with `owner` label use: ``` labels.owner:* ``` You can also filter nested fields. For example, you could specify `scheduling.automaticRestart = false` to include instances only if they are not scheduled for automatic restarts. You can use filtering on nested fields to filter based on resource labels. To filter on multiple expressions, provide each separate expression within parentheses. For example: ``` (scheduling.automaticRestart = true) (cpuPlatform = \"Intel Skylake\") ``` By default, each expression is an `AND` expression. However, you can include `AND` and `OR` expressions explicitly. For example: ``` (cpuPlatform = \"Intel Skylake\") OR (cpuPlatform = \"Intel Broadwell\") AND (scheduling.automaticRestart = true) ``` If you want to use a regular expression, use the `eq` (equal) or `ne` (not equal) operator against a single un-parenthesized expression with or without quotes or against multiple parenthesized expressions. Examples: `fieldname eq unquoted literal` `fieldname eq 'single quoted literal'` `fieldname eq \"double quoted literal\"` `(fieldname1 eq literal) (fieldname2 ne \"literal\")` The literal value is interpreted as a regular expression using Google RE2 library syntax. The literal value must match the entire field. For example, to filter for instances that do not end with name \"instance\", you would use `name ne .*instance`. You cannot combine constraints on multiple fields using regular expressions.",
+"location": "query",
+"type": "string"
+},
+"includeAllScopes": {
+"description": "Indicates whether every visible scope for each scope type (zone, region, global) should be included in the response. For new resource types added after this field, the flag has no effect as new resource types will always include every visible scope for each scope type in response. For resource types which predate this field, if this flag is omitted or false, only scopes of the scope types where the resource type is expected to be found will be included.",
+"location": "query",
+"type": "boolean"
+},
+"maxResults": {
+"default": "500",
+"description": "The maximum number of results per page that should be returned. If the number of available results is larger than `maxResults`, Compute Engine returns a `nextPageToken` that can be used to get the next page of results in subsequent list requests. Acceptable values are `0` to `500`, inclusive. (Default: `500`)",
+"format": "uint32",
+"location": "query",
+"minimum": "0",
+"type": "integer"
+},
+"orderBy": {
+"description": "Sorts list results by a certain order. By default, results are returned in alphanumerical order based on the resource name. You can also sort results in descending order based on the creation timestamp using `orderBy=\"creationTimestamp desc\"`. This sorts results based on the `creationTimestamp` field in reverse chronological order (newest result first). Use this to sort resources like operations so that the newest operation is returned first. Currently, only sorting by `name` or `creationTimestamp desc` is supported.",
+"location": "query",
+"type": "string"
+},
+"pageToken": {
+"description": "Specifies a page token to use. Set `pageToken` to the `nextPageToken` returned by a previous list request to get the next page of results.",
+"location": "query",
+"type": "string"
+},
+"project": {
+"description": "Name of the project scoping this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"returnPartialSuccess": {
+"description": "Opt-in for partial success behavior which provides partial results in case of failure. The default value is false. For example, when partial success behavior is enabled, aggregatedList for a single zone scope either returns all resources in the zone or no resources, with an error code.",
+"location": "query",
+"type": "boolean"
+},
+"serviceProjectNumber": {
+"description": "The Shared VPC service project id or service project number for which aggregated list request is invoked for subnetworks list-usable api.",
+"format": "int64",
+"location": "query",
+"type": "string"
+}
+},
+"path": "projects/{project}/aggregated/compositeHealthChecks",
+"response": {
+"$ref": "CompositeHealthCheckAggregatedList"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute",
+"https://www.googleapis.com/auth/compute.readonly"
+]
+},
+"delete": {
+"description": "Deletes the specified CompositeHealthCheck in the given region",
+"flatPath": "projects/{project}/regions/{region}/compositeHealthChecks/{compositeHealthCheck}",
+"httpMethod": "DELETE",
+"id": "compute.regionCompositeHealthChecks.delete",
+"parameterOrder": [
+"project",
+"region",
+"compositeHealthCheck"
+],
+"parameters": {
+"compositeHealthCheck": {
+"description": "Name of the CompositeHealthCheck resource to delete.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?|[1-9][0-9]{0,19}",
+"required": true,
+"type": "string"
+},
+"project": {
+"description": "Project ID for this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"region": {
+"description": "Name of the region scoping this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"required": true,
+"type": "string"
+},
+"requestId": {
+"description": "An optional request ID to identify requests. Specify a unique request ID so that if you must retry your request, the server will know to ignore the request if it has already been completed. For example, consider a situation where you make an initial request and the request times out. If you make the request again with the same request ID, the server can check if original operation with the same request ID was received, and if so, will ignore the second request. This prevents clients from accidentally creating duplicate commitments. The request ID must be a valid UUID with the exception that zero UUID is not supported ( 00000000-0000-0000-0000-000000000000).",
+"location": "query",
+"type": "string"
+}
+},
+"path": "projects/{project}/regions/{region}/compositeHealthChecks/{compositeHealthCheck}",
+"response": {
+"$ref": "Operation"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute"
+]
+},
+"get": {
+"description": "Returns the specified CompositeHealthCheck resource in the given region.",
+"flatPath": "projects/{project}/regions/{region}/compositeHealthChecks/{compositeHealthCheck}",
+"httpMethod": "GET",
+"id": "compute.regionCompositeHealthChecks.get",
+"parameterOrder": [
+"project",
+"region",
+"compositeHealthCheck"
+],
+"parameters": {
+"compositeHealthCheck": {
+"description": "Name of the CompositeHealthCheck resource to return.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?|[1-9][0-9]{0,19}",
+"required": true,
+"type": "string"
+},
+"project": {
+"description": "Project ID for this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"region": {
+"description": "Name of the region scoping this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"required": true,
+"type": "string"
+}
+},
+"path": "projects/{project}/regions/{region}/compositeHealthChecks/{compositeHealthCheck}",
+"response": {
+"$ref": "CompositeHealthCheck"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute",
+"https://www.googleapis.com/auth/compute.readonly"
+]
+},
+"insert": {
+"description": "Create a CompositeHealthCheck in the specified project in the given region using the parameters that are included in the request.",
+"flatPath": "projects/{project}/regions/{region}/compositeHealthChecks",
+"httpMethod": "POST",
+"id": "compute.regionCompositeHealthChecks.insert",
+"parameterOrder": [
+"project",
+"region"
+],
+"parameters": {
+"project": {
+"description": "Project ID for this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"region": {
+"description": "Name of the region scoping this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"required": true,
+"type": "string"
+},
+"requestId": {
+"description": "An optional request ID to identify requests. Specify a unique request ID so that if you must retry your request, the server will know to ignore the request if it has already been completed. For example, consider a situation where you make an initial request and the request times out. If you make the request again with the same request ID, the server can check if original operation with the same request ID was received, and if so, will ignore the second request. This prevents clients from accidentally creating duplicate commitments. The request ID must be a valid UUID with the exception that zero UUID is not supported ( 00000000-0000-0000-0000-000000000000).",
+"location": "query",
+"type": "string"
+}
+},
+"path": "projects/{project}/regions/{region}/compositeHealthChecks",
+"request": {
+"$ref": "CompositeHealthCheck"
+},
+"response": {
+"$ref": "Operation"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute"
+]
+},
+"list": {
+"description": "Lists the CompositeHealthChecks for a project in the given region.",
+"flatPath": "projects/{project}/regions/{region}/compositeHealthChecks",
+"httpMethod": "GET",
+"id": "compute.regionCompositeHealthChecks.list",
+"parameterOrder": [
+"project",
+"region"
+],
+"parameters": {
+"filter": {
+"description": "A filter expression that filters resources listed in the response. Most Compute resources support two types of filter expressions: expressions that support regular expressions and expressions that follow API improvement proposal AIP-160. These two types of filter expressions cannot be mixed in one request. If you want to use AIP-160, your expression must specify the field name, an operator, and the value that you want to use for filtering. The value must be a string, a number, or a boolean. The operator must be either `=`, `!=`, `>`, `<`, `<=`, `>=` or `:`. For example, if you are filtering Compute Engine instances, you can exclude instances named `example-instance` by specifying `name != example-instance`. The `:*` comparison can be used to test whether a key has been defined. For example, to find all objects with `owner` label use: ``` labels.owner:* ``` You can also filter nested fields. For example, you could specify `scheduling.automaticRestart = false` to include instances only if they are not scheduled for automatic restarts. You can use filtering on nested fields to filter based on resource labels. To filter on multiple expressions, provide each separate expression within parentheses. For example: ``` (scheduling.automaticRestart = true) (cpuPlatform = \"Intel Skylake\") ``` By default, each expression is an `AND` expression. However, you can include `AND` and `OR` expressions explicitly. For example: ``` (cpuPlatform = \"Intel Skylake\") OR (cpuPlatform = \"Intel Broadwell\") AND (scheduling.automaticRestart = true) ``` If you want to use a regular expression, use the `eq` (equal) or `ne` (not equal) operator against a single un-parenthesized expression with or without quotes or against multiple parenthesized expressions. Examples: `fieldname eq unquoted literal` `fieldname eq 'single quoted literal'` `fieldname eq \"double quoted literal\"` `(fieldname1 eq literal) (fieldname2 ne \"literal\")` The literal value is interpreted as a regular expression using Google RE2 library syntax. The literal value must match the entire field. For example, to filter for instances that do not end with name \"instance\", you would use `name ne .*instance`. You cannot combine constraints on multiple fields using regular expressions.",
+"location": "query",
+"type": "string"
+},
+"maxResults": {
+"default": "500",
+"description": "The maximum number of results per page that should be returned. If the number of available results is larger than `maxResults`, Compute Engine returns a `nextPageToken` that can be used to get the next page of results in subsequent list requests. Acceptable values are `0` to `500`, inclusive. (Default: `500`)",
+"format": "uint32",
+"location": "query",
+"minimum": "0",
+"type": "integer"
+},
+"orderBy": {
+"description": "Sorts list results by a certain order. By default, results are returned in alphanumerical order based on the resource name. You can also sort results in descending order based on the creation timestamp using `orderBy=\"creationTimestamp desc\"`. This sorts results based on the `creationTimestamp` field in reverse chronological order (newest result first). Use this to sort resources like operations so that the newest operation is returned first. Currently, only sorting by `name` or `creationTimestamp desc` is supported.",
+"location": "query",
+"type": "string"
+},
+"pageToken": {
+"description": "Specifies a page token to use. Set `pageToken` to the `nextPageToken` returned by a previous list request to get the next page of results.",
+"location": "query",
+"type": "string"
+},
+"project": {
+"description": "Project ID for this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"region": {
+"description": "Name of the region scoping this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"required": true,
+"type": "string"
+},
+"returnPartialSuccess": {
+"description": "Opt-in for partial success behavior which provides partial results in case of failure. The default value is false. For example, when partial success behavior is enabled, aggregatedList for a single zone scope either returns all resources in the zone or no resources, with an error code.",
+"location": "query",
+"type": "boolean"
+}
+},
+"path": "projects/{project}/regions/{region}/compositeHealthChecks",
+"response": {
+"$ref": "CompositeHealthCheckList"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute",
+"https://www.googleapis.com/auth/compute.readonly"
+]
+},
+"patch": {
+"description": "Updates the specified regional CompositeHealthCheck resource with the data included in the request. This method supports PATCH semantics and uses the JSON merge patch format and processing rules.",
+"flatPath": "projects/{project}/regions/{region}/compositeHealthChecks/{compositeHealthCheck}",
+"httpMethod": "PATCH",
+"id": "compute.regionCompositeHealthChecks.patch",
+"parameterOrder": [
+"project",
+"region",
+"compositeHealthCheck"
+],
+"parameters": {
+"compositeHealthCheck": {
+"description": "Name of the CompositeHealthCheck to update. The name must be 1-63 characters long, and comply with RFC1035.",
+"location": "path",
+"required": true,
+"type": "string"
+},
+"project": {
+"description": "Project ID for this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"region": {
+"description": "Name of the region scoping this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"required": true,
+"type": "string"
+},
+"requestId": {
+"description": "An optional request ID to identify requests. Specify a unique request ID so that if you must retry your request, the server will know to ignore the request if it has already been completed. For example, consider a situation where you make an initial request and the request times out. If you make the request again with the same request ID, the server can check if original operation with the same request ID was received, and if so, will ignore the second request. This prevents clients from accidentally creating duplicate commitments. The request ID must be a valid UUID with the exception that zero UUID is not supported ( 00000000-0000-0000-0000-000000000000).",
+"location": "query",
+"type": "string"
+}
+},
+"path": "projects/{project}/regions/{region}/compositeHealthChecks/{compositeHealthCheck}",
+"request": {
+"$ref": "CompositeHealthCheck"
+},
+"response": {
+"$ref": "Operation"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute"
+]
+},
+"testIamPermissions": {
+"description": "Returns permissions that a caller has on the specified resource.",
+"flatPath": "projects/{project}/regions/{region}/compositeHealthChecks/{resource}/testIamPermissions",
+"httpMethod": "POST",
+"id": "compute.regionCompositeHealthChecks.testIamPermissions",
+"parameterOrder": [
+"project",
+"region",
+"resource"
+],
+"parameters": {
+"project": {
+"description": "Project ID for this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"region": {
+"description": "The name of the region for this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"required": true,
+"type": "string"
+},
+"resource": {
+"description": "Name or id of the resource for this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?|[1-9][0-9]{0,19}",
+"required": true,
+"type": "string"
+}
+},
+"path": "projects/{project}/regions/{region}/compositeHealthChecks/{resource}/testIamPermissions",
+"request": {
+"$ref": "TestPermissionsRequest"
+},
+"response": {
+"$ref": "TestPermissionsResponse"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute",
+"https://www.googleapis.com/auth/compute.readonly"
+]
+}
+}
+},
 "regionDiskSettings": {
 "methods": {
 "get": {
@@ -27453,6 +27813,300 @@
 "scopes": [
 "https://www.googleapis.com/auth/cloud-platform",
 "https://www.googleapis.com/auth/compute"
+]
+}
+}
+},
+"regionHealthAggregationPolicies": {
+"methods": {
+"delete": {
+"description": "Deletes the specified HealthAggregationPolicy in the given region.",
+"flatPath": "projects/{project}/regions/{region}/healthAggregationPolicies/{healthAggregationPolicy}",
+"httpMethod": "DELETE",
+"id": "compute.regionHealthAggregationPolicies.delete",
+"parameterOrder": [
+"project",
+"region",
+"healthAggregationPolicy"
+],
+"parameters": {
+"healthAggregationPolicy": {
+"description": "Name of the HealthAggregationPolicy resource to delete.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?|[1-9][0-9]{0,19}",
+"required": true,
+"type": "string"
+},
+"project": {
+"description": "Project ID for this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"region": {
+"description": "Name of the region scoping this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"required": true,
+"type": "string"
+},
+"requestId": {
+"description": "An optional request ID to identify requests. Specify a unique request ID so that if you must retry your request, the server will know to ignore the request if it has already been completed. For example, consider a situation where you make an initial request and the request times out. If you make the request again with the same request ID, the server can check if original operation with the same request ID was received, and if so, will ignore the second request. This prevents clients from accidentally creating duplicate commitments. The request ID must be a valid UUID with the exception that zero UUID is not supported ( 00000000-0000-0000-0000-000000000000).",
+"location": "query",
+"type": "string"
+}
+},
+"path": "projects/{project}/regions/{region}/healthAggregationPolicies/{healthAggregationPolicy}",
+"response": {
+"$ref": "Operation"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute"
+]
+},
+"get": {
+"description": "Returns the specified HealthAggregationPolicy resource in the given region.",
+"flatPath": "projects/{project}/regions/{region}/healthAggregationPolicies/{healthAggregationPolicy}",
+"httpMethod": "GET",
+"id": "compute.regionHealthAggregationPolicies.get",
+"parameterOrder": [
+"project",
+"region",
+"healthAggregationPolicy"
+],
+"parameters": {
+"healthAggregationPolicy": {
+"description": "Name of the HealthAggregationPolicy resource to return.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?|[1-9][0-9]{0,19}",
+"required": true,
+"type": "string"
+},
+"project": {
+"description": "Project ID for this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"region": {
+"description": "Name of the region scoping this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"required": true,
+"type": "string"
+}
+},
+"path": "projects/{project}/regions/{region}/healthAggregationPolicies/{healthAggregationPolicy}",
+"response": {
+"$ref": "HealthAggregationPolicy"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute",
+"https://www.googleapis.com/auth/compute.readonly"
+]
+},
+"insert": {
+"description": "Create a HealthAggregationPolicy in the specified project in the given region using the parameters that are included in the request.",
+"flatPath": "projects/{project}/regions/{region}/healthAggregationPolicies",
+"httpMethod": "POST",
+"id": "compute.regionHealthAggregationPolicies.insert",
+"parameterOrder": [
+"project",
+"region"
+],
+"parameters": {
+"project": {
+"description": "Project ID for this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"region": {
+"description": "Name of the region scoping this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"required": true,
+"type": "string"
+},
+"requestId": {
+"description": "An optional request ID to identify requests. Specify a unique request ID so that if you must retry your request, the server will know to ignore the request if it has already been completed. For example, consider a situation where you make an initial request and the request times out. If you make the request again with the same request ID, the server can check if original operation with the same request ID was received, and if so, will ignore the second request. This prevents clients from accidentally creating duplicate commitments. The request ID must be a valid UUID with the exception that zero UUID is not supported ( 00000000-0000-0000-0000-000000000000).",
+"location": "query",
+"type": "string"
+}
+},
+"path": "projects/{project}/regions/{region}/healthAggregationPolicies",
+"request": {
+"$ref": "HealthAggregationPolicy"
+},
+"response": {
+"$ref": "Operation"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute"
+]
+},
+"list": {
+"description": "Lists the HealthAggregationPolicies for a project in the given region.",
+"flatPath": "projects/{project}/regions/{region}/healthAggregationPolicies",
+"httpMethod": "GET",
+"id": "compute.regionHealthAggregationPolicies.list",
+"parameterOrder": [
+"project",
+"region"
+],
+"parameters": {
+"filter": {
+"description": "A filter expression that filters resources listed in the response. Most Compute resources support two types of filter expressions: expressions that support regular expressions and expressions that follow API improvement proposal AIP-160. These two types of filter expressions cannot be mixed in one request. If you want to use AIP-160, your expression must specify the field name, an operator, and the value that you want to use for filtering. The value must be a string, a number, or a boolean. The operator must be either `=`, `!=`, `>`, `<`, `<=`, `>=` or `:`. For example, if you are filtering Compute Engine instances, you can exclude instances named `example-instance` by specifying `name != example-instance`. The `:*` comparison can be used to test whether a key has been defined. For example, to find all objects with `owner` label use: ``` labels.owner:* ``` You can also filter nested fields. For example, you could specify `scheduling.automaticRestart = false` to include instances only if they are not scheduled for automatic restarts. You can use filtering on nested fields to filter based on resource labels. To filter on multiple expressions, provide each separate expression within parentheses. For example: ``` (scheduling.automaticRestart = true) (cpuPlatform = \"Intel Skylake\") ``` By default, each expression is an `AND` expression. However, you can include `AND` and `OR` expressions explicitly. For example: ``` (cpuPlatform = \"Intel Skylake\") OR (cpuPlatform = \"Intel Broadwell\") AND (scheduling.automaticRestart = true) ``` If you want to use a regular expression, use the `eq` (equal) or `ne` (not equal) operator against a single un-parenthesized expression with or without quotes or against multiple parenthesized expressions. Examples: `fieldname eq unquoted literal` `fieldname eq 'single quoted literal'` `fieldname eq \"double quoted literal\"` `(fieldname1 eq literal) (fieldname2 ne \"literal\")` The literal value is interpreted as a regular expression using Google RE2 library syntax. The literal value must match the entire field. For example, to filter for instances that do not end with name \"instance\", you would use `name ne .*instance`. You cannot combine constraints on multiple fields using regular expressions.",
+"location": "query",
+"type": "string"
+},
+"maxResults": {
+"default": "500",
+"description": "The maximum number of results per page that should be returned. If the number of available results is larger than `maxResults`, Compute Engine returns a `nextPageToken` that can be used to get the next page of results in subsequent list requests. Acceptable values are `0` to `500`, inclusive. (Default: `500`)",
+"format": "uint32",
+"location": "query",
+"minimum": "0",
+"type": "integer"
+},
+"orderBy": {
+"description": "Sorts list results by a certain order. By default, results are returned in alphanumerical order based on the resource name. You can also sort results in descending order based on the creation timestamp using `orderBy=\"creationTimestamp desc\"`. This sorts results based on the `creationTimestamp` field in reverse chronological order (newest result first). Use this to sort resources like operations so that the newest operation is returned first. Currently, only sorting by `name` or `creationTimestamp desc` is supported.",
+"location": "query",
+"type": "string"
+},
+"pageToken": {
+"description": "Specifies a page token to use. Set `pageToken` to the `nextPageToken` returned by a previous list request to get the next page of results.",
+"location": "query",
+"type": "string"
+},
+"project": {
+"description": "Project ID for this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"region": {
+"description": "Name of the region scoping this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"required": true,
+"type": "string"
+},
+"returnPartialSuccess": {
+"description": "Opt-in for partial success behavior which provides partial results in case of failure. The default value is false. For example, when partial success behavior is enabled, aggregatedList for a single zone scope either returns all resources in the zone or no resources, with an error code.",
+"location": "query",
+"type": "boolean"
+}
+},
+"path": "projects/{project}/regions/{region}/healthAggregationPolicies",
+"response": {
+"$ref": "HealthAggregationPolicyList"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute",
+"https://www.googleapis.com/auth/compute.readonly"
+]
+},
+"patch": {
+"description": "Updates the specified regional HealthAggregationPolicy resource with the data included in the request. This method supports PATCH semantics and uses the JSON merge patch format and processing rules.",
+"flatPath": "projects/{project}/regions/{region}/healthAggregationPolicies/{healthAggregationPolicy}",
+"httpMethod": "PATCH",
+"id": "compute.regionHealthAggregationPolicies.patch",
+"parameterOrder": [
+"project",
+"region",
+"healthAggregationPolicy"
+],
+"parameters": {
+"healthAggregationPolicy": {
+"description": "Name of the HealthAggregationPolicy to update. The name must be 1-63 characters long, and comply with RFC1035.",
+"location": "path",
+"required": true,
+"type": "string"
+},
+"project": {
+"description": "Project ID for this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"region": {
+"description": "Name of the region scoping this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"required": true,
+"type": "string"
+},
+"requestId": {
+"description": "An optional request ID to identify requests. Specify a unique request ID so that if you must retry your request, the server will know to ignore the request if it has already been completed. For example, consider a situation where you make an initial request and the request times out. If you make the request again with the same request ID, the server can check if original operation with the same request ID was received, and if so, will ignore the second request. This prevents clients from accidentally creating duplicate commitments. The request ID must be a valid UUID with the exception that zero UUID is not supported ( 00000000-0000-0000-0000-000000000000).",
+"location": "query",
+"type": "string"
+}
+},
+"path": "projects/{project}/regions/{region}/healthAggregationPolicies/{healthAggregationPolicy}",
+"request": {
+"$ref": "HealthAggregationPolicy"
+},
+"response": {
+"$ref": "Operation"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute"
+]
+},
+"testIamPermissions": {
+"description": "Returns permissions that a caller has on the specified resource.",
+"flatPath": "projects/{project}/regions/{region}/healthAggregationPolicies/{resource}/testIamPermissions",
+"httpMethod": "POST",
+"id": "compute.regionHealthAggregationPolicies.testIamPermissions",
+"parameterOrder": [
+"project",
+"region",
+"resource"
+],
+"parameters": {
+"project": {
+"description": "Project ID for this request.",
+"location": "path",
+"pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+"required": true,
+"type": "string"
+},
+"region": {
+"description": "The name of the region for this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"required": true,
+"type": "string"
+},
+"resource": {
+"description": "Name or id of the resource for this request.",
+"location": "path",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?|[1-9][0-9]{0,19}",
+"required": true,
+"type": "string"
+}
+},
+"path": "projects/{project}/regions/{region}/healthAggregationPolicies/{resource}/testIamPermissions",
+"request": {
+"$ref": "TestPermissionsRequest"
+},
+"response": {
+"$ref": "TestPermissionsResponse"
+},
+"scopes": [
+"https://www.googleapis.com/auth/cloud-platform",
+"https://www.googleapis.com/auth/compute",
+"https://www.googleapis.com/auth/compute.readonly"
 ]
 }
 }
@@ -48205,7 +48859,7 @@
 }
 }
 },
-"revision": "20250211",
+"revision": "20250304",
 "rootUrl": "https://compute.googleapis.com/",
 "schemas": {
 "AWSV4Signature": {
@@ -53766,7 +54420,7 @@ false
 "id": "CacheInvalidationRule",
 "properties": {
 "cacheTags": {
-"description": "A list of cache tags used to identify cached objects. - Cache tags are specified when the response is first cached, by setting the `Cache-Tag` response header at the origin. - Multiple cache tags in the same invalidation request are treated as Boolean `OR` - for example, `tag1 OR tag2 OR tag3`. - If other fields are also specified, these are treated as Boolean `AND` with any tags. Up to 10 tags can be specified in a single invalidation request.",
+"description": "[Preview] A list of cache tags used to identify cached objects. - Cache tags are specified when the response is first cached, by setting the `Cache-Tag` response header at the origin. - Multiple cache tags in the same invalidation request are treated as Boolean `OR` - for example, `tag1 OR tag2 OR tag3`. - If other fields are also specified, these are treated as Boolean `AND` with any tags. Up to 10 tags can be specified in a single invalidation request.",
 "items": {
 "type": "string"
 },
@@ -54150,6 +54804,7 @@ false
 "ACCELERATOR_OPTIMIZED_A3",
 "ACCELERATOR_OPTIMIZED_A3_MEGA",
 "ACCELERATOR_OPTIMIZED_A3_ULTRA",
+"ACCELERATOR_OPTIMIZED_A4",
 "COMPUTE_OPTIMIZED",
 "COMPUTE_OPTIMIZED_C2D",
 "COMPUTE_OPTIMIZED_C3",
@@ -54175,6 +54830,7 @@ false
 "TYPE_UNSPECIFIED"
 ],
 "enumDescriptions": [
+"",
 "",
 "",
 "",
@@ -54703,6 +55359,531 @@ false
 },
 "type": "object"
 },
+"CompositeHealthCheck": {
+"description": "Represents a composite health check. A composite health check resource specifies the health source resources and the health destination resource to which the aggregated health result from the health source resources is delivered.",
+"id": "CompositeHealthCheck",
+"properties": {
+"creationTimestamp": {
+"description": "[Output Only] Creation timestamp in RFC3339 text format.",
+"type": "string"
+},
+"description": {
+"description": "An optional description of this resource. Provide this property when you create the resource.",
+"type": "string"
+},
+"fingerprint": {
+"description": "Fingerprint of this resource. A hash of the contents stored in this object. This field is used in optimistic locking. This field will be ignored when inserting a CompositeHealthCheck. An up-to-date fingerprint must be provided in order to patch the CompositeHealthCheck; Otherwise, the request will fail with error 412 conditionNotMet. To see the latest fingerprint, make a get() request to retrieve the CompositeHealthCheck.",
+"format": "byte",
+"type": "string"
+},
+"healthDestination": {
+"description": "URL to the destination resource. Must be set. Must be a ForwardingRule. The ForwardingRule must have load balancing scheme INTERNAL or INTERNAL_MANAGED and must be regional and in the same region as the CompositeHealthCheck (cross-region deployment for INTERNAL_MANAGED is not supported). Can be mutated.",
+"type": "string"
+},
+"healthSources": {
+"description": "URLs to the HealthSource resources whose results are AND'ed. I.e. he aggregated result is is HEALTHY only if all sources are HEALTHY. Must have at least 1. Must not have more than 10. Must be regional and in the same region as the CompositeHealthCheck. Can be mutated.",
+"items": {
+"type": "string"
+},
+"type": "array"
+},
+"id": {
+"description": "[Output Only] A unique identifier for this resource type. The server generates this identifier.",
+"format": "uint64",
+"type": "string"
+},
+"kind": {
+"default": "compute#compositeHealthCheck",
+"description": "[Output Only] Type of the resource. Always compute#compositeHealthCheck for composite health checks.",
+"type": "string"
+},
+"name": {
+"description": "Name of the resource. Provided by the client when the resource is created. The name must be 1-63 characters long, and comply with RFC1035. Specifically, the name must be 1-63 characters long and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])?` which means the first character must be a lowercase letter, and all following characters must be a dash, lowercase letter, or digit, except the last character, which cannot be a dash.",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"type": "string"
+},
+"region": {
+"description": "[Output Only] URL of the region where the composite health check resides. This field applies only to the regional resource. You must specify this field as part of the HTTP request URL. It is not settable as a field in the request body.",
+"type": "string"
+},
+"selfLink": {
+"description": "[Output Only] Server-defined URL for the resource.",
+"type": "string"
+},
+"selfLinkWithId": {
+"description": "[Output Only] Server-defined URL with id for the resource.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"CompositeHealthCheckAggregatedList": {
+"description": "Contains a list of CompositeHealthChecksScopedList.",
+"id": "CompositeHealthCheckAggregatedList",
+"properties": {
+"etag": {
+"type": "string"
+},
+"id": {
+"description": "[Output Only] Unique identifier for the resource; defined by the server.",
+"type": "string"
+},
+"items": {
+"additionalProperties": {
+"$ref": "CompositeHealthChecksScopedList",
+"description": "Name of the scope containing this set of CompositeHealthChecks."
+},
+"description": "A list of CompositeHealthChecksScopedList resources.",
+"type": "object"
+},
+"kind": {
+"default": "compute#compositeHealthCheckAggregatedList",
+"description": "Type of resource.",
+"type": "string"
+},
+"nextPageToken": {
+"description": "[Output Only] This token allows you to get the next page of results for list requests. If the number of results is larger than maxResults, use the nextPageToken as a value for the query parameter pageToken in the next list request. Subsequent list requests will have their own nextPageToken to continue paging through the results.",
+"type": "string"
+},
+"selfLink": {
+"description": "[Output Only] Server-defined URL for this resource.",
+"type": "string"
+},
+"unreachables": {
+"description": "[Output Only] Unreachable resources.",
+"items": {
+"type": "string"
+},
+"type": "array"
+},
+"warning": {
+"description": "[Output Only] Informational warning message.",
+"properties": {
+"code": {
+"description": "[Output Only] A warning code, if applicable. For example, Compute Engine returns NO_RESULTS_ON_PAGE if there are no results in the response.",
+"enum": [
+"CLEANUP_FAILED",
+"DEPRECATED_RESOURCE_USED",
+"DEPRECATED_TYPE_USED",
+"DISK_SIZE_LARGER_THAN_IMAGE_SIZE",
+"EXPERIMENTAL_TYPE_USED",
+"EXTERNAL_API_WARNING",
+"FIELD_VALUE_OVERRIDEN",
+"INJECTED_KERNELS_DEPRECATED",
+"INVALID_HEALTH_CHECK_FOR_DYNAMIC_WIEGHTED_LB",
+"LARGE_DEPLOYMENT_WARNING",
+"LIST_OVERHEAD_QUOTA_EXCEED",
+"MISSING_TYPE_DEPENDENCY",
+"NEXT_HOP_ADDRESS_NOT_ASSIGNED",
+"NEXT_HOP_CANNOT_IP_FORWARD",
+"NEXT_HOP_INSTANCE_HAS_NO_IPV6_INTERFACE",
+"NEXT_HOP_INSTANCE_NOT_FOUND",
+"NEXT_HOP_INSTANCE_NOT_ON_NETWORK",
+"NEXT_HOP_NOT_RUNNING",
+"NOT_CRITICAL_ERROR",
+"NO_RESULTS_ON_PAGE",
+"PARTIAL_SUCCESS",
+"QUOTA_INFO_UNAVAILABLE",
+"REQUIRED_TOS_AGREEMENT",
+"RESOURCE_IN_USE_BY_OTHER_RESOURCE_WARNING",
+"RESOURCE_NOT_DELETED",
+"SCHEMA_VALIDATION_IGNORED",
+"SINGLE_INSTANCE_PROPERTY_TEMPLATE",
+"UNDECLARED_PROPERTIES",
+"UNREACHABLE"
+],
+"enumDeprecated": [
+false,
+false,
+false,
+false,
+false,
+false,
+true,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false
+],
+"enumDescriptions": [
+"Warning about failed cleanup of transient changes made by a failed operation.",
+"A link to a deprecated resource was created.",
+"When deploying and at least one of the resources has a type marked as deprecated",
+"The user created a boot disk that is larger than image size.",
+"When deploying and at least one of the resources has a type marked as experimental",
+"Warning that is present in an external api call",
+"Warning that value of a field has been overridden. Deprecated unused field.",
+"The operation involved use of an injected kernel, which is deprecated.",
+"A WEIGHTED_MAGLEV backend service is associated with a health check that is not of type HTTP/HTTPS/HTTP2.",
+"When deploying a deployment with a exceedingly large number of resources",
+"Resource can't be retrieved due to list overhead quota exceed which captures the amount of resources filtered out by user-defined list filter.",
+"A resource depends on a missing type",
+"The route's nextHopIp address is not assigned to an instance on the network.",
+"The route's next hop instance cannot ip forward.",
+"The route's nextHopInstance URL refers to an instance that does not have an ipv6 interface on the same network as the route.",
+"The route's nextHopInstance URL refers to an instance that does not exist.",
+"The route's nextHopInstance URL refers to an instance that is not on the same network as the route.",
+"The route's next hop instance does not have a status of RUNNING.",
+"Error which is not critical. We decided to continue the process despite the mentioned error.",
+"No results are present on a particular list page.",
+"Success is reported, but some results may be missing due to errors",
+"Quota information is not available to client requests (e.g: regions.list).",
+"The user attempted to use a resource that requires a TOS they have not accepted.",
+"Warning that a resource is in use.",
+"One or more of the resources set to auto-delete could not be deleted because they were in use.",
+"When a resource schema validation is ignored.",
+"Instance template used in instance group manager is valid as such, but its application does not make a lot of sense, because it allows only single instance in instance group.",
+"When undeclared properties in the schema are present",
+"A given scope cannot be reached."
+],
+"type": "string"
+},
+"data": {
+"description": "[Output Only] Metadata about this warning in key: value format. For example: \"data\": [ { \"key\": \"scope\", \"value\": \"zones/us-east1-d\" } ",
+"items": {
+"properties": {
+"key": {
+"description": "[Output Only] A key that provides more detail on the warning being returned. For example, for warnings where there are no results in a list request for a particular zone, this key might be scope and the key value might be the zone name. Other examples might be a key indicating a deprecated resource and a suggested replacement, or a warning about invalid network settings (for example, if an instance attempts to perform IP forwarding but is not enabled for IP forwarding).",
+"type": "string"
+},
+"value": {
+"description": "[Output Only] A warning data value corresponding to the key.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"type": "array"
+},
+"message": {
+"description": "[Output Only] A human-readable description of the warning code.",
+"type": "string"
+}
+},
+"type": "object"
+}
+},
+"type": "object"
+},
+"CompositeHealthCheckList": {
+"id": "CompositeHealthCheckList",
+"properties": {
+"etag": {
+"type": "string"
+},
+"id": {
+"description": "[Output Only] Unique identifier for the resource; defined by the server.",
+"type": "string"
+},
+"items": {
+"description": "A list of CompositeHealthCheck resources.",
+"items": {
+"$ref": "CompositeHealthCheck"
+},
+"type": "array"
+},
+"kind": {
+"default": "compute#compositeHealthCheckList",
+"description": "[Output Only] Type of the resource. Always compute#compositeHealthCheck for composite health checks.",
+"type": "string"
+},
+"nextPageToken": {
+"description": "[Output Only] This token allows you to get the next page of results for list requests. If the number of results is larger than maxResults, use the nextPageToken as a value for the query parameter pageToken in the next list request. Subsequent list requests will have their own nextPageToken to continue paging through the results.",
+"type": "string"
+},
+"selfLink": {
+"description": "[Output Only] Server-defined URL for this resource.",
+"type": "string"
+},
+"unreachables": {
+"description": "[Output Only] Unreachable resources. end_interface: MixerListResponseWithEtagBuilder",
+"items": {
+"type": "string"
+},
+"type": "array"
+},
+"warning": {
+"description": "[Output Only] Informational warning message.",
+"properties": {
+"code": {
+"description": "[Output Only] A warning code, if applicable. For example, Compute Engine returns NO_RESULTS_ON_PAGE if there are no results in the response.",
+"enum": [
+"CLEANUP_FAILED",
+"DEPRECATED_RESOURCE_USED",
+"DEPRECATED_TYPE_USED",
+"DISK_SIZE_LARGER_THAN_IMAGE_SIZE",
+"EXPERIMENTAL_TYPE_USED",
+"EXTERNAL_API_WARNING",
+"FIELD_VALUE_OVERRIDEN",
+"INJECTED_KERNELS_DEPRECATED",
+"INVALID_HEALTH_CHECK_FOR_DYNAMIC_WIEGHTED_LB",
+"LARGE_DEPLOYMENT_WARNING",
+"LIST_OVERHEAD_QUOTA_EXCEED",
+"MISSING_TYPE_DEPENDENCY",
+"NEXT_HOP_ADDRESS_NOT_ASSIGNED",
+"NEXT_HOP_CANNOT_IP_FORWARD",
+"NEXT_HOP_INSTANCE_HAS_NO_IPV6_INTERFACE",
+"NEXT_HOP_INSTANCE_NOT_FOUND",
+"NEXT_HOP_INSTANCE_NOT_ON_NETWORK",
+"NEXT_HOP_NOT_RUNNING",
+"NOT_CRITICAL_ERROR",
+"NO_RESULTS_ON_PAGE",
+"PARTIAL_SUCCESS",
+"QUOTA_INFO_UNAVAILABLE",
+"REQUIRED_TOS_AGREEMENT",
+"RESOURCE_IN_USE_BY_OTHER_RESOURCE_WARNING",
+"RESOURCE_NOT_DELETED",
+"SCHEMA_VALIDATION_IGNORED",
+"SINGLE_INSTANCE_PROPERTY_TEMPLATE",
+"UNDECLARED_PROPERTIES",
+"UNREACHABLE"
+],
+"enumDeprecated": [
+false,
+false,
+false,
+false,
+false,
+false,
+true,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false
+],
+"enumDescriptions": [
+"Warning about failed cleanup of transient changes made by a failed operation.",
+"A link to a deprecated resource was created.",
+"When deploying and at least one of the resources has a type marked as deprecated",
+"The user created a boot disk that is larger than image size.",
+"When deploying and at least one of the resources has a type marked as experimental",
+"Warning that is present in an external api call",
+"Warning that value of a field has been overridden. Deprecated unused field.",
+"The operation involved use of an injected kernel, which is deprecated.",
+"A WEIGHTED_MAGLEV backend service is associated with a health check that is not of type HTTP/HTTPS/HTTP2.",
+"When deploying a deployment with a exceedingly large number of resources",
+"Resource can't be retrieved due to list overhead quota exceed which captures the amount of resources filtered out by user-defined list filter.",
+"A resource depends on a missing type",
+"The route's nextHopIp address is not assigned to an instance on the network.",
+"The route's next hop instance cannot ip forward.",
+"The route's nextHopInstance URL refers to an instance that does not have an ipv6 interface on the same network as the route.",
+"The route's nextHopInstance URL refers to an instance that does not exist.",
+"The route's nextHopInstance URL refers to an instance that is not on the same network as the route.",
+"The route's next hop instance does not have a status of RUNNING.",
+"Error which is not critical. We decided to continue the process despite the mentioned error.",
+"No results are present on a particular list page.",
+"Success is reported, but some results may be missing due to errors",
+"Quota information is not available to client requests (e.g: regions.list).",
+"The user attempted to use a resource that requires a TOS they have not accepted.",
+"Warning that a resource is in use.",
+"One or more of the resources set to auto-delete could not be deleted because they were in use.",
+"When a resource schema validation is ignored.",
+"Instance template used in instance group manager is valid as such, but its application does not make a lot of sense, because it allows only single instance in instance group.",
+"When undeclared properties in the schema are present",
+"A given scope cannot be reached."
+],
+"type": "string"
+},
+"data": {
+"description": "[Output Only] Metadata about this warning in key: value format. For example: \"data\": [ { \"key\": \"scope\", \"value\": \"zones/us-east1-d\" } ",
+"items": {
+"properties": {
+"key": {
+"description": "[Output Only] A key that provides more detail on the warning being returned. For example, for warnings where there are no results in a list request for a particular zone, this key might be scope and the key value might be the zone name. Other examples might be a key indicating a deprecated resource and a suggested replacement, or a warning about invalid network settings (for example, if an instance attempts to perform IP forwarding but is not enabled for IP forwarding).",
+"type": "string"
+},
+"value": {
+"description": "[Output Only] A warning data value corresponding to the key.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"type": "array"
+},
+"message": {
+"description": "[Output Only] A human-readable description of the warning code.",
+"type": "string"
+}
+},
+"type": "object"
+}
+},
+"type": "object"
+},
+"CompositeHealthChecksScopedList": {
+"id": "CompositeHealthChecksScopedList",
+"properties": {
+"resources": {
+"description": "A list of CompositeHealthChecks contained in this scope.",
+"items": {
+"$ref": "CompositeHealthCheck"
+},
+"type": "array"
+},
+"warning": {
+"description": "Informational warning which replaces the list of composite health checks when the list is empty.",
+"properties": {
+"code": {
+"description": "[Output Only] A warning code, if applicable. For example, Compute Engine returns NO_RESULTS_ON_PAGE if there are no results in the response.",
+"enum": [
+"CLEANUP_FAILED",
+"DEPRECATED_RESOURCE_USED",
+"DEPRECATED_TYPE_USED",
+"DISK_SIZE_LARGER_THAN_IMAGE_SIZE",
+"EXPERIMENTAL_TYPE_USED",
+"EXTERNAL_API_WARNING",
+"FIELD_VALUE_OVERRIDEN",
+"INJECTED_KERNELS_DEPRECATED",
+"INVALID_HEALTH_CHECK_FOR_DYNAMIC_WIEGHTED_LB",
+"LARGE_DEPLOYMENT_WARNING",
+"LIST_OVERHEAD_QUOTA_EXCEED",
+"MISSING_TYPE_DEPENDENCY",
+"NEXT_HOP_ADDRESS_NOT_ASSIGNED",
+"NEXT_HOP_CANNOT_IP_FORWARD",
+"NEXT_HOP_INSTANCE_HAS_NO_IPV6_INTERFACE",
+"NEXT_HOP_INSTANCE_NOT_FOUND",
+"NEXT_HOP_INSTANCE_NOT_ON_NETWORK",
+"NEXT_HOP_NOT_RUNNING",
+"NOT_CRITICAL_ERROR",
+"NO_RESULTS_ON_PAGE",
+"PARTIAL_SUCCESS",
+"QUOTA_INFO_UNAVAILABLE",
+"REQUIRED_TOS_AGREEMENT",
+"RESOURCE_IN_USE_BY_OTHER_RESOURCE_WARNING",
+"RESOURCE_NOT_DELETED",
+"SCHEMA_VALIDATION_IGNORED",
+"SINGLE_INSTANCE_PROPERTY_TEMPLATE",
+"UNDECLARED_PROPERTIES",
+"UNREACHABLE"
+],
+"enumDeprecated": [
+false,
+false,
+false,
+false,
+false,
+false,
+true,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false
+],
+"enumDescriptions": [
+"Warning about failed cleanup of transient changes made by a failed operation.",
+"A link to a deprecated resource was created.",
+"When deploying and at least one of the resources has a type marked as deprecated",
+"The user created a boot disk that is larger than image size.",
+"When deploying and at least one of the resources has a type marked as experimental",
+"Warning that is present in an external api call",
+"Warning that value of a field has been overridden. Deprecated unused field.",
+"The operation involved use of an injected kernel, which is deprecated.",
+"A WEIGHTED_MAGLEV backend service is associated with a health check that is not of type HTTP/HTTPS/HTTP2.",
+"When deploying a deployment with a exceedingly large number of resources",
+"Resource can't be retrieved due to list overhead quota exceed which captures the amount of resources filtered out by user-defined list filter.",
+"A resource depends on a missing type",
+"The route's nextHopIp address is not assigned to an instance on the network.",
+"The route's next hop instance cannot ip forward.",
+"The route's nextHopInstance URL refers to an instance that does not have an ipv6 interface on the same network as the route.",
+"The route's nextHopInstance URL refers to an instance that does not exist.",
+"The route's nextHopInstance URL refers to an instance that is not on the same network as the route.",
+"The route's next hop instance does not have a status of RUNNING.",
+"Error which is not critical. We decided to continue the process despite the mentioned error.",
+"No results are present on a particular list page.",
+"Success is reported, but some results may be missing due to errors",
+"Quota information is not available to client requests (e.g: regions.list).",
+"The user attempted to use a resource that requires a TOS they have not accepted.",
+"Warning that a resource is in use.",
+"One or more of the resources set to auto-delete could not be deleted because they were in use.",
+"When a resource schema validation is ignored.",
+"Instance template used in instance group manager is valid as such, but its application does not make a lot of sense, because it allows only single instance in instance group.",
+"When undeclared properties in the schema are present",
+"A given scope cannot be reached."
+],
+"type": "string"
+},
+"data": {
+"description": "[Output Only] Metadata about this warning in key: value format. For example: \"data\": [ { \"key\": \"scope\", \"value\": \"zones/us-east1-d\" } ",
+"items": {
+"properties": {
+"key": {
+"description": "[Output Only] A key that provides more detail on the warning being returned. For example, for warnings where there are no results in a list request for a particular zone, this key might be scope and the key value might be the zone name. Other examples might be a key indicating a deprecated resource and a suggested replacement, or a warning about invalid network settings (for example, if an instance attempts to perform IP forwarding but is not enabled for IP forwarding).",
+"type": "string"
+},
+"value": {
+"description": "[Output Only] A warning data value corresponding to the key.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"type": "array"
+},
+"message": {
+"description": "[Output Only] A human-readable description of the warning code.",
+"type": "string"
+}
+},
+"type": "object"
+}
+},
+"type": "object"
+},
 "ConfidentialInstanceConfig": {
 "description": "A set of Confidential Instance options.",
 "id": "ConfidentialInstanceConfig",
@@ -54723,9 +55904,46 @@ false
 ],
 "type": "string"
 },
+"confidentialParavisorConfig": {
+"$ref": "ConfidentialParavisorConfig",
+"description": "Defines a set of Confidential Paravisor (SVSM) options."
+},
 "enableConfidentialCompute": {
 "description": "Defines whether the instance should have confidential compute enabled.",
 "type": "boolean"
+}
+},
+"type": "object"
+},
+"ConfidentialParavisorConfig": {
+"description": "A set of Confidential Paravisor (SVSM) options.",
+"id": "ConfidentialParavisorConfig",
+"properties": {
+"confidentialTpmType": {
+"enum": [
+"CONFIDENTIAL_TPM_TYPE_UNSPECIFIED",
+"EPHEMERAL",
+"NO_CC_TPM"
+],
+"enumDescriptions": [
+"",
+"",
+""
+],
+"type": "string"
+},
+"sevSnpIrqMode": {
+"enum": [
+"RESTRICTED",
+"SEV_SNP_IRQ_MODE_UNSPECIFIED",
+"UNRESTRICTED"
+],
+"enumDescriptions": [
+"",
+"",
+""
+],
+"type": "string"
 }
 },
 "type": "object"
@@ -60869,6 +62087,239 @@ false
 "Health Checker will try to parse and report the weight in the header field, and load balancing will be based on the weights as long as all backends have a valid weight or only a subset of backends has the UNAVAILABLE_WEIGHT WeightError. The latter case is to continue the weighted load balancing while some backends are in TIMEOUT or UNKNOWN health status."
 ],
 "type": "string"
+}
+},
+"type": "object"
+},
+"HealthAggregationPolicy": {
+"description": "Represents a health aggregation policy. A health aggregation policy resource defines a policy to aggregate health. For more information, see Health checks overview.",
+"id": "HealthAggregationPolicy",
+"properties": {
+"creationTimestamp": {
+"description": "[Output Only] Creation timestamp in RFC3339 text format.",
+"type": "string"
+},
+"description": {
+"description": "An optional description of this resource. Provide this property when you create the resource.",
+"type": "string"
+},
+"fingerprint": {
+"description": "Fingerprint of this resource. A hash of the contents stored in this object. This field is used in optimistic locking. This field will be ignored when inserting a HealthAggregationPolicy. An up-to-date fingerprint must be provided in order to patch the HealthAggregationPolicy; Otherwise, the request will fail with error 412 conditionNotMet. To see the latest fingerprint, make a get() request to retrieve the HealthAggregationPolicy.",
+"format": "byte",
+"type": "string"
+},
+"healthyPercentThreshold": {
+"description": "Can only be set if the policyType field is BACKEND_SERVICE_POLICY. Specifies the threshold (as a percentage) of healthy endpoints required in order to consider the aggregated health result HEALTHY. Defaults to 60. Must be in range [0, 100]. Not applicable if the policyType field is DNB_PUBLIC_IP_POLICY. Can be mutated. This field is optional, and will be set to the default if unspecified. Note that both this threshold and minHealthyThreshold must be satisfied in order for HEALTHY to be the aggregated result. \"Endpoints\" refers to network endpoints within a Network Endpoint Group or instances within an Instance Group.",
+"format": "uint32",
+"type": "integer"
+},
+"id": {
+"description": "[Output Only] The unique identifier for the resource. This identifier is defined by the server.",
+"format": "uint64",
+"type": "string"
+},
+"kind": {
+"default": "compute#healthAggregationPolicy",
+"description": "[Output Only] Type of the resource. Always compute#healthAggregationPolicy for health aggregation policies.",
+"type": "string"
+},
+"minHealthyThreshold": {
+"description": "Can only be set if the policyType field is BACKEND_SERVICE_POLICY. Specifies the minimum number of healthy endpoints required in order to consider the aggregated health result HEALTHY. Defaults to 1. Must be positive. Not applicable if the policyType field is DNB_PUBLIC_IP_POLICY. Can be mutated. This field is optional, and will be set to the default if unspecified. Note that both this threshold and healthyPercentThreshold must be satisfied in order for HEALTHY to be the aggregated result. \"Endpoints\" refers to network endpoints within a Network Endpoint Group or instances within an Instance Group.",
+"format": "uint32",
+"type": "integer"
+},
+"name": {
+"description": "Name of the resource. Provided by the client when the resource is created. The name must be 1-63 characters long, and comply with RFC1035. Specifically, the name must be 1-63 characters long and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])?` which means the first character must be a lowercase letter, and all following characters must be a dash, lowercase letter, or digit, except the last character, which cannot be a dash.",
+"pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+"type": "string"
+},
+"policyType": {
+"description": "Specifies the type of the healthAggregationPolicy. The only allowed value for global resources is DNS_PUBLIC_IP_POLICY. The only allowed value for regional resources is BACKEND_SERVICE_POLICY. Must be specified when the healthAggregationPolicy is created, and cannot be mutated.",
+"enum": [
+"BACKEND_SERVICE_POLICY",
+"DNS_PUBLIC_IP_POLICY"
+],
+"enumDescriptions": [
+"",
+""
+],
+"type": "string"
+},
+"region": {
+"description": "[Output Only] URL of the region where the health aggregation policy resides. This field applies only to the regional resource. You must specify this field as part of the HTTP request URL. It is not settable as a field in the request body.",
+"type": "string"
+},
+"selfLink": {
+"description": "[Output Only] Server-defined URL for the resource.",
+"type": "string"
+},
+"selfLinkWithId": {
+"description": "[Output Only] Server-defined URL with id for the resource.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"HealthAggregationPolicyList": {
+"id": "HealthAggregationPolicyList",
+"properties": {
+"etag": {
+"type": "string"
+},
+"id": {
+"description": "[Output Only] Unique identifier for the resource; defined by the server.",
+"type": "string"
+},
+"items": {
+"description": "A list of HealthAggregationPolicy resources.",
+"items": {
+"$ref": "HealthAggregationPolicy"
+},
+"type": "array"
+},
+"kind": {
+"default": "compute#healthAggregationPolicyList",
+"description": "[Output Only] Type of the resource. Always compute#healthAggregationPolicy for health aggregation policies.",
+"type": "string"
+},
+"nextPageToken": {
+"description": "[Output Only] This token allows you to get the next page of results for list requests. If the number of results is larger than maxResults, use the nextPageToken as a value for the query parameter pageToken in the next list request. Subsequent list requests will have their own nextPageToken to continue paging through the results.",
+"type": "string"
+},
+"selfLink": {
+"description": "[Output Only] Server-defined URL for this resource.",
+"type": "string"
+},
+"unreachables": {
+"description": "[Output Only] Unreachable resources. end_interface: MixerListResponseWithEtagBuilder",
+"items": {
+"type": "string"
+},
+"type": "array"
+},
+"warning": {
+"description": "[Output Only] Informational warning message.",
+"properties": {
+"code": {
+"description": "[Output Only] A warning code, if applicable. For example, Compute Engine returns NO_RESULTS_ON_PAGE if there are no results in the response.",
+"enum": [
+"CLEANUP_FAILED",
+"DEPRECATED_RESOURCE_USED",
+"DEPRECATED_TYPE_USED",
+"DISK_SIZE_LARGER_THAN_IMAGE_SIZE",
+"EXPERIMENTAL_TYPE_USED",
+"EXTERNAL_API_WARNING",
+"FIELD_VALUE_OVERRIDEN",
+"INJECTED_KERNELS_DEPRECATED",
+"INVALID_HEALTH_CHECK_FOR_DYNAMIC_WIEGHTED_LB",
+"LARGE_DEPLOYMENT_WARNING",
+"LIST_OVERHEAD_QUOTA_EXCEED",
+"MISSING_TYPE_DEPENDENCY",
+"NEXT_HOP_ADDRESS_NOT_ASSIGNED",
+"NEXT_HOP_CANNOT_IP_FORWARD",
+"NEXT_HOP_INSTANCE_HAS_NO_IPV6_INTERFACE",
+"NEXT_HOP_INSTANCE_NOT_FOUND",
+"NEXT_HOP_INSTANCE_NOT_ON_NETWORK",
+"NEXT_HOP_NOT_RUNNING",
+"NOT_CRITICAL_ERROR",
+"NO_RESULTS_ON_PAGE",
+"PARTIAL_SUCCESS",
+"QUOTA_INFO_UNAVAILABLE",
+"REQUIRED_TOS_AGREEMENT",
+"RESOURCE_IN_USE_BY_OTHER_RESOURCE_WARNING",
+"RESOURCE_NOT_DELETED",
+"SCHEMA_VALIDATION_IGNORED",
+"SINGLE_INSTANCE_PROPERTY_TEMPLATE",
+"UNDECLARED_PROPERTIES",
+"UNREACHABLE"
+],
+"enumDeprecated": [
+false,
+false,
+false,
+false,
+false,
+false,
+true,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false,
+false
+],
+"enumDescriptions": [
+"Warning about failed cleanup of transient changes made by a failed operation.",
+"A link to a deprecated resource was created.",
+"When deploying and at least one of the resources has a type marked as deprecated",
+"The user created a boot disk that is larger than image size.",
+"When deploying and at least one of the resources has a type marked as experimental",
+"Warning that is present in an external api call",
+"Warning that value of a field has been overridden. Deprecated unused field.",
+"The operation involved use of an injected kernel, which is deprecated.",
+"A WEIGHTED_MAGLEV backend service is associated with a health check that is not of type HTTP/HTTPS/HTTP2.",
+"When deploying a deployment with a exceedingly large number of resources",
+"Resource can't be retrieved due to list overhead quota exceed which captures the amount of resources filtered out by user-defined list filter.",
+"A resource depends on a missing type",
+"The route's nextHopIp address is not assigned to an instance on the network.",
+"The route's next hop instance cannot ip forward.",
+"The route's nextHopInstance URL refers to an instance that does not have an ipv6 interface on the same network as the route.",
+"The route's nextHopInstance URL refers to an instance that does not exist.",
+"The route's nextHopInstance URL refers to an instance that is not on the same network as the route.",
+"The route's next hop instance does not have a status of RUNNING.",
+"Error which is not critical. We decided to continue the process despite the mentioned error.",
+"No results are present on a particular list page.",
+"Success is reported, but some results may be missing due to errors",
+"Quota information is not available to client requests (e.g: regions.list).",
+"The user attempted to use a resource that requires a TOS they have not accepted.",
+"Warning that a resource is in use.",
+"One or more of the resources set to auto-delete could not be deleted because they were in use.",
+"When a resource schema validation is ignored.",
+"Instance template used in instance group manager is valid as such, but its application does not make a lot of sense, because it allows only single instance in instance group.",
+"When undeclared properties in the schema are present",
+"A given scope cannot be reached."
+],
+"type": "string"
+},
+"data": {
+"description": "[Output Only] Metadata about this warning in key: value format. For example: \"data\": [ { \"key\": \"scope\", \"value\": \"zones/us-east1-d\" } ",
+"items": {
+"properties": {
+"key": {
+"description": "[Output Only] A key that provides more detail on the warning being returned. For example, for warnings where there are no results in a list request for a particular zone, this key might be scope and the key value might be the zone name. Other examples might be a key indicating a deprecated resource and a suggested replacement, or a warning about invalid network settings (for example, if an instance attempts to perform IP forwarding but is not enabled for IP forwarding).",
+"type": "string"
+},
+"value": {
+"description": "[Output Only] A warning data value corresponding to the key.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"type": "array"
+},
+"message": {
+"description": "[Output Only] A human-readable description of the warning code.",
+"type": "string"
+}
+},
+"type": "object"
 }
 },
 "type": "object"
@@ -79125,7 +80576,7 @@ false
 "type": "string"
 },
 "vlan": {
-"description": "VLAN tag of a dynamic network interface, must be in range from 2 to 4094 inclusively.",
+"description": "VLAN tag of a dynamic network interface, must be an integer in the range from 2 to 255 inclusively.",
 "format": "int32",
 "type": "integer"
 }
@@ -89170,6 +90621,20 @@ false
 "pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
 "type": "string"
 },
+"reservationMode": {
+"description": "[Output only] Indicates the reservation mode of the reservation.",
+"enum": [
+"CALENDAR",
+"DEFAULT",
+"RESERVATION_MODE_UNSPECIFIED"
+],
+"enumDescriptions": [
+"The delivered reservations terminate at specified endtime along with terminating VMs running on it. The price for this reservation is different from on-demand. Currently offered for A3+ GPUs and TPUs only.",
+"The delivered reservations do not terminate VMs at the end of reservations. On-demand pricing and available for all VM families. This is default mode.",
+""
+],
+"type": "string"
+},
 "reservationSharingPolicy": {
 "$ref": "AllocationReservationSharingPolicy",
 "description": "Specify the reservation sharing policy. If unspecified, the reservation will not be shared with Google Cloud managed services."
@@ -91040,6 +92505,10 @@ false
 },
 "type": "array"
 },
+"effectiveInstanceMetadata": {
+"$ref": "ResourceStatusEffectiveInstanceMetadata",
+"description": "[Output Only] Effective metadata is a field that consolidates project, zonal instance settings, and instance-level predefined metadata keys to provide the overridden value for those metadata keys at the instance level."
+},
 "lastInstanceTerminationDetails": {
 "$ref": "ResourceStatusLastInstanceTerminationDetails",
 "description": "[Output Only] Contains last termination details why the instance was terminated."
@@ -91131,6 +92600,21 @@ false
 "type": "string"
 },
 "version": {
+"type": "string"
+}
+},
+"type": "object"
+},
+"ResourceStatusEffectiveInstanceMetadata": {
+"description": "Effective values of predefined metadata keys for an instance.",
+"id": "ResourceStatusEffectiveInstanceMetadata",
+"properties": {
+"enableOsloginMetadataValue": {
+"description": "Effective enable-oslogin value at Instance level.",
+"type": "boolean"
+},
+"vmDnsSettingMetadataValue": {
+"description": "Effective VM DNS setting at Instance level.",
 "type": "string"
 }
 },
@@ -103009,7 +104493,7 @@ false
 "type": "string"
 },
 "serverTlsPolicy": {
-"description": "Optional. A URL referring to a networksecurity.ServerTlsPolicy resource that describes how the proxy should authenticate inbound traffic. serverTlsPolicy only applies to a global TargetHttpsProxy attached to globalForwardingRules with the loadBalancingScheme set to INTERNAL_SELF_MANAGED or EXTERNAL or EXTERNAL_MANAGED. For details which ServerTlsPolicy resources are accepted with INTERNAL_SELF_MANAGED and which with EXTERNAL, EXTERNAL_MANAGED loadBalancingScheme consult ServerTlsPolicy documentation. If left blank, communications are not encrypted.",
+"description": "Optional. A URL referring to a networksecurity.ServerTlsPolicy resource that describes how the proxy should authenticate inbound traffic. serverTlsPolicy only applies to a global TargetHttpsProxy attached to globalForwardingRules with the loadBalancingScheme set to INTERNAL_SELF_MANAGED or EXTERNAL or EXTERNAL_MANAGED or INTERNAL_MANAGED. It also applies to a regional TargetHttpsProxy attached to regional forwardingRules with the loadBalancingScheme set to EXTERNAL_MANAGED or INTERNAL_MANAGED. For details which ServerTlsPolicy resources are accepted with INTERNAL_SELF_MANAGED and which with EXTERNAL, INTERNAL_MANAGED, EXTERNAL_MANAGED loadBalancingScheme consult ServerTlsPolicy documentation. If left blank, communications are not encrypted.",
 "type": "string"
 },
 "sslCertificates": {
