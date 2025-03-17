@@ -6,7 +6,7 @@ from firebase_admin import credentials
 from firebase_admin import messaging
 
 Collection_Id='gate_app_collection_id'
-cred = credentials.Certificate("gate-access-dev-firebase-adminsdk-jk7hy-ebbdd45791.json")
+cred = credentials.Certificate("/opt/python/gate-access-dev-firebase-adminsdk-jk7hy-ebbdd45791.json")
 firebase_admin.initialize_app(cred)
 
 def _error_response(status_code, message):
