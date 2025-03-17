@@ -2,6 +2,7 @@ import bcrypt
 import jwt
 import os
 import json
+from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 from utils import _error_response, _success_response, process_db_results, log
 from middleware import verify_token
@@ -17,7 +18,7 @@ def register_user(conn, body):
 
     hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("SELECT id FROM users WHERE email = %s", (email,))
         if cur.fetchone():
             return _error_response(409, "User already exists.")
@@ -31,7 +32,9 @@ def register_user(conn, body):
                 RETURNING id
             """, (email, hashed_password))  # Ensure this is a tuple
 
-            user_id = cur.fetchone()[0]
+            user_id = cur.fetchone()["id"]
+
+            print(f"DEBUG: email={email} (type: {type(email)}), password={hashed_password} (type: {type(hashed_password)})")
 
             log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
             conn.commit()
