@@ -31,13 +31,13 @@ def register_user(conn, body):
             VALUES (%s, %s)
             RETURNING id
         """
-        values = (str(email), str(hashed_password),)
+        values = [str(email), str(hashed_password)]
 
         print(f"DEBUG: SQL Query: {query}")
         print(f"DEBUG: SQL Values: {values} (type: {type(values)})")
 
         cur.execute(query, values)
-        
+
         user_id = cur.fetchone()["id"]
 
         print(f"DEBUG: {(email, hashed_password,)}")
