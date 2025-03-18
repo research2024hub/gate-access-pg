@@ -26,11 +26,7 @@ def register_user(conn, body):
         if cur.fetchone():
             return _error_response(409, "User already exists.")
 
-        cur.execute("""
-            INSERT INTO users (email, password)
-            VALUES (%s, %s)
-            RETURNING id
-        """, (email, hashed_password,))
+        cur.execute("INSERT INTO users (email, password) VALUES (%s, %s) RETURNING id", (email, hashed_password,))
         user_id = cur.fetchone()["id"]
 
         print(f"DEBUG: {(email, hashed_password,)}")
