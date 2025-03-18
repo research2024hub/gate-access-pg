@@ -33,7 +33,7 @@ def register_user(conn, body):
         """, (email, hashed_password))
         user_id = cur.fetchone()["id"]
 
-        log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
+        s
         
         conn.commit()
 
@@ -86,7 +86,7 @@ def login_user(conn, body):
             WHERE ah.user_id = %s
         """, (user_id,))
 
-        log(conn, "USER_LOGIN", f"User '{user_id}' [{email}] registered", user_id, None, None)
+        log(conn, "USER_LOGIN", f"User '{user_id}' [{email}] logged in", user_id, None, None)
 
         accounts = cur.fetchall()
 
