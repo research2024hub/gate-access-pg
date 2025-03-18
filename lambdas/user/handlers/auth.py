@@ -29,7 +29,7 @@ def register_user(conn, body):
         cur.execute("INSERT INTO users (email, password) VALUES (%s, %s) RETURNING id", (email, hashed_password,))
         user_id = cur.fetchone()["id"]
 
-        print(f"DEBUG: {(email, hashed_password,)}")
+        print(f"DEBUG 2: {(email, hashed_password,)}")
 
         log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
         
