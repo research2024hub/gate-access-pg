@@ -31,11 +31,8 @@ def register_user(conn, body):
             VALUES ('eacquahh@gmail.com', '123456904')
             RETURNING id
         """
-        values = (str(email), str(hashed_password),)
-
+        
         print(f"DEBUG: SQL Query: {query}")
-        # print(f"DEBUG: SQL Values: {values} (type: {type(values)})")
-
         cur.execute(query)
         
         user_id = cur.fetchone()["id"]
