@@ -37,7 +37,7 @@ def register_user(conn, body):
         
         conn.commit()
 
-    return _success_response(201, {"message": "User registered successfully.", "user_id": "user_id"})
+    return _success_response(201, {"message": "User registered successfully.", "user_id": user_id})
 
 
 def login_user(conn, body):
