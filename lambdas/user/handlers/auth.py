@@ -87,7 +87,10 @@ def login_user(conn, body):
         """, (user_id,))
 
         accounts = cur.fetchall()
+
         log(conn, "USER_LOGIN", f"User '{user_id}' [{email}] logged in", user_id, None, None)
+        
+        conn.commit()
 
     return _success_response(200, {"message": "Login successful.", "token": token, "accounts": process_db_results(accounts)})
 
