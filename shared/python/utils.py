@@ -95,7 +95,7 @@ def log(conn, type, message, actor_user_id=None, target_account_holder_id=None, 
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO logs (estate_id, actor_user_id, target_account_holder_id, type, message)
-            VALUES (%s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING id, estate_id, actor_user_id, target_account_holder_id, type, message, date_created
         """, (estate_id, actor_user_id, target_account_holder_id, type, message))
 
