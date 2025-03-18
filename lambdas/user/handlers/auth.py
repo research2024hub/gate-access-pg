@@ -26,10 +26,21 @@ def register_user(conn, body):
         if cur.fetchone():
             return _error_response(409, "User already exists.")
 
-        cur.execute("INSERT INTO users (email, password) VALUES (%s, %s) RETURNING id", (email, hashed_password,))
+        query = """
+            INSERT INTO users (email, password)
+            VALUES (%s, %s)
+            RETURNING id
+        """
+        values = (str(email), str(hashed_password),)
+
+        print(f"DEBUG: SQL Query: {query}")
+        print(f"DEBUG: SQL Values: {values} (type: {type(values)})")
+
+        cur.execute(query, values)
+        
         user_id = cur.fetchone()["id"]
 
-        print(f"DEBUG 2: {(email, hashed_password,)}")
+        print(f"DEBUG: {(email, hashed_password,)}")
 
         log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
         
