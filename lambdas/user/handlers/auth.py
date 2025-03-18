@@ -33,6 +33,8 @@ def register_user(conn, body):
         """, (email, hashed_password,))
         user_id = cur.fetchone()["id"]
 
+        print(f"DEBUG: {(email, hashed_password,)}")
+
         log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
         
         conn.commit()
