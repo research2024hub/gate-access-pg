@@ -14,7 +14,7 @@ Globals:
   Function:
     Timeout: 30
     Layers:
-      - arn:aws:lambda:eu-west-1:770693421928:layer:Klayers-p39-psycopg2-binary:1  # ✅ Add psycopg2 Layer globally
+      - arn:aws:lambda:${AWS::Region}:770693421928:layer:Klayers-p39-psycopg2-binary:1  # ✅ Add psycopg2 Layer globally
       - !Ref MiddlewareLayer  # ✅ Your middleware layer remains
 
 Resources:
