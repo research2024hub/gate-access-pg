@@ -6,12 +6,13 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 from utils import _error_response, _success_response, process_db_results, log
 from middleware import verify_token
-from psycopg2 import sql
-
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")  # Replace with a secure key in production
 
 def register_user(conn, body):
+    """
+    Registers a new user with hashed password.
+    """
     email = body.get("email")
     password = body.get("password")
 
@@ -25,32 +26,18 @@ def register_user(conn, body):
         if cur.fetchone():
             return _error_response(409, "User already exists.")
 
-        print(f"DEBUG: Attempting to insert user with email: {email}")  # 🔍 Debug print
+        cur.execute("""
+            INSERT INTO users (email, password)
+            VALUES (%s, %s)
+            RETURNING id
+        """, (email, hashed_password,))
+        user_id = cur.fetchone()["id"]
 
-        try:
-            query = sql.SQL("""
-                INSERT INTO users (email, password)
-                VALUES ({email}, {password})
-                RETURNING id
-            """).format(
-                email=sql.Literal(email),
-                password=sql.Literal(hashed_password)
-            )
+        log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
+        
+        conn.commit()
 
-            print(f"DEBUG: SQL Query: {query.as_string(conn)}")  # Print the exact SQL query for debugging
-
-            cur.execute(query)
-
-
-            user_id = cur.fetchone()["id"]
-
-            log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
-            conn.commit()
-            return _success_response(201, {"message": "User registered successfully.", "user_id": user_id})
-
-        except Exception as e:
-            print(f"ERROR: Failed to insert user: {e}") 
-            return _error_response(500, str(e))
+    return _success_response(201, {"message": "User registered successfully.", "user_id": user_id})
 
 
 def login_user(conn, body):
