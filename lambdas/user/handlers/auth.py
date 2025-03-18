@@ -21,23 +21,23 @@ def register_user(conn, body):
 
     hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor() as cur:
         cur.execute("SELECT id FROM users WHERE email = %s", (email,))
         if cur.fetchone():
             return _error_response(409, "User already exists.")
 
-        # cur.execute("""
-        #     INSERT INTO users (email, password)
-        #     VALUES (%s, %s)
-        #     RETURNING id
-        # """, (email, hashed_password))
-        # user_id = cur.fetchone()["id"]
+        cur.execute("""
+            INSERT INTO users (email, password)
+            VALUES (%s, %s)
+            RETURNING id
+        """, (email, hashed_password))
+        user_id = cur.fetchone()[0]
 
         # log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
         
-        # conn.commit()
+        conn.commit()
 
-    return _success_response(201, {"message": "User registered successfully.", "user_id": "user_id"})
+    return _success_response(201, {"message": "User registered successfully.", "user_id": user_id})
 
 
 def login_user(conn, body):
