@@ -7,8 +7,7 @@ from datetime import datetime, timedelta
 from utils import _error_response, _success_response, process_db_results, log
 from middleware import verify_token
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")  # Replace with a secure key in production
-
+JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key") 
 def register_user(conn, body):
     """
     Registers a new user with hashed password.

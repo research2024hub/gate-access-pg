@@ -133,7 +133,7 @@ def delete_access_group(conn, body, event):
         if not result:
             return _error_response(404, "Access Group not found.")
         
-        log(conn, "ACCESS_GROUP_UPDATE", f"Access group {access_group_id} [{result[0]}] updated", user_id, None, result[1])
+        log(conn, "ACCESS_GROUP_DELETION", f"Access group {access_group_id} [{result[0]}] deleted", user_id, None, result[1])
 
         conn.commit()
 

@@ -426,6 +426,11 @@ Resources:
           Properties:
             Path: /gate_access_group_link/create
             Method: POST
+        UpdateAccessGroupLinkApi:
+          Type: Api
+          Properties:
+            Path: /gate_access_group_link/update
+            Method: POST
         RemoveAccessGroupLinkApi:
           Type: Api
           Properties:

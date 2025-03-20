@@ -2,7 +2,7 @@ import json
 import psycopg2
 from handlers.gate_access_group_link import (
     create_access_group_link, remove_access_group_link,
-    list_gate_access_groups, list_access_group_gates
+    list_gate_access_groups, list_access_group_gates, update_access_group_link
 )
 import os
 from utils import _error_response
@@ -24,6 +24,8 @@ def lambda_handler(event, context):
         if http_method == "POST":
             if path == "/gate_access_group_link/create":
                 return create_access_group_link(conn, body, event)
+            elif path == "/gate_access_group_link/update":
+                return update_access_group_link(conn, body, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
         elif http_method == "DELETE":

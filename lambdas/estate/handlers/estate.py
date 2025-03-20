@@ -79,6 +79,7 @@ def update_estate(conn, body, event):
             return _error_response(404, "Estate not found.")
         
         log(conn, "ESTATE_UPDATE", f"Estate '{estate_id}' [{name}] updated", user_id, None, estate_id)
+        
         conn.commit()
 
     return _success_response(200, {"message": "Estate updated successfully.", "estate_id": estate_id})

@@ -59,7 +59,7 @@ def signup(conn, body):
                 return _error_response(500, "Failed to create account holder.")
             account_holder_id = account_holder_row["id"]
 
-            log(conn, "ACCOUNT_CREATION", "Resident account created", user_id, account_holder_id, estate_id,)
+            log(conn, "REGULAR_ACCOUNT_CREATION", "Resident account created", user_id, account_holder_id, estate_id,)
 
             conn.commit()
 
@@ -141,7 +141,7 @@ def signupAdmin(conn, body):
                 return _error_response(500, "Failed to create account holder.")
             account_holder_id = account_holder_row["id"]
 
-            log(conn, "ACCOUNT_CREATION", "Admin account created", user_id, account_holder_id, estate_id)
+            log(conn, "ADMIN_ACCOUNT_CREATION", "Admin account created", user_id, account_holder_id, estate_id)
 
             conn.commit()
 

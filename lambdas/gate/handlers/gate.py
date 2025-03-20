@@ -13,38 +13,48 @@ def create_gate(conn, body, event):
 
     name = body.get("name")
     estate_id = body.get("estate_id")
+    opening_time = body.get("opening_time")  # Optional
+    closing_time = body.get("closing_time")  # Optional
 
-    if not name:
-        return _error_response(400, "Missing 'name'.")
+    if not name or not estate_id:
+        return _error_response(400, "Missing 'name' or 'estate_id'.")
 
     with conn.cursor() as cur:
+        # Check user privileges
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = %s AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
-                    ) AS exists_flag
-                    """, (user_id, estate_id))
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.user_id = %s 
+                AND pi.estate_id = %s 
+                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
+            ) AS exists_flag
+        """, (user_id, estate_id))
         
         has_privileges = cur.fetchone()[0]
         if not (has_privileges or is_admin):
             return _error_response(403, "You do not have privileges to manage gates in this estate")
-        
+
+        # Insert gate with optional opening_time and closing_time
         cur.execute("""
-            INSERT INTO gates (name, estate_id)
-            VALUES (%s, %s)
+            INSERT INTO gates (name, estate_id, opening_time, closing_time)
+            VALUES (%s, %s, COALESCE(%s, DEFAULT), COALESCE(%s, DEFAULT))
             RETURNING id
-        """, (name, estate_id))
+        """, (name, estate_id, opening_time, closing_time))
+
         gate_id = cur.fetchone()[0]
-        
-        log(conn, "GATE_CREATION", f"Gate '{gate_id}' [{name}] created", user_id, None, estate_id)
+
+        log(conn, "GATE_CREATION", 
+            f"Gate '{gate_id}' [{name}] created with opening_time={opening_time} and closing_time={closing_time}", 
+            user_id, None, estate_id)
 
         conn.commit()
 
     return _success_response(201, {"message": "Gate created successfully.", "gate_id": gate_id})
+
 
 def update_gate(conn, body, event):
     payload, error = verify_token(event)
@@ -55,43 +65,53 @@ def update_gate(conn, body, event):
     is_admin = payload.get("is_admin", False)
 
     gate_id = body.get("id")
-    name = body.get("name")
+    name = body.get("name")  # Optional
+    opening_time = body.get("opening_time")  # Optional
+    closing_time = body.get("closing_time")  # Optional
 
-    if not gate_id or not name:
-        return _error_response(400, "Missing 'id' or 'name'.")
+    if not gate_id:
+        return _error_response(400, "Missing 'id'.")
 
     with conn.cursor() as cur:
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
-                    ) AS exists_flag
-                    """, (user_id, gate_id))
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.user_id = %s 
+                AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) 
+                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
+            ) AS exists_flag
+        """, (user_id, gate_id))
         
         has_privileges = cur.fetchone()[0]
         if not (has_privileges or is_admin):
             return _error_response(403, "You do not have privileges to manage gates")
-        
+
         cur.execute("""
             UPDATE gates
-            SET name = %s
+            SET 
+                name = COALESCE(%s, name),
+                opening_time = COALESCE(%s, opening_time),
+                closing_time = COALESCE(%s, closing_time)
             WHERE id = %s
-            RETURNING estate_id
-        """, (name, gate_id))
+            RETURNING estate_id, name
+        """, (name, opening_time, closing_time, gate_id))
 
         result = cur.fetchone()
         if not result:
             return _error_response(404, "Gate not found.")
-        
-        log(conn, "GATE_UPDATE", f"Gate '{gate_id}' [{name}] updated", user_id, None, result[0])
+
+        log(conn, "GATE_UPDATE", 
+            f"Gate '{gate_id}' updated: name={name}, opening_time={opening_time}, closing_time={closing_time}", 
+            user_id, None, result[0])
 
         conn.commit()
 
     return _success_response(200, {"message": "Gate updated successfully.", "gate_id": gate_id})
+
 
 def delete_gate(conn, body, event):
     payload, error = verify_token(event)
@@ -163,7 +183,7 @@ def update_gate_controller_heartbeat(conn, event):
         if not row:
             return _error_response(404, "Gate not found.")
         
-        log(conn, "GATE_CONTROLLER_HEARTBEAT", f"Gate '{gate_id}' [{row[0]}] is alive", None, None, row[1])
+        log(conn, "GATE_CONTROLLER_HEARTBEAT", f"Controller at gate '{gate_id}' [{row[0]}] is alive", None, None, row[1])
         
         conn.commit()
 

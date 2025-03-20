@@ -30,7 +30,7 @@ def register_guest_for_event(conn, body, event):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # 1) Confirm the event exists and retrieve start/end times
         cur.execute("""
-            SELECT start_time, end_time
+            SELECT start_time, end_time, name
             FROM events
             WHERE id = %s
         """, (event_id,))
@@ -149,7 +149,7 @@ def register_guest_for_event(conn, body, event):
         """, (event_id, guest_id))
         register_id = cur.fetchone()["id"]
 
-        log(conn, "EVENT_REGISTER_ENTRY_CREATED", f"Guest {name} registered for event '{event_id}'", user_id, account_holder_id, estate_id)
+        log(conn, "EVENT_REGISTER_ENTRY_CREATED", f"Guest {name} registered for event '{event_id}' [{event_data["name"]}]", user_id, account_holder_id, estate_id)
         # 8) Commit the transaction
         conn.commit()
 
