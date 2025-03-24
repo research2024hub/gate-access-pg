@@ -112,7 +112,6 @@ def update_gate(conn, body, event):
 
     return _success_response(200, {"message": "Gate updated successfully.", "gate_id": gate_id})
 
-
 def delete_gate(conn, body, event):
     payload, error = verify_token(event)
     if error:

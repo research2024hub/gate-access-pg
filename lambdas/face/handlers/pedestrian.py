@@ -8,7 +8,7 @@ import traceback
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import messaging
-from utils import _error_response, _success_response, process_db_results, log
+from utils import _error_response, _success_response, process_db_results, log, notify_user
 from middleware import verify_token
 from psycopg2.extras import RealDictCursor
 import random
@@ -131,8 +131,8 @@ def match_guest_face(conn, body, event):
             (face_id_to_delete,)
             )
 
-            updated_row = cur.fetchone()
-            if not updated_row:
+            updated_guest = cur.fetchone()
+            if not updated_guest:
                 return _error_response(400, "Guest does not exist or could not be updated.")
         
             cur.execute("""
@@ -151,9 +151,19 @@ def match_guest_face(conn, body, event):
                 WHERE g.id = %s
             """, (gate_id,))
 
-            result = cur.fetchone()
+            gate_data = cur.fetchone()
+
+            cur.execute("""
+                SELECT ah.user_id, g.name FROM guests g
+                JOIN account_holders ah ON ah.id = g.creator_id
+                WHERE g.id = %s
+            """, (updated_guest["id"],))
+
+            g = cur.fetchone()
+
+            notify_user(g["user_id"], "Guest Arrival", f"{g["name"]} has exited")
             
-            log(conn, "FACE_MATCH", f"Face matched. Guest exited at gate '{gate_id}' [{result["name"]}]", None, None, result["estate_id"])
+            log(conn, "FACE_MATCH", f"Face matched. Guest exited at gate '{gate_id}' [{gate_data["name"]}]", None, None, gate_data["estate_id"])
             
             conn.commit()
 
@@ -216,8 +226,8 @@ def save_guest_face(conn, body, event):
             (face_id,)
             )
 
-            updated_row = cur.fetchone()
-            if not updated_row:
+            updated_guest = cur.fetchone()
+            if not updated_guest:
                 return _error_response(400, "Guest does not exist or could not be updated.")   
 
             cur.execute("""
@@ -225,10 +235,20 @@ def save_guest_face(conn, body, event):
                 WHERE g.id = %s
             """, (gate_id,))
 
-            result = cur.fetchone()
+            gate_data = cur.fetchone()
             
-            log(conn, "FACE_SAVED", f"Face saved. Guest entered at gate '{gate_id}' [{result["name"]}]", None, None, result["estate_id"])      
-            
+            cur.execute("""
+                SELECT ah.user_id FROM guests g
+                JOIN account_holders ah ON ah.id = g.creator_id
+                WHERE g.id = %s
+            """, (guest_id,))
+
+            g = cur.fetchone()
+
+            notify_user(g["user_id"], "Guest Arrival", f"{g["name"]} has arrived")
+
+            log(conn, "FACE_SAVED", f"Face saved. Guest entered at gate '{gate_id}' [{gate_data["name"]}]", None, None, gate_data["estate_id"])      
+
             conn.commit()
 
     return _success_response(201, {"message": "Face saved successfully."})

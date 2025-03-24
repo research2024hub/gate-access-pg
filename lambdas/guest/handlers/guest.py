@@ -610,7 +610,6 @@ def delete_guest(conn, body, event):
 
     return _success_response(200, {"message": "Guest and personal info deleted successfully."})
 
-
 def get_guest_details(conn, event):
     """
     Retrieves details of a specific guest, including their personal info.

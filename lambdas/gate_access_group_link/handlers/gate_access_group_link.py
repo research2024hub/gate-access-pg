@@ -81,7 +81,6 @@ def create_access_group_link(conn, body, event):
     return _success_response(201, {"message": "Access group linked successfully."})
 
 
-
 def update_access_group_link(conn, body, event):
     """
     Updates an access group link to a gate, allowing changes to opening_time and closing_time.
