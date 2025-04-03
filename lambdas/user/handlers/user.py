@@ -37,10 +37,8 @@ def change_user_type(conn, body, event):
 
     return _success_response(200, {"message": "User type changed successfully."})
 
+
 def deactivate_user(conn, body, event):
-    """
-    Deactivates a user account. Requires authentication.
-    """
     payload, error = verify_token(event)
     if error:
         return error
@@ -49,24 +47,33 @@ def deactivate_user(conn, body, event):
     is_admin = payload.get("is_admin", False)
 
     body_user_id = body.get("user_id")
+    target_user_id = body_user_id if is_admin else user_id
 
     if is_admin and not body_user_id:
         return _error_response(400, "'user_id' field missing.")
 
-    with conn.cursor() as cur:
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE users SET is_active = false, date_updated = CURRENT_TIMESTAMP
+                WHERE id = %s RETURNING id, is_active
+            """, (target_user_id,))
+            
+            result = cur.fetchone()
+            print("Update result:", result)
 
-        cur.execute("""
-            UPDATE users SET is_active = false, date_updated = CURRENT_TIMESTAMP
-            WHERE id = %s RETURNING id
-        """, (body_user_id if is_admin else user_id,))
-        if not cur.fetchone():
-            return _error_response(404, "User not found or already deactivated.")
-        
-        log(conn, "USER_DEACTIVATED", f"User '{user_id}' deactivated", user_id, None, None)
+            if not result:
+                return _error_response(404, "User not found or already deactivated.")
+            
+            log(conn, "USER_DEACTIVATED", f"User '{user_id}' deactivated", user_id, None, None)
 
         conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return _error_response(500, f"Internal server error: {str(e)}")
 
     return _success_response(200, {"message": "User deactivated successfully."})
+
 
 def activate_user(conn, body, event):
     """

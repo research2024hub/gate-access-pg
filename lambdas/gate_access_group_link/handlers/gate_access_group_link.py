@@ -301,3 +301,4 @@ def list_access_group_gates(conn, event):
         gates = cur.fetchall()
 
     return _success_response(200, {"gates": process_db_results(gates)})
+

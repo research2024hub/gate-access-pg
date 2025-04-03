@@ -8,6 +8,7 @@ from utils import _error_response, _success_response, process_db_results, log
 from middleware import verify_token
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key") 
+
 def register_user(conn, body):
     """
     Registers a new user with hashed password.
@@ -38,7 +39,6 @@ def register_user(conn, body):
 
     return _success_response(201, {"message": "User registered successfully.", "user_id": user_id})
 
-
 def login_user(conn, body):
     """
     Logs in a user and returns a JWT token.
@@ -49,49 +49,64 @@ def login_user(conn, body):
     if not email or not password:
         return _error_response(400, "Missing 'email' or 'password'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id, password, is_active, is_admin FROM users WHERE email = %s", (email,))
-        user = cur.fetchone()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id, password, is_active, is_admin FROM users WHERE email = %s", (email,))
+            user = cur.fetchone()
 
-        if not user:
-            return _error_response(401, "Invalid email or password.")
+            if not user:
+                print("[DEBUG] No user found for email:", email)
+                return _error_response(401, "Invalid email or password.")
 
-        user_id = user["id"]
-        stored_password = user["password"]
-        is_active = user["is_active"]
-        is_admin = user["is_admin"]
+            user_id = user["id"]
+            stored_password = user["password"]
+            is_active = user["is_active"]
+            is_admin = user["is_admin"]
 
-        if not bcrypt.checkpw(password.encode("utf-8"), stored_password.encode("utf-8")):
-            return _error_response(401, "Invalid email or password.")
+            print(f"[DEBUG] User found: ID={user_id}, is_active={is_active}, is_admin={is_admin}")
 
-        if not is_active:
-            return _error_response(403, "User account is deactivated.")
+            if not bcrypt.checkpw(password.encode("utf-8"), stored_password.encode("utf-8")):
+                print("[DEBUG] Password mismatch for user ID:", user_id)
+                return _error_response(401, "Invalid email or password.")
 
-        token_payload = {
-            "user_id": user_id,
-            "is_admin": is_admin,
-            "exp": datetime.utcnow() + timedelta(hours=24*365),  # Token expires in 2 hours
-        }
-        token = jwt.encode(token_payload, JWT_SECRET, algorithm="HS256")
+            if not is_active:
+                print("[DEBUG] Attempted login by deactivated user ID:", user_id)
+                return _error_response(403, "User account is deactivated.")
 
-        cur.execute("""
-            SELECT ah.id AS account_holder_id, pi.id AS personal_info_id, ah.user_id, pi.estate_id, pi.name, pi.expiry, pi.contact, es.name AS estate_name, at.name AS account_type_name, ag.name AS access_group_name,
-                   ah.house_address, pi.account_type_id, ah.is_active
-            FROM account_holders ah
-            JOIN personal_info pi ON ah.personal_info_id = pi.id
-            JOIN estates es ON pi.estate_id = es.id
-            JOIN account_types at ON pi.account_type_id = at.id
-            JOIN access_groups ag ON pi.access_group_id = ag.id
-            WHERE ah.user_id = %s
-        """, (user_id,))
+            token_payload = {
+                "user_id": user_id,
+                "is_admin": is_admin,
+                "exp": datetime.utcnow() + timedelta(hours=24 * 365),  # 1 year token
+            }
+            token = jwt.encode(token_payload, JWT_SECRET, algorithm="HS256")
 
-        accounts = cur.fetchall()
+            cur.execute("""
+                SELECT ah.id AS account_holder_id, pi.id AS personal_info_id, ah.user_id, pi.estate_id, pi.name, pi.expiry, pi.contact, es.name AS estate_name, at.name AS account_type_name, ag.name AS access_group_name,
+                       ah.house_address, pi.account_type_id, ah.is_active
+                FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN estates es ON pi.estate_id = es.id
+                JOIN account_types at ON pi.account_type_id = at.id
+                JOIN access_groups ag ON pi.access_group_id = ag.id
+                WHERE ah.user_id = %s
+            """, (user_id,))
 
-        log(conn, "USER_LOGIN", f"User '{user_id}' [{email}] logged in", user_id, None, None)
-        
+            accounts = cur.fetchall()
+
+            log(conn, "USER_LOGIN", f"User '{user_id}' [{email}] logged in", user_id, None, None)
+
         conn.commit()
+        print("[DEBUG] Login successful, token generated, accounts fetched.")
+        return _success_response(200, {
+            "message": "Login successful.",
+            "token": token,
+            "accounts": process_db_results(accounts)
+        })
 
-    return _success_response(200, {"message": "Login successful.", "token": token, "accounts": process_db_results(accounts)})
+    except Exception as e:
+        print("[ERROR] Exception during login:", str(e))
+        conn.rollback()
+        return _error_response(500, "Internal server error during login.")
 
 
 def change_password(conn, body, event):
