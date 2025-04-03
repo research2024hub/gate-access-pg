@@ -42,15 +42,21 @@ def register_user(conn, body):
 def login_user(conn, body):
     """
     Logs in a user and returns a JWT token.
+    Debug prints included for all internal values and flow.
     """
+    print("\n---[DEBUG] Starting login_user ---")
     email = body.get("email")
     password = body.get("password")
 
+    print("[DEBUG] Received login request. Email:", email)
+
     if not email or not password:
+        print("[DEBUG] Missing email or password in request body")
         return _error_response(400, "Missing 'email' or 'password'.")
 
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            print("[DEBUG] Querying user by email...")
             cur.execute("SELECT id, password, is_active, is_admin FROM users WHERE email = %s", (email,))
             user = cur.fetchone()
 
@@ -73,13 +79,16 @@ def login_user(conn, body):
                 print("[DEBUG] Attempted login by deactivated user ID:", user_id)
                 return _error_response(403, "User account is deactivated.")
 
+            print("[DEBUG] Password validated. Creating token...")
             token_payload = {
                 "user_id": user_id,
                 "is_admin": is_admin,
                 "exp": datetime.utcnow() + timedelta(hours=24 * 365),  # 1 year token
             }
             token = jwt.encode(token_payload, JWT_SECRET, algorithm="HS256")
+            print("[DEBUG] Token generated.")
 
+            print("[DEBUG] Fetching account data for user...")
             cur.execute("""
                 SELECT ah.id AS account_holder_id, pi.id AS personal_info_id, ah.user_id, pi.estate_id, pi.name, pi.expiry, pi.contact, es.name AS estate_name, at.name AS account_type_name, ag.name AS access_group_name,
                        ah.house_address, pi.account_type_id, ah.is_active
@@ -92,11 +101,14 @@ def login_user(conn, body):
             """, (user_id,))
 
             accounts = cur.fetchall()
+            print(f"[DEBUG] Retrieved {len(accounts)} account(s).")
 
+            print("[DEBUG] Logging user login...")
             log(conn, "USER_LOGIN", f"User '{user_id}' [{email}] logged in", user_id, None, None)
 
         conn.commit()
-        print("[DEBUG] Login successful, token generated, accounts fetched.")
+        print("[DEBUG] Login flow completed successfully. Returning response.")
+
         return _success_response(200, {
             "message": "Login successful.",
             "token": token,
@@ -104,8 +116,8 @@ def login_user(conn, body):
         })
 
     except Exception as e:
-        print("[ERROR] Exception during login:", str(e))
         conn.rollback()
+        print("[ERROR] Exception during login:", str(e))
         return _error_response(500, "Internal server error during login.")
 
 

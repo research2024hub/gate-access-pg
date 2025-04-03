@@ -39,39 +39,62 @@ def change_user_type(conn, body, event):
 
 
 def deactivate_user(conn, body, event):
+    """
+    Deactivates a user account. Requires authentication.
+    Prints all internal values for debugging.
+    """
+    print("\n---[DEBUG] Starting deactivate_user ---")
+
+    # Step 1: Verify Token
     payload, error = verify_token(event)
     if error:
+        print("[DEBUG] Token verification failed:", error)
         return error
 
     user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False)
 
+    # Step 2: Get user_id from body if admin
     body_user_id = body.get("user_id")
     target_user_id = body_user_id if is_admin else user_id
 
+    print("[DEBUG] user_id (from token):", user_id)
+    print("[DEBUG] is_admin:", is_admin)
+    print("[DEBUG] body_user_id:", body_user_id)
+    print("[DEBUG] target_user_id (to deactivate):", target_user_id)
+
     if is_admin and not body_user_id:
+        print("[DEBUG] Admin request missing 'user_id' in body")
         return _error_response(400, "'user_id' field missing.")
 
+    # Step 3: Try DB update
     try:
         with conn.cursor() as cur:
+            print("[DEBUG] Executing update query...")
             cur.execute("""
                 UPDATE users SET is_active = false, date_updated = CURRENT_TIMESTAMP
                 WHERE id = %s RETURNING id, is_active
             """, (target_user_id,))
-            
+
             result = cur.fetchone()
-            print("Update result:", result)
+            print("[DEBUG] Update result:", result)
 
             if not result:
+                print("[DEBUG] No user updated — may not exist or already deactivated.")
                 return _error_response(404, "User not found or already deactivated.")
-            
-            log(conn, "USER_DEACTIVATED", f"User '{user_id}' deactivated", user_id, None, None)
+
+            print("[DEBUG] Logging deactivation...")
+            log(conn, "USER_DEACTIVATED", f"User '{target_user_id}' deactivated", user_id, None, None)
 
         conn.commit()
+        print("[DEBUG] Deactivation committed successfully.")
+
     except Exception as e:
         conn.rollback()
+        print("[ERROR] Exception occurred:", str(e))
         return _error_response(500, f"Internal server error: {str(e)}")
 
+    print("[DEBUG] Returning success response.\n")
     return _success_response(200, {"message": "User deactivated successfully."})
 
 
