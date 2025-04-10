@@ -412,3 +412,72 @@ def delete_account(conn, body, event):
         conn.commit()
 
     return _success_response(200, {"message": "Account and related personal info deleted successfully."})
+
+def get_estate_accounts(conn, event):
+    """
+    Retrieves all account holders (and their personal info) for a given estate.
+    Only admins or users with MANAGE_ALL or MANAGE_ACCOUNTS privileges in that estate can access this data.
+    """
+    payload, error = verify_token(event)
+    if error:
+        return error
+    
+    user_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+
+    # Parse the estate_id from path parameters, e.g. /account/estate/{estate_id}
+    path_params = event.get("pathParameters", {})
+    estate_id = path_params.get("estate_id")
+
+    if not estate_id:
+        return _error_response(400, "Missing 'estate_id' in path parameters.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # If user is not a global admin, check if they have estate-level privileges.
+        if not is_admin:
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT 1 
+                    FROM account_holders ah
+                    JOIN personal_info pi ON ah.personal_info_id = pi.id
+                    JOIN account_types act ON pi.account_type_id = act.id
+                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                    JOIN privileges pv ON atpl.privilege_id = pv.id
+                    WHERE ah.user_id = %s
+                      AND pi.estate_id = %s
+                      AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCOUNTS')
+                ) AS has_privilege
+            """, (user_id, estate_id))
+
+            result = cur.fetchone()
+            if not result or not result["has_privilege"]:
+                return _error_response(403, "You do not have privileges to view accounts in this estate.")
+
+        # Now fetch all accounts for the given estate.
+        cur.execute("""
+            SELECT ah.id AS account_holder_id,
+                   ah.user_id,
+                   ah.house_address,
+                   ah.is_active,
+                   pi.id AS personal_info_id,
+                   pi.name AS full_name,
+                   pi.contact,
+                   pi.id_type,
+                   pi.id_num,
+                   pi.expiry,
+                   at.name AS account_type_name,
+                   ag.name AS access_group_name,
+                   pi.estate_id,
+                   es.name AS estate_name
+            FROM account_holders ah
+            JOIN personal_info pi ON ah.personal_info_id = pi.id
+            JOIN account_types at ON pi.account_type_id = at.id
+            JOIN access_groups ag ON pi.access_group_id = ag.id
+            JOIN estates es ON pi.estate_id = es.id
+            WHERE pi.estate_id = %s
+            ORDER BY ah.date_created DESC
+        """, (estate_id,))
+
+        accounts = cur.fetchall()
+
+    return _success_response(200, {"accounts": process_db_results(accounts)})

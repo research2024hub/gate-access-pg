@@ -2,7 +2,7 @@ import json
 import psycopg2
 from handlers.account import (
     signup, signupAdmin,
-    change_account_type, deactivate_account, activate_account, delete_account,
+    change_account_type, deactivate_account, activate_account, delete_account, get_estate_accounts
     # confirm_signup
 )
 
@@ -23,7 +23,12 @@ def lambda_handler(event, context):
         path = event.get("path", "")
         http_method = event.get("httpMethod", "").upper()
 
-        if http_method == "POST":
+        if http_method == "GET":
+            if path.startswith("/account/estate/"):
+                return get_estate_accounts(conn, event)
+            else:
+                return _error_response(404, f"Path '{path}' not found.")
+        elif http_method == "POST":
             if path == "/account/signup":
                 return signup(conn, body)
             elif path == "/account/admin-signup":

@@ -339,21 +339,6 @@ Resources:
           Properties:
             Path: /account/admin-signup
             Method: POST
-        # SignupConfirmApi:
-        #   Type: Api
-        #   Properties:
-        #     Path: /account/signup/confirm
-        #     Method: POST
-        # GetOwnAccountDetailsApi:
-        #   Type: Api
-        #   Properties:
-        #     Path: /account/details/me
-        #     Method: GET
-        # GetAccountDetailsApi:
-        #   Type: Api
-        #   Properties:
-        #     Path: /account/details/{id}
-        #     Method: GET
         ChangeAccountTypeApi:
           Type: Api
           Properties:
@@ -374,6 +359,11 @@ Resources:
           Properties:
             Path: /account/delete
             Method: DELETE
+        GetEstateAccountsApi:
+          Type: Api
+          Properties:
+            Path: /account/estate/{estate_id}
+            Method: GET
       Environment:  # ✅ Environment variables for database and JWT
         Variables:
           DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
