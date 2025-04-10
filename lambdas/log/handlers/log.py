@@ -41,7 +41,7 @@ def get_logs_by_estate(conn, event):
             return _error_response(403, "You do not have privileges to retrieves logs for this estate.")
             
         cur.execute("""
-            SELECT id, estate_id, account_holder_id, type, message, date_created
+            SELECT *
             FROM logs
             WHERE estate_id = %s
             ORDER BY date_created DESC
