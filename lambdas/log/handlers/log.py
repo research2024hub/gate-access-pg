@@ -111,11 +111,13 @@ def get_logs_by_account_holder(conn, event):
 
         # Fetch logs for the requested account_holder_id
         cur.execute("""
-            SELECT id, estate_id, account_holder_id, type, message, date_created
+            SELECT *
             FROM logs
-            WHERE account_holder_id = %s
+            WHERE target_account_holder_id = %s OR actor_user_id = (
+                SELECT user_id FROM account_holders WHERE id = %s
+            )
             ORDER BY date_created DESC
-        """, (account_holder_id,))
+        """, (account_holder_id, account_holder_id))
         
         logs = cur.fetchall()
 
