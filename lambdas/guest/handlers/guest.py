@@ -251,7 +251,7 @@ def send_otp(conn, body, event):
         if not updated_row:
             return _error_response(400, "Failed to update OTP for the guest.")
         
-        log(conn, "GUEST_OTP_SENT", f"OTP sent to guest '{guest_id}' [{guest_data["name"]}]", user_id, account_holder_id, estate_id)
+        log(conn, "GUEST_OTP_SENT", f"OTP sent to guest '{guest_id}' [{guest_data['name']}]", user_id, account_holder_id, estate_id)
 
         conn.commit()
 
@@ -269,7 +269,7 @@ def send_otp(conn, body, event):
         send_message(
             phone_number,
             (
-                f"Hi {guest_data["name"]},\nYour One Time Password (OTP) for your visit at {estate_name} "
+                f"Hi {guest_data['name']},\nYour One Time Password (OTP) for your visit at {estate_name} "
                 f"is {otp}, valid from {start_date_readable} to {expiry_date_readable}"
             )
         )
@@ -360,7 +360,7 @@ def verify_guest_otp(conn, body, event):
         if not updated_row:
             return _error_response(400, "Guest does not exist or could not be updated.")
         
-        log(conn, "GUEST_OTP_VERIFIED", f"OTP verified by guest '{guest_data["id"]}' [{guest_data["name"]}]", None, guest_data["creator_id"], guest_data["estate_id"])
+        log(conn, "GUEST_OTP_VERIFIED", f"OTP verified by guest '{guest_data['id']}' [{guest_data['name']}]", None, guest_data["creator_id"], guest_data["estate_id"])
 
         # Commit the changes
         conn.commit()
@@ -395,7 +395,7 @@ def guest_arrives_with_vehicle_callback(conn, body, event):
         return _error_response(400, "Missing required fields: 'license_plate_number'.")
 
     now = datetime.now()
-    print(f"License plate: {license_plate_number}\nTime of arrival: {now.strftime("%A %d %B %Y %H:%M:%S")}")
+    print(f"License plate: {license_plate_number}\nTime of arrival: {now.strftime('%A %d %B %Y %H:%M:%S')}")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Retrieve the guest info based on the provided OTP
@@ -453,7 +453,7 @@ def guest_arrives_with_vehicle_callback(conn, body, event):
         if not updated_row:
             return _error_response(400, "Guest does not exist or could not be updated.")
         
-        log(conn, "GUEST_VEHICLE_ARRIVAL", f"Guest '{guest_data["id"]}' [{guest_data["name"]}] arrived with vehicle license plate '{guest_data["license_plate_number"]}'", None, guest_data["creator_id"], guest_data["estate_id"])
+        log(conn, "GUEST_VEHICLE_ARRIVAL", f"Guest '{guest_data['id']}' [{guest_data['name']}] arrived with vehicle license plate '{guest_data['license_plate_number']}'", None, guest_data["creator_id"], guest_data["estate_id"])
         # Commit the changes
         conn.commit()
 

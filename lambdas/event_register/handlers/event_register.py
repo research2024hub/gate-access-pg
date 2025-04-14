@@ -149,7 +149,7 @@ def register_guest_for_event(conn, body, event):
         """, (event_id, guest_id))
         register_id = cur.fetchone()["id"]
 
-        log(conn, "EVENT_REGISTER_ENTRY_CREATED", f"Guest {name} registered for event '{event_id}' [{event_data["name"]}]", user_id, account_holder_id, estate_id)
+        log(conn, "EVENT_REGISTER_ENTRY_CREATED", f"Guest {name} registered for event '{event_id}' [{event_data['name']}]", user_id, account_holder_id, estate_id)
         # 8) Commit the transaction
         conn.commit()
 
@@ -291,7 +291,7 @@ def remove_guest_from_event(conn, body, event):
         
         result = cur.fetchone()
         
-        log(conn, "EVENT_REGISTER_ENTRY_REMOVED", f"Guest '{guest_id}' removed from event '{event_id}' [{result["name"]}]", user_id, result["creator_id"], result["estate_id"])
+        log(conn, "EVENT_REGISTER_ENTRY_REMOVED", f"Guest '{guest_id}' removed from event '{event_id}' [{result['name']}]", user_id, result["creator_id"], result["estate_id"])
 
         conn.commit()
 

@@ -161,9 +161,9 @@ def match_guest_face(conn, body, event):
 
             g = cur.fetchone()
 
-            notify_user(g["user_id"], "Guest Arrival", f"{g["name"]} has exited")
+            notify_user(g["user_id"], "Guest Arrival", f"{g['name']} has exited")
             
-            log(conn, "FACE_MATCH", f"Face matched. Guest exited at gate '{gate_id}' [{gate_data["name"]}]", None, None, gate_data["estate_id"])
+            log(conn, "FACE_MATCH", f"Face matched. Guest exited at gate '{gate_id}' [{gate_data['name']}]", None, None, gate_data["estate_id"])
             
             conn.commit()
 
@@ -245,9 +245,9 @@ def save_guest_face(conn, body, event):
 
             g = cur.fetchone()
 
-            notify_user(g["user_id"], "Guest Arrival", f"{g["name"]} has arrived")
+            notify_user(g["user_id"], "Guest Arrival", f"{g['name']} has arrived")
 
-            log(conn, "FACE_SAVED", f"Face saved. Guest entered at gate '{gate_id}' [{gate_data["name"]}]", None, None, gate_data["estate_id"])      
+            log(conn, "FACE_SAVED", f"Face saved. Guest entered at gate '{gate_id}' [{gate_data['name']}]", None, None, gate_data["estate_id"])      
 
             conn.commit()
 

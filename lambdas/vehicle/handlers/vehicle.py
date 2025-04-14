@@ -399,8 +399,6 @@ def list_vehicles_by_owner(conn, event):
             FROM vehicles
             WHERE personal_info_id = %s
         """, (personal_info_id,))
-
-        log(conn, "USER_REGISTERED", f"User '{user_id}' [{email}] registered", user_id, None, None)
         
         vehicles = cur.fetchall()
 
