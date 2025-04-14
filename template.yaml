@@ -457,6 +457,11 @@ Resources:
           Properties:
             Path: /guest/create
             Method: POST
+        CreateAssociateApi:
+          Type: Api
+          Properties:
+            Path: /guest/create_associate
+            Method: POST
         UpdateGuestApi:
           Type: Api
           Properties:

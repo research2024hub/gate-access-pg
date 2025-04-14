@@ -1,7 +1,7 @@
 import json
 import psycopg2
 from handlers.guest import (
-    create_guest, update_guest, delete_guest, get_guest_details, get_account_holder_guests, verify_guest_otp, send_otp
+    create_guest_regular, create_associate, update_guest, delete_guest, get_guest_details, get_account_holder_guests, verify_guest_otp, send_otp
 )
 import os
 from utils import _error_response
@@ -22,7 +22,9 @@ def lambda_handler(event, context):
 
         if http_method == "POST":
             if path == "/guest/create":
-                return create_guest(conn, body, event)
+                return create_guest_regular(conn, body, event)
+            if path == "/guest/create_associate":
+                return create_associate(conn, body, event)
             elif path == "/guest/update":
                 return update_guest(conn, body, event)
             elif path == "/guest/verify_otp":
