@@ -198,7 +198,7 @@ def delete_event(conn, body, event):
         
         result = cur.fetchone()
 
-        log(conn, "EVENT_DELETION", f"Event '{event_id}' [{result["name"]}] deleted", user_id, None, result["estate_id"])
+        log(conn, "EVENT_DELETION", f"Event '{event_id}' [{result['name']}] deleted", user_id, None, result["estate_id"])
 
         conn.commit()
 
