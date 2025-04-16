@@ -157,7 +157,7 @@ def create_associate(conn, body, event):
         "end": expiry
     }
     
-    if not all([account_holder_id, name, id_type, id_num, contact, expiry]):
+    if not all([account_holder_id, name, id_type, id_num, contact, expiry, account_type_id]):
         return _error_response(400, "Missing required fields.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
