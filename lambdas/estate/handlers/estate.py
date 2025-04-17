@@ -121,9 +121,9 @@ def get_estates(conn, event):
     if error:
         return error
     
-    is_admin = payload.get("is_admin", False)
-    if not is_admin:
-        return _error_response(403, "Access denied. Only admins can get estates.")
+    # is_admin = payload.get("is_admin", False)
+    # if not is_admin:
+    #     return _error_response(403, "Access denied. Only admins can get estates.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("SELECT id, name, location_coordinates, date_created, date_updated FROM estates")
@@ -139,9 +139,9 @@ def get_estate_by_id(conn, event):
     if error:
         return error
     
-    is_admin = payload.get("is_admin", False)
-    if not is_admin:
-        return _error_response(403, "Access denied. Only admins can get estate by id.")
+    # is_admin = payload.get("is_admin", False)
+    # if not is_admin:
+    #     return _error_response(403, "Access denied. Only admins can get estate by id.")
 
     estate_id = event.get("pathParameters", {}).get("id")
     if not estate_id:
