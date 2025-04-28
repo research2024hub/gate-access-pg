@@ -82,6 +82,14 @@ def deactivate_user(conn, body, event):
             if not result:
                 print("[DEBUG] No user updated — may not exist or already deactivated.")
                 return _error_response(404, "User not found or already deactivated.")
+            
+            print("[DEBUG] Deactivating associated account_holders...")
+            cur.execute("""
+                UPDATE account_holders
+                SET is_active = false, date_updated = CURRENT_TIMESTAMP
+                WHERE user_id = %s
+            """, (target_user_id,))
+            print("[DEBUG] Associated account_holders deactivated.")
 
             print("[DEBUG] Logging deactivation...")
             log(conn, "USER_DEACTIVATED", f"User '{target_user_id}' deactivated", user_id, None, None)
