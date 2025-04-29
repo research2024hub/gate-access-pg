@@ -2,6 +2,8 @@ import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from utils import _error_response, _success_response, process_db_results, log
+import random
+from datetime import datetime, timedelta
 from middleware import verify_token
 
 def signup(conn, body):
@@ -370,7 +372,7 @@ def delete_account(conn, body, event):
 
     account_holder_id = body.get("account_holder_id")
     if not account_holder_id:
-        return _error_response(400, "Missing 'id'.")
+        return _error_response(400, "Missing 'account_holder_id'.")
 
     with conn.cursor() as cur:
         cur.execute("""
@@ -481,3 +483,126 @@ def get_estate_accounts(conn, event):
         accounts = cur.fetchall()
 
     return _success_response(200, {"accounts": process_db_results(accounts)})
+
+
+def generate_account_otp(conn, body, event):
+    """
+    Generates a 6-digit OTP for an account holder. Only the holder, estate managers, or admins can generate.
+    """
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    user_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+
+    account_holder_id = body.get("account_holder_id")
+    if not account_holder_id:
+        return _error_response(400, "Missing 'account_holder_id'.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # 1. Verify privileges
+        cur.execute("""
+            SELECT ah.user_id, pi.estate_id
+            FROM account_holders ah
+            JOIN personal_info pi ON ah.personal_info_id = pi.id
+            WHERE ah.id = %s
+        """, (account_holder_id,))
+        
+        account_info = cur.fetchone()
+        if not account_info:
+            return _error_response(404, "Account holder not found.")
+
+        estate_id = account_info["estate_id"]
+        account_user_id = account_info["user_id"]
+
+        # Check if user is the owner
+        is_owner = (user_id == account_user_id)
+
+        # If not owner, check privileges
+        has_privileges = False
+        if not is_owner and not is_admin:
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM account_holders ah
+                    JOIN personal_info pi ON ah.personal_info_id = pi.id
+                    JOIN account_types act ON pi.account_type_id = act.id
+                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                    JOIN privileges pv ON atpl.privilege_id = pv.id
+                    WHERE ah.user_id = %s AND pi.estate_id = %s AND 
+                          (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCOUNTS')
+                ) AS has_privileges
+            """, (user_id, estate_id))
+            has_privileges = cur.fetchone()["has_privileges"]
+
+        if not (is_owner or has_privileges or is_admin):
+            return _error_response(403, "You do not have privileges to generate OTP for this account.")
+
+        # 2. Generate OTP
+        otp = str(random.randint(100000, 999999))
+        otp_expiry = datetime.utcnow() + timedelta(minutes=1)  # 1 minute expiry
+
+        # 3. Update account holder
+        cur.execute("""
+            UPDATE account_holders
+            SET otp = %s, date_updated = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (otp, account_holder_id))
+
+        log(conn, "OTP_GENERATION", f"OTP generated for account_holder {account_holder_id}", user_id, account_holder_id, estate_id)
+
+        conn.commit()
+
+    return _success_response(200, {"message": "OTP generated successfully.", "otp": otp, "expires_in": 60})
+
+
+def verify_account_otp(conn, body, event):
+    """
+    Verifies a 6-digit OTP for an account holder.
+    """
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    account_holder_id = body.get("account_holder_id")
+    otp_provided = body.get("otp")
+
+    if not account_holder_id or not otp_provided:
+        return _error_response(400, "Missing 'account_holder_id' or 'otp'.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # 1. Get current OTP
+        cur.execute("""
+            SELECT otp, date_updated
+            FROM account_holders
+            WHERE id = %s
+        """, (account_holder_id,))
+        
+        account_info = cur.fetchone()
+        if not account_info:
+            return _error_response(404, "Account holder not found.")
+
+        otp_stored = account_info["otp"]
+        date_updated = account_info["date_updated"]
+
+        # 2. Validate
+        if not otp_stored:
+            return _error_response(400, "No OTP generated for this account.")
+
+        # Check if expired
+        if (datetime.utcnow() - date_updated).total_seconds() > 60:
+            return _error_response(400, "OTP has expired.")
+
+        if otp_provided != otp_stored:
+            return _error_response(400, "Invalid OTP.")
+
+        # 3. Clear OTP after successful verification
+        cur.execute("""
+            UPDATE account_holders
+            SET otp = NULL, date_updated = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (account_holder_id,))
+
+        conn.commit()
+
+    return _success_response(200, {"message": "OTP verified successfully."})

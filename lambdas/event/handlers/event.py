@@ -149,7 +149,7 @@ def delete_event(conn, body, event):
     payload, error = verify_token(event)
     if error:
         return error
-    
+
     is_admin = payload.get("is_admin", False)
     user_id = payload.get("user_id")
 
@@ -159,6 +159,7 @@ def delete_event(conn, body, event):
         return _error_response(400, "Missing 'event_id'.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # 1. Verify privileges
         cur.execute("""
                     SELECT EXISTS (
                         SELECT 1 FROM account_holders ah
@@ -179,30 +180,36 @@ def delete_event(conn, body, event):
                         JOIN account_holders ah ON e.creator_id = ah.id
                         WHERE ah.user_id = %s AND e.id = %s) as is_owner
                     """, (user_id, event_id, user_id, event_id))
-        
+
         result = cur.fetchone()
         if not (result["has_privileges"] or result["is_owner"] or is_admin):
             return _error_response(403, "You do not have privileges to delete this event")
 
-        # Delete event
+        # 2. Fetch event info BEFORE deleting
+        cur.execute("""
+            SELECT pi.estate_id, e.name 
+            FROM events e 
+            JOIN account_holders ah ON ah.id = e.creator_id
+            JOIN personal_info pi ON pi.id = ah.personal_info_id
+            WHERE e.id = %s
+        """, (event_id,))
+
+        event_info = cur.fetchone()
+        if not event_info:
+            return _error_response(404, "Event not found.")
+
+        # 3. Now delete the event
         cur.execute("DELETE FROM events WHERE id = %s RETURNING id", (event_id,))
         if not cur.fetchone():
             return _error_response(500, "Failed to delete event.")
-        
-        cur.execute("""
-                    SELECT pi.estate_id, e.name FROM events e 
-                    JOIN account_holders ah ON ah.id = e.creator_id
-                    JOIN personal_info pi ON pi.id = ah.personal_info_id
-                    WHERE e.id = %s
-                    """, (event_id,))
-        
-        result = cur.fetchone()
 
-        log(conn, "EVENT_DELETION", f"Event '{event_id}' [{result['name']}] deleted", user_id, None, result["estate_id"])
+        # 4. Log deletion
+        log(conn, "EVENT_DELETION", f"Event '{event_id}' [{event_info['name']}] deleted", user_id, None, event_info["estate_id"])
 
         conn.commit()
 
     return _success_response(200, {"message": "Event deleted successfully."})
+
 
 def get_event_details(conn, event):
     """
