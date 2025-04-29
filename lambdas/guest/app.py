@@ -1,7 +1,8 @@
 import json
 import psycopg2
 from handlers.guest import (
-    create_guest_regular, create_associate, update_guest, delete_guest, get_guest_details, get_account_holder_guests, verify_guest_otp, send_otp
+    create_guest_regular, create_associate, update_guest, delete_guest, get_estate_guests,
+    get_guest_details, get_account_holder_guests, verify_guest_otp, send_otp
 )
 import os
 from utils import _error_response
@@ -41,6 +42,8 @@ def lambda_handler(event, context):
         elif http_method == "GET":
             if path.startswith("/guest/account_holder/") and path.count("/") == 3:
                 return get_account_holder_guests(conn, event)
+            elif path.startswith("/guest/estate/") and path.count("/") == 3:
+                return get_estate_guests(conn, event)
             elif path.startswith("/guest/") and path.count("/") == 2:
                 return get_guest_details(conn, event)
             else:

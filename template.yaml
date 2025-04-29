@@ -482,10 +482,15 @@ Resources:
           Properties:
             Path: /guest/delete
             Method: DELETE
-        ListGuestsApi:
+        ListAccountHolderGuestsApi:
           Type: Api
           Properties:
             Path: /guest/account_holder/{account_holder_id}
+            Method: GET
+        ListEstateGuestsApi:
+          Type: Api
+          Properties:
+            Path: /guest/estate/{estate_id}
             Method: GET
         GetGuestDetailsApi:
           Type: Api

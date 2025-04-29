@@ -856,3 +856,58 @@ def get_account_holder_guests(conn, event):
         guests = cur.fetchall()
 
     return _success_response(200, {"guests": process_db_results(guests)})
+
+def get_estate_guests(conn, event):
+    """
+    Lists all guests created by a specific estate.
+    """
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    user_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+
+    estate_id = event.get("pathParameters", {}).get("estate_id")
+
+    if not estate_id:
+        return _error_response(400, "Missing 'estate_id'.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM account_holders ah
+                        JOIN personal_info pi ON ah.personal_info_id = pi.id
+                        JOIN account_types act ON pi.account_type_id = act.id
+                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                        JOIN privileges pv ON atpl.privilege_id = pv.id
+                        WHERE ah.user_id = %s AND pi.estate_id = %s AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+                    ) AS has_privileges
+                    """, (user_id, estate_id))
+
+        if not (cur.fetchone()["has_privileges"] or is_admin):
+            return _error_response(403, "You do not have privileges to get estate guests.")
+
+        cur.execute("""
+            SELECT 
+                g.id AS guest_id, 
+                pi.name AS guest_name, 
+                pi.contact, 
+                pi.expiry, 
+                at.name AS account_type_name, 
+                ag.name AS access_group_name, 
+                g.other_info,
+                cpi.name AS creator_name,
+                g.creator_id
+            FROM guests g
+            JOIN personal_info pi ON g.personal_info_id = pi.id
+            JOIN account_holders ah ON ah.id = g.creator_id
+            JOIN personal_info cpi ON ah.personal_info_id = cpi.id
+            JOIN account_types at ON pi.account_type_id = at.id
+            JOIN access_groups ag ON pi.access_group_id = ag.id
+            WHERE cpi.estate_id = %s
+        """, (estate_id,))
+        guests = cur.fetchall()
+
+    return _success_response(200, {"guests": process_db_results(guests)})
+
