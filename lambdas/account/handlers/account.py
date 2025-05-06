@@ -540,14 +540,14 @@ def generate_account_otp(conn, body, event):
 
         # 2. Generate OTP
         otp = str(random.randint(100000, 999999))
-        otp_expiry = datetime.utcnow() + timedelta(minutes=1)  # 1 minute expiry
+        otp_generated_at = datetime.utcnow()  # 1 minute expiry
 
         # 3. Update account holder
         cur.execute("""
             UPDATE account_holders
-            SET otp = %s, date_updated = CURRENT_TIMESTAMP
+            SET otp = %s, otp_generated_at = %s
             WHERE id = %s
-        """, (otp, account_holder_id))
+        """, (otp, otp_generated_at, account_holder_id))
 
         log(conn, "OTP_GENERATION", f"OTP generated for account_holder {account_holder_id}", user_id, account_holder_id, estate_id)
 
@@ -573,9 +573,7 @@ def verify_account_otp(conn, body, event):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # 1. Get current OTP
         cur.execute("""
-            SELECT otp, date_updated
-            FROM account_holders
-            WHERE id = %s
+            SELECT otp, otp_generated_at FROM account_holders WHERE id = %s
         """, (account_holder_id,))
         
         account_info = cur.fetchone()
@@ -583,14 +581,14 @@ def verify_account_otp(conn, body, event):
             return _error_response(404, "Account holder not found.")
 
         otp_stored = account_info["otp"]
-        date_updated = account_info["date_updated"]
+        otp_generated_at = account_info["otp_generated_at"]
 
         # 2. Validate
         if not otp_stored:
             return _error_response(400, "No OTP generated for this account.")
 
         # Check if expired
-        if (datetime.utcnow() - date_updated).total_seconds() > 60:
+        if (datetime.utcnow() - otp_generated_at).total_seconds() > 60:
             return _error_response(400, "OTP has expired.")
 
         if otp_provided != otp_stored:
@@ -599,7 +597,7 @@ def verify_account_otp(conn, body, event):
         # 3. Clear OTP after successful verification
         cur.execute("""
             UPDATE account_holders
-            SET otp = NULL, date_updated = CURRENT_TIMESTAMP
+            SET otp = NULL, otp_generated_at = NULL
             WHERE id = %s
         """, (account_holder_id,))
 
