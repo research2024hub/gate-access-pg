@@ -354,6 +354,16 @@ Resources:
           Properties:
             Path: /account/reactivate
             Method: POST
+        GenerateAccountOTPApi:
+          Type: Api
+          Properties:
+            Path: /account/otp/generate
+            Method: POST
+        VerifyAccountOTPApi:
+          Type: Api
+          Properties:
+            Path: /account/otp/verify
+            Method: POST
         DeleteAccountApi:
           Type: Api
           Properties:

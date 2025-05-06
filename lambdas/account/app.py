@@ -2,7 +2,8 @@ import json
 import psycopg2
 from handlers.account import (
     signup, signupAdmin,
-    change_account_type, deactivate_account, activate_account, delete_account, get_estate_accounts
+    change_account_type, deactivate_account, activate_account, delete_account, 
+    get_estate_accounts, generate_account_otp, verify_account_otp
     # confirm_signup
 )
 
@@ -41,6 +42,10 @@ def lambda_handler(event, context):
                 return deactivate_account(conn, body, event)
             elif path == "/account/activate":
                 return activate_account(conn, body, event)
+            elif path == "/account/otp/generate":
+                return generate_account_otp(conn, body, event)
+            elif path == "/account/otp/verify":
+                return verify_account_otp(conn, body, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
         elif http_method == "DELETE":
