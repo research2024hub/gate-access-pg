@@ -69,7 +69,7 @@ def create_vehicle(conn, body, event):
 
         cur.execute("""
             SELECT ah.id, pi.estate_id 
-            FROM vehicle v
+            FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
             JOIN account_holders ah ON ah.personal_info_id = pi.id
             WHERE v.id = %s
@@ -77,7 +77,7 @@ def create_vehicle(conn, body, event):
             UNION
 
             SELECT g.creator_id, pi.estate_id
-            FROM vehicle v
+            FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
             JOIN guests g ON g.personal_info_id = pi.id
             WHERE v.id = %s
@@ -134,12 +134,12 @@ def update_vehicle(conn, body, event):
             # Verify the guest belongs to the account holder and get personal_info_id
             cur.execute("""
                         SELECT 
-                        EXISTS(SELECT 1 FROM vehicle v
+                        EXISTS(SELECT 1 FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             JOIN guests g ON g.personal_info_id = pi.id
                             JOIN account_holders ah ON ah.id = g.creator_id
                             WHERE ah.user_id = %s AND v.id = %s) AS for_my_guest,
-                        EXISTS(SELECT 1 FROM vehicle v
+                        EXISTS(SELECT 1 FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             JOIN account_holders ah ON ah.personal_info_id = pi.id
                             WHERE ah.user_id = %s AND v.id = %s) AS for_myself
@@ -169,7 +169,7 @@ def update_vehicle(conn, body, event):
         
         cur.execute("""
             SELECT ah.id, pi.estate_id 
-            FROM vehicle v
+            FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
             JOIN account_holders ah ON ah.personal_info_id = pi.id
             WHERE v.id = %s
@@ -177,7 +177,7 @@ def update_vehicle(conn, body, event):
             UNION
 
             SELECT g.creator_id, pi.estate_id
-            FROM vehicle v
+            FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
             JOIN guests g ON g.personal_info_id = pi.id
             WHERE v.id = %s
@@ -229,12 +229,12 @@ def delete_vehicle(conn, body, event):
             # Verify the guest belongs to the account holder and get personal_info_id
             cur.execute("""
                         SELECT 
-                        EXISTS(SELECT 1 FROM vehicle v
+                        EXISTS(SELECT 1 FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             JOIN guests g ON g.personal_info_id = pi.id
                             JOIN account_holders ah ON ah.id = g.creator_id
                             WHERE ah.user_id = %s AND v.id = %s) AS for_my_guest,
-                        EXISTS(SELECT 1 FROM vehicle v
+                        EXISTS(SELECT 1 FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             JOIN account_holders ah ON ah.personal_info_id = pi.id
                             WHERE ah.user_id = %s AND v.id = %s) AS for_myself
@@ -253,7 +253,7 @@ def delete_vehicle(conn, body, event):
         
         cur.execute("""
             SELECT ah.id, pi.estate_id 
-            FROM vehicle v
+            FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
             JOIN account_holders ah ON ah.personal_info_id = pi.id
             WHERE v.id = %s
@@ -261,7 +261,7 @@ def delete_vehicle(conn, body, event):
             UNION
 
             SELECT g.creator_id, pi.estate_id
-            FROM vehicle v
+            FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
             JOIN guests g ON g.personal_info_id = pi.id
             WHERE v.id = %s
