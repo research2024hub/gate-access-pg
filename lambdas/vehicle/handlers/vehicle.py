@@ -121,7 +121,7 @@ def update_vehicle(conn, body, event):
                             FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             WHERE v.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES' OR pv.name = 'UPDATE_VEHICLE')
+                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES' OR pv.name = 'CREATE_VEHICLES')
                     ) AS exists_flag
                     """, (user_id, vehicle_id))
         
@@ -216,7 +216,7 @@ def delete_vehicle(conn, body, event):
                             FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             WHERE v.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES' OR pv.name = 'UPDATE_VEHICLE')
+                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES' OR pv.name = 'CREATE_VEHICLES')
                     ) AS exists_flag
                     """, (user_id, vehicle_id))
         
@@ -301,7 +301,7 @@ def get_vehicle_details(conn, event):
                             FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             WHERE v.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES' OR pv.name = 'UPDATE_VEHICLE')
+                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES' OR pv.name = 'CREATE_VEHICLES')
                     ) AS exists_flag
                     """, (user_id, vehicle_id))
         
@@ -369,7 +369,7 @@ def list_vehicles_by_owner(conn, event):
                             SELECT pi.estate_id 
                             FROM personal_info pi
                             WHERE pi.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
+                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES' OR pv.name = 'CREATE_VEHICLES')
                     ) AS exists_flag
                     """, (user_id, personal_info_id))
         
