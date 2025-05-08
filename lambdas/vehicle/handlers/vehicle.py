@@ -236,10 +236,6 @@ def delete_vehicle(conn, body, event):
             if not (result["for_myself"] or result["for_my_guest"]):
                 return _error_response(403, "You do not have privileges to delete this vehicle.")
 
-        # Delete vehicle
-        cur.execute("DELETE FROM vehicles WHERE id = %s RETURNING id", (vehicle_id,))
-        if not cur.fetchone():
-            return _error_response(500, "Failed to delete vehicle.")
         
         cur.execute("""
             SELECT COALESCE(ah.id, g.creator_id) AS actor_id, pi.estate_id, v.license_plate_number
@@ -254,6 +250,11 @@ def delete_vehicle(conn, body, event):
         actor_id = result["actor_id"]
         estate_id = result["estate_id"]
         license_plate_number = result["license_plate_number"]
+        
+        # Delete vehicle
+        cur.execute("DELETE FROM vehicles WHERE id = %s RETURNING id", (vehicle_id,))
+        if not cur.fetchone():
+            return _error_response(500, "Failed to delete vehicle.")
         
         log(conn, "VEHICLE_DELETION", f"Vehicle '{vehicle_id}' [{license_plate_number}] deleted", user_id, actor_id, estate_id)
 
