@@ -2,6 +2,97 @@ import json
 from psycopg2.extras import RealDictCursor
 from utils import _error_response, _success_response, process_db_results, log
 from middleware import verify_token
+from datetime import datetime, timedelta
+import jwt
+import os
+
+JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")
+INVITE_EXPIRY_HOURS = 24
+INVITE_BASE_URL = "https://gate-access-web.vercel.app/invite"
+
+def generate_event_invite_link(conn, body, event):
+    """
+    Generates a signed invite link for an event. Only the creator, authorized estate manager, or global admin can generate it.
+    """
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    user_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+    event_id = body.get("event_id")
+
+    if not event_id:
+        return _error_response(400, "Missing 'event_id'.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # 1. Get event details
+        cur.execute("""
+            SELECT 
+                e.id AS event_id,
+                e.name AS event_name,
+                e.start_time,
+                e.end_time,
+                ah.id AS creator_account_holder_id,
+                pi.name AS creator_name,
+                es.name AS estate_name,
+                pi.estate_id
+            FROM events e
+            JOIN account_holders ah ON e.creator_id = ah.id
+            JOIN personal_info pi ON ah.personal_info_id = pi.id
+            JOIN estates es ON pi.estate_id = es.id
+            WHERE e.id = %s
+        """, (event_id,))
+        event_info = cur.fetchone()
+
+        if not event_info:
+            return _error_response(404, "Event not found.")
+
+        is_creator = event_info["creator_account_holder_id"] == body.get("account_holder_id")
+
+        # 2. Check permission if not creator or admin
+        has_privileges = False
+        if not is_creator and not is_admin:
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM account_holders ah
+                    JOIN personal_info pi ON ah.personal_info_id = pi.id
+                    JOIN account_types act ON pi.account_type_id = act.id
+                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                    JOIN privileges pv ON atpl.privilege_id = pv.id
+                    WHERE ah.user_id = %s AND pi.estate_id = %s
+                    AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
+                ) AS has_privileges
+            """, (user_id, event_info["estate_id"]))
+            has_privileges = cur.fetchone()["has_privileges"]
+
+        if not (is_creator or has_privileges or is_admin):
+            return _error_response(403, "You do not have privileges to generate an invite link for this event.")
+
+        # 3. Prepare token payload
+        token_payload = {
+            "event_id": event_info["event_id"],
+            "account_holder_id": event_info["creator_account_holder_id"],
+            "event_name": event_info["event_name"],
+            "creator_name": event_info["creator_name"],
+            "estate_name": event_info["estate_name"],
+            "start_time": event_info["start_time"].isoformat(),
+            "end_time": event_info["end_time"].isoformat(),
+            "exp": datetime.utcnow() + timedelta(hours=INVITE_EXPIRY_HOURS)
+        }
+
+        token = jwt.encode(token_payload, JWT_SECRET, algorithm="HS256")
+        invite_url = f"{INVITE_BASE_URL}?token={token}"
+
+        log(conn, "INVITE_GENERATED", f"Invite link created for event '{event_info['event_name']}'", user_id, event_info["creator_account_holder_id"], event_info["estate_id"])
+
+        conn.commit()
+
+    return _success_response(200, {
+        "message": "Event invite link generated successfully.",
+        "invite_url": invite_url,
+        "expires_in_hours": INVITE_EXPIRY_HOURS
+    })
 
 def create_event(conn, body, event):
     """
@@ -53,6 +144,17 @@ def create_event(conn, body, event):
         
         event_id = cur.fetchone()[0]
 
+        # Generate invite link
+        invite_response = generate_event_invite_link(
+            conn, {"event_id": event_id, "account_holder_id": creator_id}, event
+        )
+
+        if invite_response["statusCode"] != 200:
+            return _error_response(500, "Event created but failed to generate invite link.")
+
+        invite_url = invite_response["body"]["invite_url"]
+
+
         cur.execute("""
                     SELECT pi.estate_id FROM account_holders ah 
                     JOIN personal_info pi ON pi.id = ah.personal_info_id
@@ -65,7 +167,12 @@ def create_event(conn, body, event):
         
         conn.commit()
 
-    return _success_response(201, {"message": "Event created successfully.", "event_id": event_id})
+    return _success_response(201, {
+        "message": "Event created successfully.",
+        "event_id": event_id,
+        "invite_url": invite_url
+    })
+
 
 def update_event(conn, body, event):
     """

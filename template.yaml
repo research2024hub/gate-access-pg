@@ -574,6 +574,11 @@ Resources:
           Properties:
             Path: /event/update
             Method: POST
+        EventGenerateInviteApi:
+          Type: Api
+          Properties:
+            Path: /event/invite/generate
+            Method: POST
         DeleteEventApi:
           Type: Api
           Properties:
@@ -614,6 +619,11 @@ Resources:
           Type: Api
           Properties:
             Path: /event_register/create
+            Method: POST
+        RegisterGuestForEventViaInviteLinkApi:
+          Type: Api
+          Properties:
+            Path: /event_register/invite/use
             Method: POST
         ListEventGuestsApi:
           Type: Api

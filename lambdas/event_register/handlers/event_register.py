@@ -3,6 +3,126 @@ from psycopg2.extras import RealDictCursor
 import random
 from utils import _error_response, _success_response, process_db_results, log
 from middleware import verify_token
+from datetime import datetime
+import jwt
+import os
+
+JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")
+
+def use_invite_token(conn, body, event):
+    """
+    Uses an invite link token to register a guest for an event.
+    Token is passed as a query parameter (?token=...).
+    """
+    token = event.get("queryStringParameters", {}).get("token")
+    if not token:
+        return _error_response(400, "Missing invite token.")
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        return _error_response(403, "Invite token has expired.")
+    except jwt.InvalidTokenError:
+        return _error_response(403, "Invalid invite token.")
+
+    # Extract data from token
+    event_id = payload.get("event_id")
+    account_holder_id = payload.get("account_holder_id")
+    event_name = payload.get("event_name")
+    start_time = payload.get("start_time")
+    end_time = payload.get("end_time")
+
+    # Guest details from request body
+    name = body.get("name")
+    id_type = body.get("id_type")
+    id_num = body.get("id_num")
+    contact = body.get("contact")
+
+    if not all([name, id_type, id_num, contact]):
+        return _error_response(400, "Missing guest details: 'name', 'id_type', 'id_num', or 'contact'.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Get estate_id from creator
+        cur.execute("""
+            SELECT pi.estate_id
+            FROM account_holders ah
+            JOIN personal_info pi ON ah.personal_info_id = pi.id
+            WHERE ah.id = %s
+        """, (account_holder_id,))
+        row = cur.fetchone()
+        if not row:
+            return _error_response(404, "Creator account not found.")
+        estate_id = row["estate_id"]
+
+        # Generate unique OTP
+        while True:
+            otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM guests g
+                    JOIN personal_info pi ON pi.id = g.personal_info_id
+                    WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
+                ) AS otp_exists
+            """, (otp, estate_id))
+            if not cur.fetchone()["otp_exists"]:
+                break
+
+        expiry = datetime.fromisoformat(end_time)
+
+        other_info = {
+            "otp": otp,
+            "purpose": "event",
+            "entry_window": {
+                "start": start_time,
+                "end": end_time
+            }
+        }
+
+        # 1. Insert into personal_info
+        cur.execute("""
+            INSERT INTO personal_info (
+                estate_id, name, id_type, id_num, contact, expiry,
+                account_type_id, access_group_id
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s,
+                (SELECT id FROM account_types WHERE name = 'GUEST'),
+                (SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR')
+            )
+            RETURNING id
+        """, (estate_id, name, id_type, id_num, contact, expiry, estate_id))
+        personal_info_id = cur.fetchone()["id"]
+
+        # 2. Insert into guests
+        cur.execute("""
+            INSERT INTO guests (personal_info_id, creator_id, other_info)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        """, (personal_info_id, account_holder_id, json.dumps(other_info)))
+        guest_id = cur.fetchone()["id"]
+
+        # 3. Insert into event_registers
+        cur.execute("""
+            INSERT INTO event_registers (event_id, guest_id)
+            VALUES (%s, %s)
+            RETURNING id
+        """, (event_id, guest_id))
+        register_id = cur.fetchone()["id"]
+
+        log(conn, "EVENT_REGISTER_ENTRY_CREATED",
+            f"Guest {name} registered for event '{event_id}' [{event_name}] via invite",
+            account_holder_id, account_holder_id, estate_id)
+
+        conn.commit()
+
+    return _success_response(201, {
+        "message": "Guest registered successfully via invite link.",
+        "event_register_id": register_id,
+        "guest_id": guest_id,
+        "personal_info_id": personal_info_id,
+        "otp": otp
+    })
 
 def register_guest_for_event(conn, body, event):
     """
@@ -160,7 +280,6 @@ def register_guest_for_event(conn, body, event):
         "personal_info_id": personal_info_id
     })
 
-
 def list_event_guests(conn, event):
     """
     Lists all guests registered for a specific event.
@@ -224,7 +343,6 @@ def list_event_guests(conn, event):
         guests = cur.fetchall()
 
     return _success_response(200, {"event_id": event_id, "guests": process_db_results(guests)})
-
 
 def remove_guest_from_event(conn, body, event):
     """

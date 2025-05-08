@@ -1,6 +1,6 @@
 import json
 import psycopg2
-from handlers.event_register import register_guest_for_event, list_event_guests, remove_guest_from_event
+from handlers.event_register import register_guest_for_event, list_event_guests, remove_guest_from_event, use_invite_token
 import os
 from utils import _error_response
 
@@ -22,6 +22,8 @@ def lambda_handler(event, context):
         if http_method == "POST":
             if path == "/event_register/create":
                 return register_guest_for_event(conn, body, event)
+            elif path == "/event_register/invite/use":
+                return use_invite_token(conn, body, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
         elif http_method == "DELETE":

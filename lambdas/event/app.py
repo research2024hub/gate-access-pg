@@ -1,7 +1,7 @@
 import json
 import psycopg2
 from handlers.event import (
-    create_event, update_event, delete_event,
+    create_event, update_event, delete_event, generate_event_invite_link,
     get_event_details, list_events_by_creator, list_events_by_estate
 )
 import os
@@ -27,6 +27,8 @@ def lambda_handler(event, context):
                 return create_event(conn, body, event)
             elif path == "/event/update":
                 return update_event(conn, body, event)
+            elif path == "/event/invite/generate":
+                return generate_event_invite_link(conn, body, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
             
