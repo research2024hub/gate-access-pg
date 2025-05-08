@@ -163,24 +163,19 @@ def update_vehicle(conn, body, event):
             return _error_response(500, "Failed to update vehicle.")
         
         cur.execute("""
-            SELECT ah.id, pi.estate_id 
+            SELECT COALESCE(ah.id, g.creator_id) AS actor_id, pi.estate_id
             FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
-            JOIN account_holders ah ON ah.personal_info_id = pi.id
+            LEFT JOIN account_holders ah ON ah.personal_info_id = pi.id
+            LEFT JOIN guests g ON g.personal_info_id = pi.id
             WHERE v.id = %s
-
-            UNION
-
-            SELECT g.creator_id, pi.estate_id
-            FROM vehicles v
-            JOIN personal_info pi ON v.personal_info_id = pi.id
-            JOIN guests g ON g.personal_info_id = pi.id
-            WHERE v.id = %s
-        """, (vehicle_id, vehicle_id))
+        """, (vehicle_id,))
 
         result = cur.fetchone()
+        actor_id = result["actor_id"]
+        estate_id = result["estate_id"]
         
-        log(conn, "VEHICLE_UPDATE", f"Vehicle '{vehicle_id}' [{license_plate_number}] updated", user_id, result[0], result[1])
+        log(conn, "VEHICLE_UPDATE", f"Vehicle '{vehicle_id}' [{license_plate_number}] updated", user_id, actor_id, estate_id)
         
         conn.commit()
 
@@ -247,24 +242,20 @@ def delete_vehicle(conn, body, event):
             return _error_response(500, "Failed to delete vehicle.")
         
         cur.execute("""
-            SELECT ah.id, pi.estate_id 
+            SELECT COALESCE(ah.id, g.creator_id) AS actor_id, pi.estate_id, v.license_plate_number
             FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
-            JOIN account_holders ah ON ah.personal_info_id = pi.id
+            LEFT JOIN account_holders ah ON ah.personal_info_id = pi.id
+            LEFT JOIN guests g ON g.personal_info_id = pi.id
             WHERE v.id = %s
-
-            UNION
-
-            SELECT g.creator_id, pi.estate_id
-            FROM vehicles v
-            JOIN personal_info pi ON v.personal_info_id = pi.id
-            JOIN guests g ON g.personal_info_id = pi.id
-            WHERE v.id = %s
-        """, (vehicle_id, vehicle_id))
+        """, (vehicle_id,))
 
         result = cur.fetchone()
+        actor_id = result["actor_id"]
+        estate_id = result["estate_id"]
+        license_plate_number = result["license_plate_number"]
         
-        log(conn, "VEHICLE_DELETION", f"Vehicle '{vehicle_id}' deleted", user_id, result[0], result[1])
+        log(conn, "VEHICLE_DELETION", f"Vehicle '{vehicle_id}' [{license_plate_number}] deleted", user_id, actor_id, estate_id)
 
         conn.commit()
 

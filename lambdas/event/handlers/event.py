@@ -151,9 +151,8 @@ def create_event(conn, body, event):
 
         if invite_response["statusCode"] != 200:
             return _error_response(500, "Event created but failed to generate invite link.")
-
-        invite_url = invite_response["body"]["invite_url"]
-
+        
+        invite_url = json.loads(invite_response["body"])["invite_url"]
 
         cur.execute("""
                     SELECT pi.estate_id FROM account_holders ah 
