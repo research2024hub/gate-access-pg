@@ -35,7 +35,7 @@ def create_vehicle(conn, body, event):
                             SELECT pi.estate_id 
                             FROM personal_info pi
                             WHERE pi.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES' OR pv.name = 'CREATE_VEHICLES')
+                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
                     ) AS exists_flag
                     """, (user_id, personal_info_id))
         
@@ -45,10 +45,17 @@ def create_vehicle(conn, body, event):
                         SELECT 
                         EXISTS(SELECT 1 FROM guests g
                             JOIN account_holders ah ON ah.id = g.creator_id
-                            WHERE ah.user_id = %s AND g.personal_info_id = %s) AS for_my_guest,
+                            JOIN personal_info pi ON ah.personal_info_id = pi.id
+                            JOIN account_types act ON pi.account_type_id = act.id
+                            JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                            JOIN privileges pv ON atpl.privilege_id = pv.id
+                            WHERE ah.user_id = %s AND g.personal_info_id = %s AND pv.name = 'CREATE_VEHICLES') AS for_my_guest,
                         EXISTS(SELECT 1 FROM account_holders ah
                             JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            WHERE ah.user_id = %s AND pi.id = %s) AS for_myself
+                            JOIN account_types act ON pi.account_type_id = act.id
+                            JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                            JOIN privileges pv ON atpl.privilege_id = pv.id
+                            WHERE ah.user_id = %s AND pi.id = %s AND pv.name = 'CREATE_VEHICLES') AS for_myself
                         """, 
                         (user_id, personal_info_id, user_id, personal_info_id,))
 
@@ -121,7 +128,7 @@ def update_vehicle(conn, body, event):
                             FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             WHERE v.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES' OR pv.name = 'CREATE_VEHICLES')
+                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
                     ) AS exists_flag
                     """, (user_id, vehicle_id))
         
@@ -293,7 +300,7 @@ def get_vehicle_details(conn, event):
                             FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             WHERE v.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES' OR pv.name = 'CREATE_VEHICLES')
+                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
                     ) AS exists_flag
                     """, (user_id, vehicle_id))
         
@@ -361,7 +368,7 @@ def list_vehicles_by_owner(conn, event):
                             SELECT pi.estate_id 
                             FROM personal_info pi
                             WHERE pi.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES' OR pv.name = 'CREATE_VEHICLES')
+                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
                     ) AS exists_flag
                     """, (user_id, personal_info_id))
         
