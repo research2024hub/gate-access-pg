@@ -378,15 +378,19 @@ def list_vehicles_by_owner(conn, event):
                         SELECT 
                         EXISTS(SELECT 1 FROM personal_info pi
                             JOIN account_holders ah ON ah.personal_info_id = pi.id
-                            WHERE ah.user_id = %s AND pi.id = %s) AS for_myself
+                            WHERE ah.user_id = %s AND pi.id = %s) AS for_myself,
+                        EXISTS(SELECT 1 FROM personal_info pi
+                            JOIN guests g ON g.personal_info_id = pi.id
+                            JOIN account_holders ah ON ah.id = g.creator_id
+                            WHERE ah.user_id = %s AND pi.id = %s) AS for_my_guest
                         """, 
-                        (user_id, personal_info_id))
+                        (user_id, personal_info_id, user_id, personal_info_id))
             # Instead of calling cur.fetchone() multiple times, do:
             result = cur.fetchone()  # This fetches the single row you need.
 
             # Then use the same result as needed:
-            if not (result["for_myself"]):
-                return _error_response(403, "You do not have privileges to create a vehicle for this person.")
+            if not (result["for_myself"] or result["for_my_guest"]):
+                return _error_response(403, "You do not have privileges to view vehicles for this person.")
             
         cur.execute("""
             SELECT id, license_plate_number, make, model, color
