@@ -211,7 +211,7 @@ def delete_vehicle(conn, body, event):
                             FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             WHERE v.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES' OR pv.name = 'CREATE_VEHICLES')
+                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
                     ) AS exists_flag
                     """, (user_id, vehicle_id))
         

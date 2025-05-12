@@ -833,7 +833,7 @@ def get_account_holder_guests(conn, event):
         
         if not (cur.fetchone()["exists_flag"] or is_admin):
             # Verify the guest belongs to the account holder and get personal_info_id
-            cur.execute("SELECT EXISTS(SELECT 1 FROM account_holders WHERE user_id = %s AND account_holder_id = %s) AS exists_flag", (user_id, account_holder_id))
+            cur.execute("SELECT EXISTS(SELECT 1 FROM account_holders WHERE user_id = %s AND id = %s) AS exists_flag", (user_id, account_holder_id))
             row = cur.fetchone()
             if not row:
                 return _error_response(403, "You do not have privileges to delete this guest.")
