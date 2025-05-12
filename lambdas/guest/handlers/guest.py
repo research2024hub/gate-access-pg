@@ -783,7 +783,7 @@ def get_guest_details(conn, event):
                 return _error_response(403, "You do not have privileges to delete this guest.")
             
         cur.execute("""
-            SELECT g.id AS guest_id, es.name AS estate_name, at.name AS account_type_name, ag.name AS access_group_name, pi.name AS guest_name, pi.contact, pi.expiry, pi.estate_id, g.other_info
+            SELECT g.id AS guest_id, g.personal_info_id, es.name AS estate_name, at.name AS account_type_name, ag.name AS access_group_name, pi.name AS guest_name, pi.contact, pi.expiry, pi.estate_id, g.other_info
             FROM guests g
             JOIN personal_info pi ON g.personal_info_id = pi.id
             JOIN estates es ON pi.estate_id = es.id
@@ -842,6 +842,7 @@ def get_account_holder_guests(conn, event):
             SELECT 
                 g.id AS guest_id, 
                 pi.name AS guest_name, 
+                g.personal_info_id,
                 pi.contact, 
                 pi.expiry, 
                 at.name AS account_type_name, 
@@ -892,6 +893,7 @@ def get_estate_guests(conn, event):
             SELECT 
                 g.id AS guest_id, 
                 pi.name AS guest_name, 
+                g.personal_info_id,
                 pi.contact, 
                 pi.expiry, 
                 at.name AS account_type_name, 
