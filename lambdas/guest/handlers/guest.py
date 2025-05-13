@@ -49,14 +49,14 @@ def create_guest_regular(conn, body, event):
                             FROM account_holders ah
                             JOIN personal_info pi ON ah.personal_info_id = pi.id
                             WHERE ah.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+                    ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
                     ) AS exists_flag
                     """, (user_id, account_holder_id))
         
         if not (cur.fetchone()["exists_flag"] or is_admin):
             cur.execute("""
                 SELECT EXISTS(SELECT 1 FROM account_holders ah
-                        WHERE ah.id = %s AND ah.user_id = %s) as same_person
+                        WHERE ah.id = %s AND ah.user_id = %s AND ah.is_active = TRUE) as same_person
                 """, (account_holder_id, user_id))
             row = cur.fetchone()
             if not row["same_person"]:
@@ -173,18 +173,18 @@ def create_associate(conn, body, event):
                             FROM account_holders ah
                             JOIN personal_info pi ON ah.personal_info_id = pi.id
                             WHERE ah.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+                    ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
                     ) AS exists_flag
                     """, (user_id, account_holder_id))
         
         if not (cur.fetchone()["exists_flag"] or is_admin):
             cur.execute("""
                 SELECT EXISTS(SELECT 1 FROM account_holders ah
-                        WHERE ah.id = %s AND ah.user_id = %s) as same_person
+                        WHERE ah.id = %s AND ah.user_id = %s AND ah.is_active = TRUE) as same_person
                 """, (account_holder_id, user_id))
             row = cur.fetchone()
             if not row["same_person"]:
-                return _error_response(403, "You do not have privileges to create a guest for this account.")
+                return _error_response(403, "You do not have privileges to create an associate for this account.")
         
         # Retrieve the estate_id linked to the account holder
         cur.execute("""
@@ -302,7 +302,7 @@ def send_otp(conn, body, event):
                       JOIN personal_info pi ON ah.personal_info_id = pi.id
                       WHERE ah.id = %s
                   )
-                  AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+                  AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
             ) AS has_privileges
         """, (user_id, account_holder_id))
 
@@ -313,7 +313,7 @@ def send_otp(conn, body, event):
             # Verify the guest belongs to the account holder and get personal_info_id
             cur.execute("""SELECT g.personal_info_id FROM guests g 
                         JOIN account_holders ah ON ah.id = g.creator_id 
-                        WHERE g.id = %s AND ah.user_id = %s""", (guest_id, user_id))
+                        WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE""", (guest_id, user_id))
             row = cur.fetchone()
             if not row:
                 return _error_response(403, "You do not have privileges to send an OTP to this guest.")
@@ -629,7 +629,7 @@ def update_guest(conn, body, event):
                             FROM guests g
                             JOIN personal_info pi ON g.personal_info_id = pi.id
                             WHERE g.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+                    ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
                     ) AS exists_flag
                     """, (user_id, guest_id))
         
@@ -637,7 +637,7 @@ def update_guest(conn, body, event):
             # Verify the guest belongs to the account holder and get personal_info_id
             cur.execute("""SELECT g.personal_info_id FROM guests g 
                         JOIN account_holders ah ON ah.id = g.creator_id 
-                        WHERE g.id = %s AND ah.user_id = %s""", (guest_id, user_id))
+                        WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE""", (guest_id, user_id))
             row = cur.fetchone()
             if not row:
                 return _error_response(403, "You do not have privileges to update this guest.")
@@ -706,7 +706,7 @@ def delete_guest(conn, body, event):
                             FROM guests g
                             JOIN personal_info pi ON g.personal_info_id = pi.id
                             WHERE g.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+                    ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
                     ) AS exists_flag
                     """, (user_id, guest_id))
         
@@ -714,7 +714,7 @@ def delete_guest(conn, body, event):
             # Verify the guest belongs to the account holder and get personal_info_id
             cur.execute("""SELECT g.personal_info_id, g.creator_id FROM guests g 
                         JOIN account_holders ah ON ah.id = g.creator_id 
-                        WHERE g.id = %s AND ah.user_id = %s""", (guest_id, user_id))
+                        WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE""", (guest_id, user_id))
             row = cur.fetchone()
             if not row:
                 return _error_response(403, "You do not have privileges to delete this guest.")
@@ -764,7 +764,7 @@ def get_guest_details(conn, event):
                             FROM guests g
                             JOIN personal_info pi ON ah.personal_info_id = pi.id
                             WHERE g.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+                    ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
                     ) AS exists_flag
                     """, (user_id, guest_id))
         
@@ -774,7 +774,7 @@ def get_guest_details(conn, event):
                         SELECT EXISTS (
                             SELECT 1 FROM guests g
                             JOIN account_holders ah ON ah.id = g.creator_id
-                            WHERE g.id = %s AND ah.user_id = %s
+                            WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE
                         ) AS exists_flag
                         """, (guest_id, user_id))
             
@@ -827,13 +827,13 @@ def get_account_holder_guests(conn, event):
                             FROM account_holders ah
                             JOIN personal_info pi ON ah.personal_info_id = pi.id
                             WHERE ah.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+                    ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
                     ) AS exists_flag
                     """, (user_id, account_holder_id))
         
         if not (cur.fetchone()["exists_flag"] or is_admin):
             # Verify the guest belongs to the account holder and get personal_info_id
-            cur.execute("SELECT EXISTS(SELECT 1 FROM account_holders WHERE user_id = %s AND id = %s) AS exists_flag", (user_id, account_holder_id))
+            cur.execute("SELECT EXISTS(SELECT 1 FROM account_holders WHERE user_id = %s AND id = %s AND is_active = TRUE) AS exists_flag", (user_id, account_holder_id))
             row = cur.fetchone()
             if not row:
                 return _error_response(403, "You do not have privileges to delete this guest.")
@@ -882,7 +882,7 @@ def get_estate_guests(conn, event):
                         JOIN account_types act ON pi.account_type_id = act.id
                         JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                         JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = %s AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+                        WHERE ah.user_id = %s AND pi.estate_id = %s AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
                     ) AS has_privileges
                     """, (user_id, estate_id))
 

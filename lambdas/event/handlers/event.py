@@ -60,7 +60,7 @@ def generate_event_invite_link(conn, body, event):
                     JOIN account_types act ON pi.account_type_id = act.id
                     JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                     JOIN privileges pv ON atpl.privilege_id = pv.id
-                    WHERE ah.user_id = %s AND pi.estate_id = %s
+                    WHERE ah.user_id = %s AND ah.is_active = TRUE AND pi.estate_id = %s
                     AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
                 ) AS has_privileges
             """, (user_id, event_info["estate_id"]))
@@ -122,14 +122,14 @@ def create_event(conn, body, event):
                         JOIN account_types act ON pi.account_type_id = act.id
                         JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                         JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
+                        WHERE ah.user_id = %s AND ah.is_active = TRUE AND pi.estate_id = ( 
                             SELECT pi.estate_id 
                             FROM account_holders ah
                             JOIN personal_info pi ON ah.personal_info_id = pi.id
                             WHERE ah.id = %s
                     ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
                     ) AS has_privileges,
-                    EXISTS (SELECT 1 FROM account_holders ah WHERE ah.user_id = %s AND ah.id = %s) as same_person
+                    EXISTS (SELECT 1 FROM account_holders ah WHERE ah.user_id = %s AND ah.is_active = TRUE AND ah.id = %s) as same_person
                     """, (user_id, creator_id, user_id, creator_id))
         result = cur.fetchone()
         if not (result[0] or result[1] or is_admin):
@@ -201,7 +201,7 @@ def update_event(conn, body, event):
                         JOIN account_types act ON pi.account_type_id = act.id
                         JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                         JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
+                        WHERE ah.user_id = %s AND ah.is_active = TRUE AND pi.estate_id = ( 
                             SELECT pi.estate_id 
                             FROM account_holders ah
                             JOIN events e ON e.creator_id = ah.id
@@ -212,7 +212,7 @@ def update_event(conn, body, event):
                     EXISTS (
                         SELECT 1 FROM events e
                         JOIN account_holders ah ON e.creator_id = ah.id
-                        WHERE ah.user_id = %s AND e.id = %s) as is_owner
+                        WHERE ah.user_id = %s AND ah.is_active = TRUE AND e.id = %s) as is_owner
                     """, (user_id, event_id, user_id, event_id))
         
         result = cur.fetchone()
@@ -273,7 +273,7 @@ def delete_event(conn, body, event):
                         JOIN account_types act ON pi.account_type_id = act.id
                         JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                         JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
+                        WHERE ah.user_id = %s AND ah.is_active = TRUE AND pi.estate_id = ( 
                             SELECT pi.estate_id 
                             FROM account_holders ah
                             JOIN events e ON e.creator_id = ah.id
@@ -284,7 +284,7 @@ def delete_event(conn, body, event):
                     EXISTS (
                         SELECT 1 FROM events e
                         JOIN account_holders ah ON e.creator_id = ah.id
-                        WHERE ah.user_id = %s AND e.id = %s) as is_owner
+                        WHERE ah.user_id = %s AND ah.is_active = TRUE AND e.id = %s) as is_owner
                     """, (user_id, event_id, user_id, event_id))
 
         result = cur.fetchone()
@@ -342,7 +342,7 @@ def get_event_details(conn, event):
                         JOIN account_types act ON pi.account_type_id = act.id
                         JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                         JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
+                        WHERE ah.user_id = %s AND ah.is_active = TRUE AND pi.estate_id = ( 
                             SELECT pi.estate_id 
                             FROM account_holders ah
                             JOIN events e ON e.creator_id = ah.id
@@ -353,7 +353,7 @@ def get_event_details(conn, event):
                     EXISTS (
                         SELECT 1 FROM events e
                         JOIN account_holders ah ON e.creator_id = ah.id
-                        WHERE ah.user_id = %s AND e.id = %s) as is_owner
+                        WHERE ah.user_id = %s AND ah.is_active = TRUE AND e.id = %s) as is_owner
                     """, (user_id, event_id, user_id, event_id))
         
         result = cur.fetchone()
@@ -399,14 +399,14 @@ def list_events_by_creator(conn, event):
                         JOIN account_types act ON pi.account_type_id = act.id
                         JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                         JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
+                        WHERE ah.user_id = %s AND ah.is_active = TRUE AND pi.estate_id = ( 
                             SELECT pi.estate_id 
                             FROM account_holders ah
                             JOIN personal_info pi ON ah.personal_info_id = pi.id
                             WHERE ah.id = %s
                     ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
                     ) AS has_privileges,
-                    EXISTS (SELECT 1 FROM account_holders ah WHERE ah.user_id = %s AND ah.id = %s) as same_person
+                    EXISTS (SELECT 1 FROM account_holders ah WHERE ah.user_id = %s AND ah.is_active = TRUE AND ah.id = %s) as same_person
                     """, (user_id, creator_id, user_id, creator_id))
         result = cur.fetchone()
         if not (result["has_privileges"] or result["same_person"] or is_admin):
@@ -447,7 +447,7 @@ def list_events_by_estate(conn, event):
                         JOIN account_types act ON pi.account_type_id = act.id
                         JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                         JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = %s AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
+                        WHERE ah.user_id = %s AND ah.is_active = TRUE AND pi.estate_id = %s AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
                     ) AS has_privileges
                     """, (user_id, estate_id))
         

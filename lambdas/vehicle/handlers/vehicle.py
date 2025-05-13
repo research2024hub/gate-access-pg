@@ -31,7 +31,7 @@ def create_vehicle(conn, body, event):
                         JOIN account_types act ON pi.account_type_id = act.id
                         JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                         JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
+                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = ( 
                             SELECT pi.estate_id 
                             FROM personal_info pi
                             WHERE pi.id = %s
@@ -49,13 +49,13 @@ def create_vehicle(conn, body, event):
                             JOIN account_types act ON pi.account_type_id = act.id
                             JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                             JOIN privileges pv ON atpl.privilege_id = pv.id
-                            WHERE ah.user_id = %s AND g.personal_info_id = %s AND pv.name = 'CREATE_VEHICLES') AS for_my_guest,
+                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND g.personal_info_id = %s AND pv.name = 'CREATE_VEHICLES') AS for_my_guest,
                         EXISTS(SELECT 1 FROM account_holders ah
                             JOIN personal_info pi ON ah.personal_info_id = pi.id
                             JOIN account_types act ON pi.account_type_id = act.id
                             JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                             JOIN privileges pv ON atpl.privilege_id = pv.id
-                            WHERE ah.user_id = %s AND pi.id = %s AND pv.name = 'CREATE_VEHICLES') AS for_myself
+                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s AND pv.name = 'CREATE_VEHICLES') AS for_myself
                         """, 
                         (user_id, personal_info_id, user_id, personal_info_id,))
 
@@ -123,7 +123,7 @@ def update_vehicle(conn, body, event):
                         JOIN account_types act ON pi.account_type_id = act.id
                         JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                         JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
+                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = ( 
                             SELECT pi.estate_id 
                             FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
@@ -140,11 +140,11 @@ def update_vehicle(conn, body, event):
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             JOIN guests g ON g.personal_info_id = pi.id
                             JOIN account_holders ah ON ah.id = g.creator_id
-                            WHERE ah.user_id = %s AND v.id = %s) AS for_my_guest,
+                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND v.id = %s) AS for_my_guest,
                         EXISTS(SELECT 1 FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             JOIN account_holders ah ON ah.personal_info_id = pi.id
-                            WHERE ah.user_id = %s AND v.id = %s) AS for_myself
+                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND v.id = %s) AS for_myself
                         """, 
                         (user_id, vehicle_id, user_id, vehicle_id,))
 
@@ -213,7 +213,7 @@ def delete_vehicle(conn, body, event):
                         JOIN account_types act ON pi.account_type_id = act.id
                         JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                         JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
+                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = ( 
                             SELECT pi.estate_id 
                             FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
@@ -230,11 +230,11 @@ def delete_vehicle(conn, body, event):
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             JOIN guests g ON g.personal_info_id = pi.id
                             JOIN account_holders ah ON ah.id = g.creator_id
-                            WHERE ah.user_id = %s AND v.id = %s) AS for_my_guest,
+                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND v.id = %s) AS for_my_guest,
                         EXISTS(SELECT 1 FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             JOIN account_holders ah ON ah.personal_info_id = pi.id
-                            WHERE ah.user_id = %s AND v.id = %s) AS for_myself
+                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND v.id = %s) AS for_myself
                         """, 
                         (user_id, vehicle_id, user_id, vehicle_id,))
             # Instead of calling cur.fetchone() multiple times, do:
@@ -295,7 +295,7 @@ def get_vehicle_details(conn, event):
                         JOIN account_types act ON pi.account_type_id = act.id
                         JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                         JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
+                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = ( 
                             SELECT pi.estate_id 
                             FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
@@ -312,11 +312,11 @@ def get_vehicle_details(conn, event):
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             JOIN guests g ON g.personal_info_id = pi.id
                             JOIN account_holders ah ON ah.id = g.creator_id
-                            WHERE ah.user_id = %s AND v.id = %s) AS for_my_guest,
+                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND v.id = %s) AS for_my_guest,
                         EXISTS(SELECT 1 FROM vehicles v
                             JOIN personal_info pi ON v.personal_info_id = pi.id
                             JOIN account_holders ah ON ah.personal_info_id = pi.id
-                            WHERE ah.user_id = %s AND v.id = %s) AS for_myself
+                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND v.id = %s) AS for_myself
                         """, 
                         (user_id, vehicle_id, user_id, vehicle_id,))
             # Instead of calling cur.fetchone() multiple times, do:
@@ -364,7 +364,7 @@ def list_vehicles_by_owner(conn, event):
                         JOIN account_types act ON pi.account_type_id = act.id
                         JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                         JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
+                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = ( 
                             SELECT pi.estate_id 
                             FROM personal_info pi
                             WHERE pi.id = %s
@@ -378,11 +378,11 @@ def list_vehicles_by_owner(conn, event):
                         SELECT 
                         EXISTS(SELECT 1 FROM personal_info pi
                             JOIN account_holders ah ON ah.personal_info_id = pi.id
-                            WHERE ah.user_id = %s AND pi.id = %s) AS for_myself,
+                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS for_myself,
                         EXISTS(SELECT 1 FROM personal_info pi
                             JOIN guests g ON g.personal_info_id = pi.id
                             JOIN account_holders ah ON ah.id = g.creator_id
-                            WHERE ah.user_id = %s AND pi.id = %s) AS for_my_guest
+                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS for_my_guest
                         """, 
                         (user_id, personal_info_id, user_id, personal_info_id))
             # Instead of calling cur.fetchone() multiple times, do:
