@@ -352,7 +352,7 @@ Resources:
         ReactivateAccountApi:
           Type: Api
           Properties:
-            Path: /account/reactivate
+            Path: /account/activate
             Method: POST
         GenerateAccountOTPApi:
           Type: Api

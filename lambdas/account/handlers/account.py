@@ -305,7 +305,7 @@ def activate_account(conn, body, event):
 
     account_holder_id = body.get("account_holder_id")
     if not account_holder_id:
-        return _error_response(400, "Missing 'id'.")
+        return _error_response(400, "Missing 'account_holder_id'.")
 
     with conn.cursor() as cur:
         cur.execute("""
