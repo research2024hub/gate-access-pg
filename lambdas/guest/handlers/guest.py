@@ -679,60 +679,84 @@ def update_guest(conn, body, event):
 
 def delete_guest(conn, body, event):
     """
-    Deletes a guest and their associated personal_info, only allowed by the creator.
+    Deletes a guest and their associated personal_info. Only the creator, estate managers, or an admin can delete.
     """
     payload, error = verify_token(event)
     if error:
         return error
-    
+
     user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False)
 
     guest_id = body.get("guest_id")
-
     if not guest_id:
-        return _error_response(400, "Missing 'guest_id' or 'account_holder_id'.")
+        return _error_response(400, "Missing 'guest_id'.")
 
     with conn.cursor() as cur:
+        # Check for estate-level privilege
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM guests g
-                            JOIN personal_info pi ON g.personal_info_id = pi.id
-                            WHERE g.id = %s
-                    ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-                    ) AS exists_flag
-                    """, (user_id, guest_id))
-        
-        if not (cur.fetchone()[0] or is_admin):
-            # Verify the guest belongs to the account holder and get personal_info_id
-            cur.execute("""SELECT g.personal_info_id, g.creator_id FROM guests g 
-                        JOIN account_holders ah ON ah.id = g.creator_id 
-                        WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE""", (guest_id, user_id))
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.user_id = %s AND pi.estate_id = ( 
+                    SELECT pi.estate_id 
+                    FROM guests g
+                    JOIN personal_info pi ON g.personal_info_id = pi.id
+                    WHERE g.id = %s
+                ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+            ) AS exists_flag
+        """, (user_id, guest_id))
+
+        has_privileges = cur.fetchone()[0]
+
+        if not (has_privileges or is_admin):
+            # Check if user is the creator of the guest
+            cur.execute("""
+                SELECT g.personal_info_id, g.creator_id
+                FROM guests g
+                JOIN account_holders ah ON ah.id = g.creator_id
+                WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE
+            """, (guest_id, user_id))
             row = cur.fetchone()
             if not row:
                 return _error_response(403, "You do not have privileges to delete this guest.")
-            personal_info_id = row[0] 
+            personal_info_id = row[0]
+            actor_id = row[1]
+        else:
+            # Privileged user, fetch info
+            cur.execute("""
+                SELECT g.personal_info_id, g.creator_id
+                FROM guests g
+                WHERE g.id = %s
+            """, (guest_id,))
+            row = cur.fetchone()
+            if not row:
+                return _error_response(404, "Guest not found.")
+            personal_info_id = row[0]
+            actor_id = row[1]
 
-        personal_info_id = row[0]
-
-        # Delete personal_info entry which would cascade delete the guest
-        cur.execute("DELETE FROM personal_info WHERE id = %s RETURNING name, estate_id", (personal_info_id,))
+        # Delete personal_info (guests table has ON DELETE CASCADE)
+        cur.execute("""
+            DELETE FROM personal_info
+            WHERE id = %s
+            RETURNING name, estate_id
+        """, (personal_info_id,))
         result = cur.fetchone()
         if not result:
-            return _error_response(404, "Guest not found.")
-        
-        log(conn, "GUEST_DELETION", f"Guest '{guest_id}' [{result[0]}] deleted", user_id, row[1], result[1])
+            return _error_response(404, "Personal info not found.")
+
+        guest_name = result[0]
+        estate_id = result[1]
+
+        log(conn, "GUEST_DELETION", f"Guest '{guest_id}' [{guest_name}] deleted", user_id, actor_id, estate_id)
 
         conn.commit()
 
     return _success_response(200, {"message": "Guest and personal info deleted successfully."})
+
 
 def get_guest_details(conn, event):
     """
