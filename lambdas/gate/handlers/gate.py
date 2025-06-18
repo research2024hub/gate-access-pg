@@ -39,11 +39,18 @@ def create_gate(conn, body, event):
             return _error_response(403, "You do not have privileges to manage gates in this estate")
 
         # Insert gate with optional opening_time and closing_time
-        cur.execute("""
-            INSERT INTO gates (name, estate_id, opening_time, closing_time)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id
-        """, (name, estate_id, opening_time, closing_time))
+        if (opening_time and closing_time):
+            cur.execute("""
+                INSERT INTO gates (name, estate_id, opening_time, closing_time)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+            """, (name, estate_id, opening_time, closing_time))
+        else:
+            cur.execute("""
+                INSERT INTO gates (name, estate_id)
+                VALUES (%s, %s)
+                RETURNING id
+            """, (name, estate_id))
 
         gate_id = cur.fetchone()[0]
 
