@@ -13,8 +13,8 @@ def create_gate(conn, body, event):
 
     name = body.get("name")
     estate_id = body.get("estate_id")
-    opening_time = body.get("opening_time")  # Optional
-    closing_time = body.get("closing_time")  # Optional
+    opening_time = body.get("opening_time") or None  # Optional
+    closing_time = body.get("closing_time") or None  # Optional
 
     if not name or not estate_id:
         return _error_response(400, "Missing 'name' or 'estate_id'.")
@@ -41,7 +41,7 @@ def create_gate(conn, body, event):
         # Insert gate with optional opening_time and closing_time
         cur.execute("""
             INSERT INTO gates (name, estate_id, opening_time, closing_time)
-            VALUES (%s, %s, COALESCE(%s, DEFAULT), COALESCE(%s, DEFAULT))
+            VALUES (%s, %s, %s, %s)
             RETURNING id
         """, (name, estate_id, opening_time, closing_time))
 
