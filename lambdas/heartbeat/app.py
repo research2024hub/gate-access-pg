@@ -22,7 +22,7 @@ def lambda_handler(event, context):
 
         if http_method == "POST":
             if path == "/gate/heartbeat":
-                return update_gate_controller_heartbeat(conn, body, event)
+                return update_gate_controller_heartbeat(conn, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
         else:
