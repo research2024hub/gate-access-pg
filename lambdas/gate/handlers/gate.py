@@ -205,7 +205,7 @@ def get_gates(conn, event):
         return _error_response(403, "Access denied. Only admins can retrieve gates.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id, name, estate_id, date_created, date_updated FROM gates")
+        cur.execute("SELECT id, name, estate_id, last_controller_heartbeat, date_created, date_updated FROM gates")
         gates = cur.fetchall()
 
     return _success_response(200, {"gates": process_db_results(gates)})
@@ -235,7 +235,7 @@ def get_gates_by_estate(conn, event):
         if not (has_privileges or is_admin):
             return _error_response(403, "You do not have privileges to retrieve gates from this estate")
         
-        cur.execute("SELECT id, name, estate_id, date_created, date_updated FROM gates")
+        cur.execute("SELECT id, name, estate_id, last_controller_heartbeat, date_created, date_updated FROM gates")
         gates = cur.fetchall()
 
     return _success_response(200, {"gates": process_db_results(gates)})
@@ -255,7 +255,7 @@ def get_gate_by_id(conn, event):
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            SELECT id, name, estate_id, date_created, date_updated
+            SELECT id, name, estate_id, last_controller_heartbeat, date_created, date_updated
             FROM gates WHERE id = %s
         """, (gate_id,))
         gate = cur.fetchone()
