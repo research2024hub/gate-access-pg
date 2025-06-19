@@ -172,7 +172,7 @@ def get_gates(conn, event):
         return _error_response(403, "Access denied. Only admins can retrieve gates.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id, name, estate_id, last_controller_heartbeat, date_created, date_updated FROM gates")
+        cur.execute("SELECT id, name, estate_id, active, last_controller_heartbeat, date_created, date_updated FROM gates")
         gates = cur.fetchall()
 
     return _success_response(200, {"gates": process_db_results(gates)})
@@ -202,7 +202,7 @@ def get_gates_by_estate(conn, event):
         if not (has_privileges or is_admin):
             return _error_response(403, "You do not have privileges to retrieve gates from this estate")
         
-        cur.execute("SELECT id, name, estate_id, last_controller_heartbeat, date_created, date_updated FROM gates")
+        cur.execute("SELECT id, name, estate_id, active, last_controller_heartbeat, date_created, date_updated FROM gates")
         gates = cur.fetchall()
 
     return _success_response(200, {"gates": process_db_results(gates)})
@@ -212,17 +212,35 @@ def get_gate_by_id(conn, event):
     if error:
         return error
     
+    user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False)
-    if not is_admin:
-        return _error_response(403, "Access denied. Only admins can delete gates.")
-
+    
     gate_id = event.get("pathParameters", {}).get("id")
     if not gate_id:
         return _error_response(400, "Missing gate ID.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Check user privileges if not admin
+        if not is_admin:
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM account_holders ah
+                    JOIN personal_info pi ON ah.personal_info_id = pi.id
+                    JOIN account_types act ON pi.account_type_id = act.id
+                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                    JOIN privileges pv ON atpl.privilege_id = pv.id
+                    WHERE ah.user_id = %s 
+                    AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) 
+                    AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
+                ) AS exists_flag
+            """, (user_id, gate_id))
+            
+            has_privileges = cur.fetchone()["exists_flag"]
+            if not has_privileges:
+                return _error_response(403, "You do not have privileges to view this gate")
+
         cur.execute("""
-            SELECT id, name, estate_id, last_controller_heartbeat, date_created, date_updated
+            SELECT id, name, estate_id, active, last_controller_heartbeat, date_created, date_updated
             FROM gates WHERE id = %s
         """, (gate_id,))
         gate = cur.fetchone()
@@ -467,7 +485,7 @@ def activate_gate(conn, body, event):
 
         cur.execute("""
             UPDATE gates
-            SET is_active = true, date_updated = CURRENT_TIMESTAMP
+            SET active = true, date_updated = CURRENT_TIMESTAMP
             WHERE id = %s
             RETURNING estate_id, name
         """, (gate_id,))
@@ -519,7 +537,7 @@ def deactivate_gate(conn, body, event):
 
         cur.execute("""
             UPDATE gates
-            SET is_active = false, date_updated = CURRENT_TIMESTAMP
+            SET active = false, date_updated = CURRENT_TIMESTAMP
             WHERE id = %s
             RETURNING estate_id, name
         """, (gate_id,))
