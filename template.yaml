@@ -166,6 +166,16 @@ Resources:
           Properties:
             Path: /gate/update
             Method: POST
+        ActivateGateApi:
+          Type: Api
+          Properties:
+            Path: /gate/activate
+            Method: POST
+        DeactivateGateApi:
+          Type: Api
+          Properties:
+            Path: /gate/deactivate
+            Method: POST
         DeleteGateApi:
           Type: Api
           Properties:

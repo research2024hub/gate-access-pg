@@ -432,3 +432,107 @@ def get_vehicles_by_gate_with_time_check(conn, event):
 
     return _success_response(200, {"vehicles": process_db_results(vehicles)})
 
+def activate_gate(conn, body, event):
+    """
+    Activates a gate. Only accessible by global admins or users with MANAGE_GATES/MANAGE_ALL privileges.
+    """
+    payload, error = verify_token(event)
+    if error:
+        return error
+    
+    user_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+
+    gate_id = body.get("id")
+    if not gate_id:
+        return _error_response(400, "Missing 'id'.")
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.user_id = %s 
+                AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) 
+                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
+            ) AS exists_flag
+        """, (user_id, gate_id))
+        
+        has_privileges = cur.fetchone()[0]
+        if not (has_privileges or is_admin):
+            return _error_response(403, "You do not have privileges to manage gates")
+
+        cur.execute("""
+            UPDATE gates
+            SET is_active = true, date_updated = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING estate_id, name
+        """, (gate_id,))
+
+        result = cur.fetchone()
+        if not result:
+            return _error_response(404, "Gate not found.")
+        
+        log(conn, "GATE_ACTIVATION", 
+            f"Gate '{gate_id}' [{result[1]}] activated", 
+            user_id, None, result[0])
+
+        conn.commit()
+
+    return _success_response(200, {"message": "Gate activated successfully.", "gate_id": gate_id})
+
+def deactivate_gate(conn, body, event):
+    """
+    Deactivates a gate. Only accessible by global admins or users with MANAGE_GATES/MANAGE_ALL privileges.
+    """
+    payload, error = verify_token(event)
+    if error:
+        return error
+    
+    user_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+
+    gate_id = body.get("id")
+    if not gate_id:
+        return _error_response(400, "Missing 'id'.")
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.user_id = %s 
+                AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) 
+                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
+            ) AS exists_flag
+        """, (user_id, gate_id))
+        
+        has_privileges = cur.fetchone()[0]
+        if not (has_privileges or is_admin):
+            return _error_response(403, "You do not have privileges to manage gates")
+
+        cur.execute("""
+            UPDATE gates
+            SET is_active = false, date_updated = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING estate_id, name
+        """, (gate_id,))
+
+        result = cur.fetchone()
+        if not result:
+            return _error_response(404, "Gate not found.")
+        
+        log(conn, "GATE_DEACTIVATION", 
+            f"Gate '{gate_id}' [{result[1]}] deactivated", 
+            user_id, None, result[0])
+
+        conn.commit()
+
+    return _success_response(200, {"message": "Gate deactivated successfully.", "gate_id": gate_id})
+

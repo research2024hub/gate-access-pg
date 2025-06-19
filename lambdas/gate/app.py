@@ -4,6 +4,8 @@ from handlers.gate import (
     create_gate,
     update_gate,
     delete_gate,
+    activate_gate,
+    deactivate_gate,
     get_gates,
     get_gate_by_id,
     get_gates_by_estate,
@@ -34,6 +36,10 @@ def lambda_handler(event, context):
                 return create_gate(conn, body, event)
             elif path == "/gate/update":
                 return update_gate(conn, body, event)
+            elif path == "gate/activate":
+                return activate_gate(conn, body, event)
+            elif path == "gate/deactivate":
+                return deactivate_gate(conn, body, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
         elif http_method == "DELETE":
