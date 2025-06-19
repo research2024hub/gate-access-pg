@@ -11,7 +11,6 @@ from handlers.gate import (
     get_vehicles_by_gate_with_time_check,
     get_vehicles_by_gate_no_time_check_by_gate_controller,
     get_vehicles_by_gate_with_time_check_by_gate_controller,
-    update_gate_controller_heartbeat
 )
 import os
 from utils import _error_response
@@ -35,9 +34,6 @@ def lambda_handler(event, context):
                 return create_gate(conn, body, event)
             elif path == "/gate/update":
                 return update_gate(conn, body, event)
-            # New endpoint for updating controller heartbeat
-            elif path.startswith("/gate/heartbeat"):
-                return update_gate_controller_heartbeat(conn, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
         elif http_method == "DELETE":
