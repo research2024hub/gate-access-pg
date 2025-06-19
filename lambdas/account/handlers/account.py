@@ -409,7 +409,7 @@ def delete_account(conn, body, event):
         if not result:
             return _error_response(404, "Personal info not found.")
 
-        log(conn, "ACCOUNT_DELETION", "Account deleted", user_id, account_holder_id, result[0])
+        log(conn, "ACCOUNT_DELETION", f"Account deleted {account_holder_id}", user_id, None, result[0])
 
         conn.commit()
 
