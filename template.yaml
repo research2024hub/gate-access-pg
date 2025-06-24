@@ -889,7 +889,7 @@ Outputs:
     Description: Implicit IAM Role created for Log function
     Value: !GetAtt LogFunctionRole.Arn
 
-]  GateHeartbeatFunctionArn:
+  GateHeartbeatFunctionArn:
     Description: Gate Heartbeat Lambda Function ARN
     Value: !GetAtt GateHeartbeatFunction.Arn
 
