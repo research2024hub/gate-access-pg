@@ -36,9 +36,9 @@ def lambda_handler(event, context):
                 return create_gate(conn, body, event)
             elif path == "/gate/update":
                 return update_gate(conn, body, event)
-            elif path == "gate/activate":
+            elif path == "/gate/activate":
                 return activate_gate(conn, body, event)
-            elif path == "gate/deactivate":
+            elif path == "/gate/deactivate":
                 return deactivate_gate(conn, body, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
