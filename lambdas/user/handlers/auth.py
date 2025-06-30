@@ -112,6 +112,7 @@ def login_user(conn, body):
         return _success_response(200, {
             "message": "Login successful.",
             "token": token,
+            "user_id": user_id,
             "accounts": process_db_results(accounts)
         })
 
