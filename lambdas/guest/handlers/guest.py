@@ -431,7 +431,7 @@ def verify_guest_otp(conn, body, event):
         # Retrieve the guest info based on the provided OTP
         cur.execute(
             """
-            SELECT pi.name, g.id, g.other_info, pi.estate_id, g.creator_id, ah.user_id AS inviter_user_id,
+            SELECT pi.name, g.id, g.other_info, pi.estate_id, g.creator_id, ah.user_id AS inviter_user_id
             FROM guests g
             JOIN personal_info pi ON pi.id = g.personal_info_id
             JOIN account_holders ah ON ah.id = g.creator_id
