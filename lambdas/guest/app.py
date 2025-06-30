@@ -2,7 +2,7 @@ import json
 import psycopg2
 from handlers.guest import (
     create_guest_regular, create_associate, update_guest, delete_guest, get_estate_guests,
-    get_guest_details, get_account_holder_guests, verify_guest_otp, send_otp
+    get_guest_details, get_account_holder_guests, verify_guest_otp, send_otp, guest_arrives_with_vehicle_callback
 )
 import os
 from utils import _error_response
@@ -28,6 +28,8 @@ def lambda_handler(event, context):
                 return create_associate(conn, body, event)
             elif path == "/guest/update":
                 return update_guest(conn, body, event)
+            elif path == "/guest/vehicle_arrival/callback":
+                return guest_arrives_with_vehicle_callback(conn, body, event)
             elif path == "/guest/verify_otp":
                 return verify_guest_otp(conn, body, event)
             elif path == "/guest/send_otp":

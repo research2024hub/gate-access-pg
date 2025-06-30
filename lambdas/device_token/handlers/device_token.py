@@ -58,7 +58,7 @@ def generate_gate_controller_token(conn, body, event):
 
             result = cur.fetchone()
 
-            log(conn, "GATE_CONTROLLER_TOKEN_GENERATION", f"Token created for gate '{gate_id}' [{result["name"]}]", user_id, None, result["estate_id"])
+            log(conn, "GATE_CONTROLLER_TOKEN_GENERATION", f"Token created for gate '{gate_id}' [{result['name']}]", user_id, None, result["estate_id"])
 
             conn.commit()
 

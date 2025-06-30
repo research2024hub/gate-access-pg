@@ -508,6 +508,11 @@ Resources:
           Properties:
             Path: /guest/verify_otp
             Method: POST
+        GuestVehicleArrivalCallbackApi:
+          Type: Api
+          Properties:
+            Path: /guest/vehicle_arrival_callback
+            Method: POST
         SendGuestOTPApi:
           Type: Api
           Properties:
