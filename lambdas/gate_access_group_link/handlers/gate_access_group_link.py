@@ -6,12 +6,12 @@ from middleware import verify_token
 def create_access_group_link(conn, body, event):
     """
     Assigns an access group to a gate after verifying both exist.
-    Allows optional opening_time and closing_time.
+    Allows optional opening_time and closing_time, falling back to DB defaults if omitted.
     """
     payload, error = verify_token(event)
     if error:
         return error
-    
+
     user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False)
 
@@ -24,7 +24,7 @@ def create_access_group_link(conn, body, event):
         return _error_response(400, "Missing 'gate_id' or 'access_group_id'.")
 
     with conn.cursor() as cur:
-        # Verify that the gate and access group exist and belong to the same estate
+        # Verify gate and access group exist and are on the same estate
         cur.execute("""
             SELECT 
                 (SELECT estate_id FROM gates WHERE id = %s) AS gate_estate,
@@ -41,8 +41,8 @@ def create_access_group_link(conn, body, event):
             return _error_response(404, "Access group not found.")
 
         if gate_estate != access_group_estate:
-            return _error_response(400, "Estate mismatch. Gate and access group belong to different estates.")
-        
+            return _error_response(400, "Estate mismatch: gate and access group belong to different estates.")
+
         # Check user privileges
         cur.execute("""
             SELECT EXISTS (
@@ -56,25 +56,45 @@ def create_access_group_link(conn, body, event):
                 AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCESS')
             ) AS exists_flag
         """, (user_id, gate_estate))
-        
+
         has_privileges = cur.fetchone()[0]
         if not (has_privileges or is_admin):
             return _error_response(403, "You do not have privileges to manage access group links.")
 
-        # Insert the new link, including optional opening and closing times
-        cur.execute("""
-            INSERT INTO gate_access_group_links (gate_id, access_group_id, opening_time, closing_time)
-            VALUES (%s, %s, COALESCE(%s, DEFAULT), COALESCE(%s, DEFAULT))
+        # Dynamically build the insert with optional opening_time / closing_time
+        columns = ["gate_id", "access_group_id"]
+        values = [gate_id, access_group_id]
+        placeholders = ["%s", "%s"]
+
+        if opening_time is not None:
+            columns.append("opening_time")
+            values.append(opening_time)
+            placeholders.append("%s")
+
+        if closing_time is not None:
+            columns.append("closing_time")
+            values.append(closing_time)
+            placeholders.append("%s")
+
+        sql = f"""
+            INSERT INTO gate_access_group_links ({','.join(columns)})
+            VALUES ({','.join(placeholders)})
             ON CONFLICT (gate_id, access_group_id) DO NOTHING
             RETURNING gate_id, access_group_id
-        """, (gate_id, access_group_id, opening_time, closing_time))
+        """
+        cur.execute(sql, values)
 
         if not cur.fetchone():
             return _error_response(409, "Access group already linked to this gate.")
-        
-        log(conn, "ACCESS_GROUP_GATE_LINK_CREATION", 
-            f"Link between access group '{access_group_id}' and gate '{gate_id}' created with opening_time={opening_time} and closing_time={closing_time}", 
-            user_id, None, gate_estate)
+
+        log(
+            conn,
+            "ACCESS_GROUP_GATE_LINK_CREATION",
+            f"Link between access group '{access_group_id}' and gate '{gate_id}' created with opening_time={opening_time} and closing_time={closing_time}",
+            user_id,
+            None,
+            gate_estate
+        )
 
         conn.commit()
 
