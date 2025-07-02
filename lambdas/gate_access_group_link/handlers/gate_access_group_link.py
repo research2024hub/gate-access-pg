@@ -224,7 +224,7 @@ def remove_access_group_link(conn, body, event):
         
         cur.execute("""
             SELECT estate_id FROM gates WHERE id = %s
-        """, (gate_id))
+        """, (gate_id,))
         result = cur.fetchone()
         
         log(conn, "ACCESS_GROUP_GATE_LINK_REMOVAL", f"Link between access group '{access_group_id}' and gate '{gate_id}' removed", user_id, None, result[0])
