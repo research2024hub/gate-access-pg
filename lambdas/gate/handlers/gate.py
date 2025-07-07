@@ -352,7 +352,7 @@ def get_vehicles_by_gate_with_time_check_by_gate_controller(conn, event):
         # - If opening_time <= closing_time: current time must be between them.
         # - If opening_time > closing_time: allowed if current time is >= opening_time OR <= closing_time.
         cur.execute("""
-            SELECT v.*
+            SELECT v.*, pi.expiry
             FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
             LEFT JOIN guests g ON g.personal_info_id = pi.id
@@ -430,28 +430,37 @@ def get_vehicles_by_gate_with_time_check(conn, event):
         # - If opening_time <= closing_time: current time must be between them.
         # - If opening_time > closing_time: allowed if current time is >= opening_time OR <= closing_time.
         cur.execute("""
-            SELECT v.*
+            SELECT v.*, pi.expiry
             FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
+            LEFT JOIN guests g ON g.personal_info_id = pi.id
             WHERE pi.access_group_id IN (
                 SELECT access_group_id
                 FROM gate_access_group_links ga
-                JOIN gates g ON g.id = ga.gate_id
-                WHERE g.id = %s
+                JOIN gates g2 ON g2.id = ga.gate_id
+                WHERE g2.id = %s
                 AND (
-                    (
-                    -- Standard case: opening time <= closing time
-                    GREATEST(g.opening_time, ga.opening_time) <= LEAST(g.closing_time, ga.closing_time)
-                    AND CURRENT_TIME BETWEEN GREATEST(g.opening_time, ga.opening_time) 
-                                        AND LEAST(g.closing_time, ga.closing_time)
-                    )
-                    OR
-                    (
-                    -- Crosses midnight: opening > closing
-                    GREATEST(g.opening_time, ga.opening_time) > LEAST(g.closing_time, ga.closing_time)
-                    AND (CURRENT_TIME >= GREATEST(g.opening_time, ga.opening_time) 
-                        OR CURRENT_TIME <= LEAST(g.closing_time, ga.closing_time))
-                    )
+                (
+                    -- standard case
+                    GREATEST(g2.opening_time, ga.opening_time) <= LEAST(g2.closing_time, ga.closing_time)
+                    AND CURRENT_TIME BETWEEN GREATEST(g2.opening_time, ga.opening_time)
+                    AND LEAST(g2.closing_time, ga.closing_time)
+                )
+                OR
+                (
+                    -- crosses midnight
+                    GREATEST(g2.opening_time, ga.opening_time) > LEAST(g2.closing_time, ga.closing_time)
+                    AND (CURRENT_TIME >= GREATEST(g2.opening_time, ga.opening_time)
+                    OR CURRENT_TIME <= LEAST(g2.closing_time, ga.closing_time))
+                )
+                )
+            )
+            AND (
+                g.id IS NULL
+                OR
+                (
+                (g.other_info->'entry_window'->>'start')::timestamp <= CURRENT_TIMESTAMP
+                AND (g.other_info->'entry_window'->>'end')::timestamp >= CURRENT_TIMESTAMP
                 )
             );
         """, (gate_id,))
