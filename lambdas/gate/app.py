@@ -13,6 +13,7 @@ from handlers.gate import (
     get_vehicles_by_gate_with_time_check,
     get_vehicles_by_gate_no_time_check_by_gate_controller,
     get_vehicles_by_gate_with_time_check_by_gate_controller,
+    person_arrives_with_vehicle_callback
 )
 import os
 from utils import _error_response
@@ -40,6 +41,8 @@ def lambda_handler(event, context):
                 return activate_gate(conn, body, event)
             elif path == "/gate/deactivate":
                 return deactivate_gate(conn, body, event)
+            elif path.startswith("/gate/vehicle_arrival/callback"):
+                return person_arrives_with_vehicle_callback(conn, body, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
         elif http_method == "DELETE":
