@@ -439,6 +439,8 @@ def person_arrives_with_vehicle_callback(conn, body, event):
             return _error_response(400, "Vehicle not found or not associated with a guest/account holder.")
 
         is_guest = person_data["guest_id"] is not None
+        
+        print(person_data)
 
         if is_guest:
             other_info = person_data["other_info"] or {}
