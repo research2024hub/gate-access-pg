@@ -40,6 +40,24 @@ def upload_image_to_s3(image, object_name, metadata=None):
         return False
     return True
 
+def upload_vehicle_image_to_s3(body, event):
+    image = body["image"]
+    file_name = body["file_name"]
+    image_bytes = base64.b64decode(image)
+    object_name = f'lpr-images/{body[file_name]}'
+    metadata=None
+    payload, error = verify_token(event)
+    if error:
+        return error
+    try:
+        s3.put_object(Bucket="lpr-images", Key=object_name, Body=image_bytes, Metadata=metadata)
+        # object_key = f"gate-app-faces/{object_name}"
+        print(f"Image uploaded to S3 bucket '{bucket_name}' with object name '{object_name}'.")
+    except Exception as e:
+        print(f"Error uploading image to S3: {e}")
+        return False
+    return True
+
 def index_face(image):
 
     response = rekognition.index_faces(

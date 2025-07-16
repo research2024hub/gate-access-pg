@@ -692,6 +692,11 @@ Resources:
           Properties:
             Path: /face/match
             Method: POST
+        UploadVehicleApi:
+          Type: Api
+          Properties:
+            Path: /face/upload
+            Method: POST
       Policies:
         - Statement:
           - Effect: Allow

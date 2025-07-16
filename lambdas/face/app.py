@@ -1,7 +1,7 @@
 import json
 import psycopg2
 from handlers.pedestrian import (
-    match_guest_face, save_guest_face
+    match_guest_face, save_guest_face, upload_vehicle_image_to_s3
 )
 import os
 from utils import _error_response
@@ -25,8 +25,11 @@ def lambda_handler(event, context):
                 return save_guest_face(conn, body, event)
             elif path == "/face/match":
                 return match_guest_face(conn, body, event)
+            elif path == "/face/upload":
+                return upload_vehicle_image_to_s3(body, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
+            
         else:
             return _error_response(405, f"Method {http_method} not supported.")
 
