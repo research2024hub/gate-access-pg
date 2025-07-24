@@ -14,13 +14,18 @@ def signup(conn, body):
     estate_id = body.get("estate_id")
     house_address = body.get("house_address")
 
-    # Validate required fields.
+    # Validate basic required fields.
     if not user_id or not estate_id or not house_address:
         return _error_response(400, "Missing required fields: 'user_id', 'estate_id', or 'house_address'.")
 
+    # Validate personal_info-specific required fields.
+    required_fields = ["name", "id_type", "id_num", "contact"]
+    missing = [f for f in required_fields if not body.get(f)]
+    if missing:
+        return _error_response(400, f"Missing required fields: {', '.join(missing)}.")
+
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-
             # Prevent duplicate signup in the same estate.
             cur.execute("""
                 SELECT id FROM account_holders
@@ -31,10 +36,24 @@ def signup(conn, body):
             if cur.fetchone():
                 return _error_response(409, "User already has an account in this estate.")
 
-            # Insert into personal_info.
+            # Lookup default account type
+            cur.execute("SELECT id FROM account_types WHERE name = 'USER_A'")
+            row = cur.fetchone()
+            if not row:
+                return _error_response(500, "Default account type 'USER_A' not found.")
+            account_type_id = row["id"]
+
+            # Lookup default access group
+            cur.execute("SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'", (estate_id,))
+            row = cur.fetchone()
+            if not row:
+                return _error_response(500, "Default access group 'REGULAR' not found.")
+            access_group_id = row["id"]
+
+            # Insert into personal_info
             cur.execute("""
                 INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, account_type_id, access_group_id)
-                VALUES (%s, %s, %s, %s, %s, (SELECT id FROM account_types WHERE name='USER_A'), (SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'))
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (
                 estate_id,
@@ -42,26 +61,28 @@ def signup(conn, body):
                 body.get("id_type"),
                 body.get("id_num"),
                 body.get("contact"),
-                estate_id
+                account_type_id,
+                access_group_id
             ))
 
-            personal_info_row = cur.fetchone()
-            if not personal_info_row:
+            personal_info = cur.fetchone()
+            if not personal_info:
                 return _error_response(500, "Failed to create personal info.")
-            personal_info_id = personal_info_row["id"]
+            personal_info_id = personal_info["id"]
 
-            # Create account holder entry.
+            # Insert into account_holders
             cur.execute("""
                 INSERT INTO account_holders (user_id, personal_info_id, house_address)
                 VALUES (%s, %s, %s)
                 RETURNING id
             """, (user_id, personal_info_id, house_address))
-            account_holder_row = cur.fetchone()
-            if not account_holder_row:
+            account_holder = cur.fetchone()
+            if not account_holder:
                 return _error_response(500, "Failed to create account holder.")
-            account_holder_id = account_holder_row["id"]
+            account_holder_id = account_holder["id"]
 
-            log(conn, "REGULAR_ACCOUNT_CREATION", "Resident account created", user_id, account_holder_id, estate_id,)
+            # Log creation
+            log(conn, "REGULAR_ACCOUNT_CREATION", "Resident account created", user_id, account_holder_id, estate_id)
 
             conn.commit()
 
@@ -75,10 +96,11 @@ def signup(conn, body):
                 "house_address": house_address
             }
         })
-    
+
     except Exception as e:
         conn.rollback()
         return _error_response(500, f"An error occurred: {e}")
+
 
 # def signup_resident_by_admin(conn, body, event):
 #     """
@@ -470,7 +492,7 @@ def activate_account(conn, body, event):
             ) AS exists_flag
         """, (user_id, account_holder_id))
 
-        if not cur.fetchone()["exists_flag"]:
+        if not cur.fetchone()[0]:
             return _error_response(403, "You do not have privileges to manage accounts")
 
         # Activate the account
