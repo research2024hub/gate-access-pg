@@ -31,7 +31,7 @@ def lambda_handler(event, context):
                 return _error_response(404, f"Path '{path}' not found.")
         elif http_method == "POST":
             if path == "/account/signup":
-                return signup(conn, body, event)
+                return signup(conn, body)
             elif path == "/account/admin-signup":
                 return signupAdmin(conn, body)
             # elif path == "/account/signup/confirm":
