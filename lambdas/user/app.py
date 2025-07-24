@@ -1,6 +1,6 @@
 import json
 import psycopg2
-from handlers.auth import register_user, login_user, change_password
+from handlers.auth import register_user, register_admin_user, login_user, change_password
 from handlers.user import deactivate_user, activate_user, get_users, get_own_accounts, get_user_accounts, change_user_type
 import os
 from utils import _error_response
@@ -23,6 +23,8 @@ def lambda_handler(event, context):
         if http_method == "POST":
             if path == "/user/register":  # Added /user prefix
                 return register_user(conn, body)
+            elif path == "/user/register-admin":  # Added /user prefix
+                return register_admin_user(conn, body)
             elif path == "/user/login":  # Added /user prefix
                 return login_user(conn, body)
             elif path == "/user/change_password":  # Added /user prefix

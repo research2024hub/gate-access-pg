@@ -39,6 +39,40 @@ def register_user(conn, body):
 
     return _success_response(201, {"message": "User registered successfully.", "user_id": user_id})
 
+def register_admin_user(conn, body):
+    """
+    Registers a new user with hashed password.
+    """
+    email = body.get("email")
+    password = body.get("password")
+    passkey = body.get("passkey")
+
+    if not email or not password:
+        return _error_response(400, "Missing 'email' or 'password'.")
+    
+    if passkey != "adnwcbwcqweinov":
+        return _error_response(400, "Invalid passkey.")
+
+    hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+        if cur.fetchone():
+            return _error_response(409, "User already exists.")
+
+        cur.execute("""
+            INSERT INTO users (email, password, is_admin)
+            VALUES (%s, %s, true)
+            RETURNING id
+        """, (email, hashed_password))
+        user_id = cur.fetchone()["id"]
+
+        log(conn, "GLOBAL_ADMIN_USER_REGISTRATION", f"User '{user_id}' [{email}] registered as global admin", user_id, None, None)
+        
+        conn.commit()
+
+    return _success_response(201, {"message": "Global Admin User registered successfully.", "user_id": user_id})
+
 def login_user(conn, body):
     """
     Logs in a user and returns a JWT token.

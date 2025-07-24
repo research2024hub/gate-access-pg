@@ -38,6 +38,11 @@ Resources:
           Properties:
             Path: /user/register  # Organized under /user/
             Method: POST
+        RegisterAdminApi:
+          Type: Api
+          Properties:
+            Path: /user/register-admin  # Organized under /user/
+            Method: POST
         LoginApi:
           Type: Api
           Properties:
