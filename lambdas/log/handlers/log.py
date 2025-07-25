@@ -5,56 +5,82 @@ from middleware import verify_token
 
 def get_logs_by_estate(conn, event):
     """
-    Retrieves logs for a specific estate.
-    Only admins can access this data.
+    Retrieves logs for a specific estate with pagination.
+    Only admins or users with VIEW_LOGS or MANAGE_ALL privileges can access this data.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
-        return 
+        return error
     
     user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False)
 
-    if not payload.get("is_admin"):
-        return _error_response(403, "Access denied. Only admins can view estate logs.")
-
     path_params = event.get("pathParameters", {})
     estate_id = path_params.get("estate_id")
-
     if not estate_id:
         return _error_response(400, "Missing 'estate_id'.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+    
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Privilege check
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM users u
-                        JOIN account_holders ah ON u.id = ah.user_id
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE u.id = %s AND pi.estate_id = %s AND (pv.name = 'MANAGE_ALL' OR pv.name = 'VIEW_LOGS')
-                    ) AS exists_flag
-                    """, (user_id, estate_id))
-        
+            SELECT EXISTS (
+                SELECT 1 FROM users u
+                JOIN account_holders ah ON u.id = ah.user_id
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE u.id = %s AND pi.estate_id = %s
+                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'VIEW_LOGS')
+            ) AS exists_flag
+        """, (user_id, estate_id))
+
         if not (cur.fetchone()["exists_flag"] or is_admin):
-            return _error_response(403, "You do not have privileges to retrieves logs for this estate.")
-            
+            return _error_response(403, "You do not have privileges to retrieve logs for this estate.")
+        
+        # Total count
+        cur.execute("SELECT COUNT(*) FROM logs WHERE estate_id = %s", (estate_id,))
+        total = cur.fetchone()["count"]
+
+        # Paginated log retrieval
         cur.execute("""
-            SELECT *
-            FROM logs
+            SELECT * FROM logs
             WHERE estate_id = %s
             ORDER BY date_created DESC
-        """, (estate_id,))
-        
+            LIMIT %s OFFSET %s
+        """, (estate_id, page_size, offset))
+
         logs = cur.fetchall()
 
-    return _success_response(200, {"estate_id": estate_id, "logs": process_db_results(logs)})
+    return _success_response(200, {
+        "estate_id": estate_id,
+        "logs": process_db_results(logs),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+
 
 def get_logs_by_account_holder(conn, event):
     """
-    Retrieves logs for a specific account holder.
+    Retrieves logs for a specific account holder with pagination.
     Only the account holder (linked via user_id) or an admin can access this data.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -69,47 +95,56 @@ def get_logs_by_account_holder(conn, event):
     if not account_holder_id:
         return _error_response(400, "Missing 'account_holder_id'.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM users u
-                        JOIN account_holders ah ON u.id = ah.user_id
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE u.id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM account_holders ah
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            WHERE ah.id = %s
-                        ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'VIEW_LOGS')
-                    ) AS exists_flag
-                    """, (user_id, account_holder_id))
-        
-        if not (cur.fetchone()["exists_flag"] or is_admin):
-            # Verify the guest belongs to the account holder and get personal_info_id
-            cur.execute("""SELECT EXISTS(
-                            SELECT 1 FROM account_holders 
-                            WHERE user_id = %s AND id = %s
-                        ) AS exists_flag""", (user_id, account_holder_id))
-            if not cur.fetchone()["exists_flag"]:
-                return _error_response(403, "You do not have privileges to logs for this account holder.")
-            
-        # Check if the user is an admin or owns the given account_holder_id
+        # Privilege check
         cur.execute("""
             SELECT EXISTS (
-                SELECT 1 FROM account_holders WHERE id = %s AND user_id = %s
-            ) AS is_owner
-        """, (account_holder_id, payload["user_id"]))
+                SELECT 1 FROM users u
+                JOIN account_holders ah ON u.id = ah.user_id
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE u.id = %s AND pi.estate_id = ( 
+                    SELECT pi.estate_id 
+                    FROM account_holders ah
+                    JOIN personal_info pi ON ah.personal_info_id = pi.id
+                    WHERE ah.id = %s
+                ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'VIEW_LOGS')
+            ) AS exists_flag
+        """, (user_id, account_holder_id))
 
-        row = cur.fetchone()
-        is_owner = row["is_owner"] if row else False
+        if not (cur.fetchone()["exists_flag"] or is_admin):
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM account_holders 
+                    WHERE user_id = %s AND id = %s
+                ) AS exists_flag
+            """, (user_id, account_holder_id))
+            if not cur.fetchone()["exists_flag"]:
+                return _error_response(403, "You do not have privileges to view logs for this account holder.")
 
-        if not payload.get("is_admin") and not is_owner:
-            return _error_response(403, "Access denied. You are not the owner of this account.")
+        # Count total logs for pagination
+        cur.execute("""
+            SELECT COUNT(*) FROM logs
+            WHERE target_account_holder_id = %s OR actor_user_id = (
+                SELECT user_id FROM account_holders WHERE id = %s
+            )
+        """, (account_holder_id, account_holder_id))
+        total = cur.fetchone()["count"]
 
-        # Fetch logs for the requested account_holder_id
+        # Fetch logs with pagination
         cur.execute("""
             SELECT *
             FROM logs
@@ -117,12 +152,19 @@ def get_logs_by_account_holder(conn, event):
                 SELECT user_id FROM account_holders WHERE id = %s
             )
             ORDER BY date_created DESC
-        """, (account_holder_id, account_holder_id))
+            LIMIT %s OFFSET %s
+        """, (account_holder_id, account_holder_id, page_size, offset))
         
         logs = cur.fetchall()
 
-    # if not logs:
-    #     return _error_response(404, "No logs found for the specified account holder.")
-
-    return _success_response(200, {"account_holder_id": account_holder_id, "logs": process_db_results(logs)})
+    return _success_response(200, {
+        "account_holder_id": account_holder_id,
+        "logs": process_db_results(logs),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
 

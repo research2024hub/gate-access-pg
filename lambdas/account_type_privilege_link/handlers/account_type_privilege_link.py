@@ -91,7 +91,8 @@ def remove_privilege_link(conn, body, event):
 
 def list_account_type_privileges(conn, event):
     """
-    Lists privileges assigned to a specific account type.
+    Lists privileges assigned to a specific account type with optional pagination.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -106,13 +107,41 @@ def list_account_type_privileges(conn, event):
     if not account_type_id:
         return _error_response(400, "Missing 'account_type_id'.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""
+            SELECT COUNT(*) FROM account_type_privilege_links
+            WHERE account_type_id = %s
+        """, (account_type_id,))
+        total = cur.fetchone()["count"]
+
         cur.execute("""
             SELECT atpl.privilege_id AS id, pr.name AS name
             FROM account_type_privilege_links atpl
             JOIN privileges pr ON atpl.privilege_id = pr.id
-            WHERE account_type_id = %s
-        """, (account_type_id,))
+            WHERE atpl.account_type_id = %s
+            ORDER BY pr.name
+            LIMIT %s OFFSET %s
+        """, (account_type_id, page_size, offset))
         privileges = cur.fetchall()
 
-    return _success_response(200, {"privileges": process_db_results(privileges)})
+    return _success_response(200, {
+        "privileges": process_db_results(privileges),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+

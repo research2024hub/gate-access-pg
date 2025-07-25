@@ -735,7 +735,8 @@ def get_guest_details(conn, event):
 
 def get_account_holder_guests(conn, event):
     """
-    Lists all guests created by a specific account holder.
+    Lists all guests created by a specific account holder with pagination.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -743,36 +744,59 @@ def get_account_holder_guests(conn, event):
     
     user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False)
-
     account_holder_id = event.get("pathParameters", {}).get("account_holder_id")
 
     if not account_holder_id:
         return _error_response(400, "Missing 'account_holder_id'.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+    
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Check privilege
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM account_holders ah
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            WHERE ah.id = %s
-                    ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-                    ) AS exists_flag
-                    """, (user_id, account_holder_id))
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.user_id = %s 
+                  AND pi.estate_id = (
+                      SELECT pi.estate_id 
+                      FROM account_holders ah
+                      JOIN personal_info pi ON ah.personal_info_id = pi.id
+                      WHERE ah.id = %s
+                  )
+                  AND ah.is_active = TRUE
+                  AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+            ) AS exists_flag
+        """, (user_id, account_holder_id))
         
         if not (cur.fetchone()["exists_flag"] or is_admin):
-            # Verify the guest belongs to the account holder and get personal_info_id
-            cur.execute("SELECT EXISTS(SELECT 1 FROM account_holders WHERE user_id = %s AND id = %s AND is_active = TRUE) AS exists_flag", (user_id, account_holder_id))
-            row = cur.fetchone()
-            if not row:
-                return _error_response(403, "You do not have privileges to delete this guest.")
-            
+            # Check if this user is the same account holder
+            cur.execute("""
+                SELECT EXISTS(
+                    SELECT 1 FROM account_holders 
+                    WHERE user_id = %s AND id = %s AND is_active = TRUE
+                ) AS exists_flag
+            """, (user_id, account_holder_id))
+            if not cur.fetchone()["exists_flag"]:
+                return _error_response(403, "You do not have privileges to view this guest list.")
+
+        # Count total guests
+        cur.execute("SELECT COUNT(*) FROM guests WHERE creator_id = %s", (account_holder_id,))
+        total = cur.fetchone()["count"]
+
+        # Fetch guests paginated
         cur.execute("""
             SELECT 
                 g.id AS guest_id, 
@@ -788,14 +812,26 @@ def get_account_holder_guests(conn, event):
             JOIN account_types at ON pi.account_type_id = at.id
             JOIN access_groups ag ON pi.access_group_id = ag.id
             WHERE g.creator_id = %s
-        """, (account_holder_id,))
+            ORDER BY g.date_created DESC
+            LIMIT %s OFFSET %s
+        """, (account_holder_id, page_size, offset))
+
         guests = cur.fetchall()
 
-    return _success_response(200, {"guests": process_db_results(guests)})
+    return _success_response(200, {
+        "guests": process_db_results(guests),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
 
 def get_estate_guests(conn, event):
     """
-    Lists all guests created by a specific estate.
+    Lists all guests created within a specific estate, with pagination.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -805,25 +841,47 @@ def get_estate_guests(conn, event):
     is_admin = payload.get("is_admin", False)
 
     estate_id = event.get("pathParameters", {}).get("estate_id")
-
     if not estate_id:
         return _error_response(400, "Missing 'estate_id'.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+    
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Check privileges
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = %s AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-                    ) AS has_privileges
-                    """, (user_id, estate_id))
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.user_id = %s AND pi.estate_id = %s AND ah.is_active = TRUE AND
+                      (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+            ) AS has_privileges
+        """, (user_id, estate_id))
 
         if not (cur.fetchone()["has_privileges"] or is_admin):
             return _error_response(403, "You do not have privileges to get estate guests.")
 
+        # Total count
+        cur.execute("""
+            SELECT COUNT(*) FROM guests g
+            JOIN account_holders ah ON ah.id = g.creator_id
+            JOIN personal_info cpi ON ah.personal_info_id = cpi.id
+            WHERE cpi.estate_id = %s
+        """, (estate_id,))
+        total = cur.fetchone()["count"]
+
+        # Paginated guest list
         cur.execute("""
             SELECT 
                 g.id AS guest_id, 
@@ -843,8 +901,19 @@ def get_estate_guests(conn, event):
             JOIN account_types at ON pi.account_type_id = at.id
             JOIN access_groups ag ON pi.access_group_id = ag.id
             WHERE cpi.estate_id = %s
-        """, (estate_id,))
+            ORDER BY g.date_created DESC
+            LIMIT %s OFFSET %s
+        """, (estate_id, page_size, offset))
+        
         guests = cur.fetchall()
 
-    return _success_response(200, {"guests": process_db_results(guests)})
+    return _success_response(200, {
+        "guests": process_db_results(guests),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
 

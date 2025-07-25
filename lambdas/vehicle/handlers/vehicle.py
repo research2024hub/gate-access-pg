@@ -354,7 +354,8 @@ def get_vehicle_details(conn, event):
 
 def list_vehicles_by_owner(conn, event):
     """
-    Lists all vehicles belonging to a specific person.
+    Lists all vehicles belonging to a specific person, with optional pagination.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -365,52 +366,72 @@ def list_vehicles_by_owner(conn, event):
 
     path_params = event.get("pathParameters", {})
     personal_info_id = path_params.get("personal_info_id")
-
     if not personal_info_id:
         return _error_response(400, "Missing 'personal_info_id'.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Check privileges
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM personal_info pi
-                            WHERE pi.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
-                    ) AS exists_flag
-                    """, (user_id, personal_info_id))
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = ( 
+                    SELECT pi.estate_id FROM personal_info pi WHERE pi.id = %s
+                ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
+            ) AS exists_flag
+        """, (user_id, personal_info_id))
         
         if not (cur.fetchone()["exists_flag"] or is_admin):
-            # Verify the guest belongs to the account holder and get personal_info_id
             cur.execute("""
-                        SELECT 
-                        EXISTS(SELECT 1 FROM personal_info pi
-                            JOIN account_holders ah ON ah.personal_info_id = pi.id
-                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS for_myself,
-                        EXISTS(SELECT 1 FROM personal_info pi
-                            JOIN guests g ON g.personal_info_id = pi.id
-                            JOIN account_holders ah ON ah.id = g.creator_id
-                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS for_my_guest
-                        """, 
-                        (user_id, personal_info_id, user_id, personal_info_id))
-            # Instead of calling cur.fetchone() multiple times, do:
-            result = cur.fetchone()  # This fetches the single row you need.
-
-            # Then use the same result as needed:
+                SELECT 
+                    EXISTS(SELECT 1 FROM personal_info pi
+                        JOIN account_holders ah ON ah.personal_info_id = pi.id
+                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS for_myself,
+                    EXISTS(SELECT 1 FROM personal_info pi
+                        JOIN guests g ON g.personal_info_id = pi.id
+                        JOIN account_holders ah ON ah.id = g.creator_id
+                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS for_my_guest
+            """, (user_id, personal_info_id, user_id, personal_info_id))
+            result = cur.fetchone()
             if not (result["for_myself"] or result["for_my_guest"]):
                 return _error_response(403, "You do not have privileges to view vehicles for this person.")
-            
+        
+        # Count total
+        cur.execute("SELECT COUNT(*) FROM vehicles WHERE personal_info_id = %s", (personal_info_id,))
+        total = cur.fetchone()["count"]
+
+        # Fetch paginated vehicles
         cur.execute("""
             SELECT id, license_plate_number, make, model, color
             FROM vehicles
             WHERE personal_info_id = %s
-        """, (personal_info_id,))
+            ORDER BY date_created DESC
+            LIMIT %s OFFSET %s
+        """, (personal_info_id, page_size, offset))
         
         vehicles = cur.fetchall()
 
-    return _success_response(200, {"vehicles": process_db_results(vehicles)})
+    return _success_response(200, {
+        "vehicles": process_db_results(vehicles),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+

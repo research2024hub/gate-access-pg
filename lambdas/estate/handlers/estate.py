@@ -117,19 +117,53 @@ def delete_estate(conn, body, event):
 
 
 def get_estates(conn, event):
+    """
+    Retrieves all estates with optional pagination.
+    Supports query parameters: ?page=1&page_size=20
+    """
     payload, error = verify_token(event)
     if error:
         return error
-    
+
+    # If needed in the future:
     # is_admin = payload.get("is_admin", False)
     # if not is_admin:
     #     return _error_response(403, "Access denied. Only admins can get estates.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id, name, location_coordinates, date_created, date_updated FROM estates")
+        cur.execute("SELECT COUNT(*) FROM estates")
+        total = cur.fetchone()["count"]
+
+        cur.execute("""
+            SELECT id, name, location_coordinates, date_created, date_updated
+            FROM estates
+            ORDER BY date_created DESC
+            LIMIT %s OFFSET %s
+        """, (page_size, offset))
+
         estates = cur.fetchall()
 
-    return _success_response(200, {"estates": process_db_results(estates)})
+    return _success_response(200, {
+        "estates": process_db_results(estates),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+
 
 def get_estate_by_id(conn, event):
     """

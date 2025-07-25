@@ -581,23 +581,35 @@ def get_estate_accounts(conn, event):
     """
     Retrieves all account holders (and their personal info) for a given estate.
     Only admins or users with MANAGE_ALL or MANAGE_ACCOUNTS privileges in that estate can access this data.
+    Supports pagination with optional query params: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
         return error
-    
+
     user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False)
 
-    # Parse the estate_id from path parameters, e.g. /account/estate/{estate_id}
+    # Path param
     path_params = event.get("pathParameters", {})
     estate_id = path_params.get("estate_id")
-
     if not estate_id:
         return _error_response(400, "Missing 'estate_id' in path parameters.")
 
+    # Pagination
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # If user is not a global admin, check if they have estate-level privileges.
+        # Access check for non-admins
         if not is_admin:
             cur.execute("""
                 SELECT EXISTS (
@@ -617,7 +629,11 @@ def get_estate_accounts(conn, event):
             if not result or not result["has_privilege"]:
                 return _error_response(403, "You do not have privileges to view accounts in this estate.")
 
-        # Now fetch all accounts for the given estate.
+        # Count total
+        cur.execute("SELECT COUNT(*) FROM account_holders ah JOIN personal_info pi ON ah.personal_info_id = pi.id WHERE pi.estate_id = %s", (estate_id,))
+        total = cur.fetchone()["count"]
+
+        # Fetch paginated results
         cur.execute("""
             SELECT ah.id AS account_holder_id,
                    ah.user_id,
@@ -640,11 +656,20 @@ def get_estate_accounts(conn, event):
             JOIN estates es ON pi.estate_id = es.id
             WHERE pi.estate_id = %s
             ORDER BY ah.date_created DESC
-        """, (estate_id,))
+            LIMIT %s OFFSET %s
+        """, (estate_id, page_size, offset))
 
         accounts = cur.fetchall()
 
-    return _success_response(200, {"accounts": process_db_results(accounts)})
+    return _success_response(200, {
+        "accounts": process_db_results(accounts),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
 
 
 def generate_account_otp(conn, body, event):

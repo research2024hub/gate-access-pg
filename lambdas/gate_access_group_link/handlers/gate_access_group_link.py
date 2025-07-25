@@ -236,7 +236,8 @@ def remove_access_group_link(conn, body, event):
 
 def list_gate_access_groups(conn, event):
     """
-    Lists all access groups linked to a gate (returns IDs and names).
+    Lists all access groups linked to a gate (returns IDs and names), with pagination.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -251,37 +252,69 @@ def list_gate_access_groups(conn, event):
     if not gate_id:
         return _error_response(400, "Missing 'gate_id'.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        
+        # Privilege check
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCESS')
-                    ) AS exists_flag
-                    """, (user_id, gate_id))
-        
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.user_id = %s AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s)
+                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCESS')
+            ) AS exists_flag
+        """, (user_id, gate_id))
+
         has_privileges = cur.fetchone()["exists_flag"]
         if not (has_privileges or is_admin):
             return _error_response(403, "You do not have privileges to retrieve access groups related to this gate")
-        
+
+        # Count total linked access groups
+        cur.execute("""
+            SELECT COUNT(*) FROM gate_access_group_links
+            WHERE gate_id = %s
+        """, (gate_id,))
+        total = cur.fetchone()["count"]
+
+        # Paginated query
         cur.execute("""
             SELECT ag.id AS access_group_id, ag.name AS access_group_name
             FROM gate_access_group_links gag
             JOIN access_groups ag ON gag.access_group_id = ag.id
             WHERE gag.gate_id = %s
-        """, (gate_id,))
+            ORDER BY ag.name ASC
+            LIMIT %s OFFSET %s
+        """, (gate_id, page_size, offset))
+
         access_groups = cur.fetchall()
 
-    return _success_response(200, {"access_groups": process_db_results(access_groups)})
+    return _success_response(200, {
+        "access_groups": process_db_results(access_groups),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
 
 
 def list_access_group_gates(conn, event):
     """
-    Lists all gates linked to an access group (returns IDs and names).
+    Lists all gates linked to an access group (returns IDs and names), with pagination.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -296,29 +329,63 @@ def list_access_group_gates(conn, event):
     if not access_group_id:
         return _error_response(400, "Missing 'access_group_id'.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Privilege check
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = (SELECT estate_id FROM access_groups WHERE id = %s) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCESS')
-                    ) AS exists_flag
-                    """, (user_id, access_group_id))
-        
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.user_id = %s AND pi.estate_id = (SELECT estate_id FROM access_groups WHERE id = %s)
+                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCESS')
+            ) AS exists_flag
+        """, (user_id, access_group_id))
+
         has_privileges = cur.fetchone()["exists_flag"]
         if not (has_privileges or is_admin):
             return _error_response(403, "You do not have privileges to retrieve gates for this access group")
-        
+
+        # Count total
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM gate_access_group_links
+            WHERE access_group_id = %s
+        """, (access_group_id,))
+        total = cur.fetchone()["count"]
+
+        # Paginated fetch
         cur.execute("""
             SELECT g.id AS gate_id, g.name AS gate_name
             FROM gate_access_group_links gag
             JOIN gates g ON gag.gate_id = g.id
             WHERE gag.access_group_id = %s
-        """, (access_group_id,))
+            ORDER BY g.name ASC
+            LIMIT %s OFFSET %s
+        """, (access_group_id, page_size, offset))
+
         gates = cur.fetchall()
 
-    return _success_response(200, {"gates": process_db_results(gates)})
+    return _success_response(200, {
+        "gates": process_db_results(gates),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+
 

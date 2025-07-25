@@ -140,7 +140,8 @@ def activate_user(conn, body, event):
 
 def get_users(conn, event):
     """
-    Returns a list of all users. Only admins can access this endpoint.
+    Returns a paginated list of all users. Only admins can access this endpoint.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -150,15 +151,44 @@ def get_users(conn, event):
     if not is_admin:
         return _error_response(403, "Access denied. Only admins can retrieve user data.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id, email, is_active, is_admin, date_created, date_updated FROM users")
+        cur.execute("SELECT COUNT(*) FROM users")
+        total = cur.fetchone()["count"]
+
+        cur.execute("""
+            SELECT id, email, is_active, is_admin, date_created, date_updated
+            FROM users
+            ORDER BY date_created DESC
+            LIMIT %s OFFSET %s
+        """, (page_size, offset))
         users = process_db_results(cur.fetchall())
 
-    return _success_response(200, {"users": users})
+    return _success_response(200, {
+        "users": users,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+
 
 def get_own_accounts(conn, event):
     """
-    Retrieves the authenticated user's account details.
+    Retrieves the authenticated user's account details with optional pagination.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -166,9 +196,24 @@ def get_own_accounts(conn, event):
 
     user_id = payload.get("user_id")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT COUNT(*) FROM account_holders WHERE user_id = %s", (user_id,))
+        total = cur.fetchone()["count"]
+
         cur.execute("""
-            SELECT ah.id AS account_holder_id, pi.id AS personal_info_id, ah.user_id, pi.estate_id, pi.name, pi.expiry, pi.contact, es.name AS estate_name, at.name AS account_type_name, ag.name AS access_group_name,
+            SELECT ah.id AS account_holder_id, pi.id AS personal_info_id, ah.user_id, pi.estate_id, pi.name, pi.expiry, pi.contact,
+                   es.name AS estate_name, at.name AS account_type_name, ag.name AS access_group_name,
                    ah.house_address, pi.account_type_id, ah.is_active
             FROM account_holders ah
             JOIN personal_info pi ON ah.personal_info_id = pi.id
@@ -176,14 +221,25 @@ def get_own_accounts(conn, event):
             JOIN account_types at ON pi.account_type_id = at.id
             JOIN access_groups ag ON pi.access_group_id = ag.id
             WHERE ah.user_id = %s
-        """, (user_id,))
+            ORDER BY ah.date_created DESC
+            LIMIT %s OFFSET %s
+        """, (user_id, page_size, offset))
         accounts = cur.fetchall()
 
-    return _success_response(200, {"accounts": process_db_results(accounts)})
+    return _success_response(200, {
+        "accounts": process_db_results(accounts),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
 
 def get_user_accounts(conn, event):
     """
-    Retrieves account details for a specific account holder (admin only).
+    Retrieves account details for a specific user (admin only) with optional pagination.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -192,20 +248,46 @@ def get_user_accounts(conn, event):
     if not payload.get("is_admin"):
         return _error_response(403, "Access denied. Only admins can retrieve account details.")
 
-    user_id = event.get("pathParameters", {}).get("user_id")
+    path_params = event.get("pathParameters", {})
+    user_id = path_params.get("user_id")
     if not user_id:
-        return _error_response(400, "Missing account holder ID.")
+        return _error_response(400, "Missing 'user_id'.")
+
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT COUNT(*) FROM account_holders WHERE user_id = %s", (user_id,))
+        total = cur.fetchone()["count"]
+
         cur.execute("""
-            SELECT ah.id AS account_holder_id, pi.name, pi.expiry, pi.contact, es.name AS estate_name, at.name AS account_type_name, pi.id AS personal_info_id, ah.user_id, pi.estate_id,
+            SELECT ah.id AS account_holder_id, pi.name, pi.expiry, pi.contact, es.name AS estate_name,
+                   at.name AS account_type_name, pi.id AS personal_info_id, ah.user_id, pi.estate_id,
                    ah.house_address, pi.account_type_id, ah.is_active
             FROM account_holders ah
             JOIN personal_info pi ON ah.personal_info_id = pi.id
             JOIN estates es ON pi.estate_id = es.id
             JOIN account_types at ON pi.account_type_id = at.id
             WHERE ah.user_id = %s
-        """, (user_id,))
+            ORDER BY ah.date_created DESC
+            LIMIT %s OFFSET %s
+        """, (user_id, page_size, offset))
         accounts = cur.fetchall()
 
-    return _success_response(200, {"accounts": process_db_results(accounts)})
+    return _success_response(200, {
+        "accounts": process_db_results(accounts),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })

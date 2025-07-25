@@ -376,7 +376,8 @@ def get_event_details(conn, event):
 
 def list_events_by_creator(conn, event):
     """
-    Lists all events created by a specific account holder.
+    Lists all events created by a specific account holder, with optional pagination.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -391,40 +392,77 @@ def list_events_by_creator(conn, event):
     if not creator_id:
         return _error_response(400, "Missing 'account_holder_id'.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Privilege check
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND ah.is_active = TRUE AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM account_holders ah
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            WHERE ah.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
-                    ) AS has_privileges,
-                    EXISTS (SELECT 1 FROM account_holders ah WHERE ah.user_id = %s AND ah.is_active = TRUE AND ah.id = %s) as same_person
-                    """, (user_id, creator_id, user_id, creator_id))
+            SELECT 
+                EXISTS (
+                    SELECT 1 FROM account_holders ah
+                    JOIN personal_info pi ON ah.personal_info_id = pi.id
+                    JOIN account_types act ON pi.account_type_id = act.id
+                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                    JOIN privileges pv ON atpl.privilege_id = pv.id
+                    WHERE ah.user_id = %s 
+                      AND ah.is_active = TRUE 
+                      AND pi.estate_id = (
+                          SELECT pi.estate_id 
+                          FROM account_holders ah
+                          JOIN personal_info pi ON ah.personal_info_id = pi.id
+                          WHERE ah.id = %s
+                      ) 
+                      AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
+                ) AS has_privileges,
+                EXISTS (
+                    SELECT 1 FROM account_holders ah 
+                    WHERE ah.user_id = %s AND ah.is_active = TRUE AND ah.id = %s
+                ) AS same_person
+        """, (user_id, creator_id, user_id, creator_id))
+
         result = cur.fetchone()
         if not (result["has_privileges"] or result["same_person"] or is_admin):
             return _error_response(403, "You do not have privileges to retrieve events for this account")
-        
+
+        # Count total
+        cur.execute("SELECT COUNT(*) FROM events WHERE creator_id = %s", (creator_id,))
+        total = cur.fetchone()["count"]
+
+        # Fetch paginated results
         cur.execute("""
             SELECT id, name, max_num_of_attendees, start_time, end_time
             FROM events
             WHERE creator_id = %s
-        """, (creator_id,))
-        
+            ORDER BY start_time DESC
+            LIMIT %s OFFSET %s
+        """, (creator_id, page_size, offset))
+
         events = cur.fetchall()
 
-    return _success_response(200, {"events": process_db_results(events)})
+    return _success_response(200, {
+        "events": process_db_results(events),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+
 
 def list_events_by_estate(conn, event):
     """
     Lists all events in a specific estate by filtering via creator_id.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -439,31 +477,64 @@ def list_events_by_estate(conn, event):
     if not estate_id:
         return _error_response(400, "Missing 'estate_id'.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+    
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND ah.is_active = TRUE AND pi.estate_id = %s AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
-                    ) AS has_privileges
-                    """, (user_id, estate_id))
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.user_id = %s 
+                  AND ah.is_active = TRUE 
+                  AND pi.estate_id = %s 
+                  AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
+            ) AS has_privileges
+        """, (user_id, estate_id))
         
-        has_privileges = cur.fetchone()["has_privileges"]
-
-        if not (has_privileges or is_admin):
+        if not (cur.fetchone()["has_privileges"] or is_admin):
             return _error_response(403, "You do not have privileges to get events from this estate")
 
+        # Count total
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM events e
+            JOIN account_holders ah ON e.creator_id = ah.id
+            JOIN personal_info pi ON ah.personal_info_id = pi.id
+            WHERE pi.estate_id = %s
+        """, (estate_id,))
+        total = cur.fetchone()["count"]
+
+        # Paginated fetch
         cur.execute("""
             SELECT e.id, e.name, e.max_num_of_attendees, e.start_time, e.end_time, ah.id AS creator_id, pi.name AS creator_name
             FROM events e
             JOIN account_holders ah ON e.creator_id = ah.id
             JOIN personal_info pi ON ah.personal_info_id = pi.id
             WHERE pi.estate_id = %s
-        """, (estate_id,))
+            ORDER BY e.start_time DESC
+            LIMIT %s OFFSET %s
+        """, (estate_id, page_size, offset))
         
         events = cur.fetchall()
 
-    return _success_response(200, {"events": process_db_results(events)})
+    return _success_response(200, {
+        "events": process_db_results(events),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })

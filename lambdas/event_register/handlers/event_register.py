@@ -284,6 +284,7 @@ def list_event_guests(conn, event):
     """
     Lists all guests registered for a specific event.
     Only the event creator or an admin can access this data.
+    Supports query parameters: ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -298,6 +299,17 @@ def list_event_guests(conn, event):
     if not event_id:
         return _error_response(400, "Missing 'event_id'.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("SELECT creator_id FROM events WHERE id = %s", (event_id,))
         event_data = cur.fetchone()
@@ -305,44 +317,64 @@ def list_event_guests(conn, event):
             return _error_response(404, "Event not found.")
     
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM events e
-                            JOIN account_holders ah ON e.creator_id = ah.id
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            WHERE e.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
-                    ) AS has_privileges,
-                    EXISTS (
-                        SELECT 1 FROM events e 
-                        JOIN account_holders ah ON e.creator_id = ah.id
-                        WHERE ah.user_id = %s AND e.id = %s
-                    ) AS is_owner
-                    """, (user_id, event_id, user_id, event_id))
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.user_id = %s AND pi.estate_id = ( 
+                    SELECT pi.estate_id 
+                    FROM events e
+                    JOIN account_holders ah ON e.creator_id = ah.id
+                    JOIN personal_info pi ON ah.personal_info_id = pi.id
+                    WHERE e.id = %s
+                ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
+            ) AS has_privileges,
+            EXISTS (
+                SELECT 1 FROM events e 
+                JOIN account_holders ah ON e.creator_id = ah.id
+                WHERE ah.user_id = %s AND e.id = %s
+            ) AS is_owner
+        """, (user_id, event_id, user_id, event_id))
         
         result = cur.fetchone()
-
         if not (result["has_privileges"] or result["is_owner"] or is_admin):
             return _error_response(403, "You do not have privileges to retrieve this event's guests")
-                
-        # Fetch guests registered for the event
+
+        # Get total number of guests
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM event_registers er
+            JOIN guests g ON er.guest_id = g.id
+            JOIN personal_info pi ON g.personal_info_id = pi.id
+            WHERE er.event_id = %s
+        """, (event_id,))
+        total = cur.fetchone()["count"]
+
+        # Fetch paginated guest data
         cur.execute("""
             SELECT g.id AS guest_id, pi.name AS guest_name, pi.contact, pi.estate_id
             FROM event_registers er
             JOIN guests g ON er.guest_id = g.id
             JOIN personal_info pi ON g.personal_info_id = pi.id
             WHERE er.event_id = %s
-        """, (event_id,))
+            ORDER BY pi.name ASC
+            LIMIT %s OFFSET %s
+        """, (event_id, page_size, offset))
         
         guests = cur.fetchall()
 
-    return _success_response(200, {"event_id": event_id, "guests": process_db_results(guests)})
+    return _success_response(200, {
+        "event_id": event_id,
+        "guests": process_db_results(guests),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
 
 def remove_guest_from_event(conn, body, event):
     """

@@ -101,15 +101,47 @@ def delete_account_type(conn, body, event):
 
 
 def get_account_types(conn, event):
+    """
+    Retrieves all account types with optional pagination.
+    Supports query parameters: ?page=1&page_size=20
+    """
     payload, error = verify_token(event)
     if error:
         return error
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id, name, date_created, date_updated FROM account_types")
+        cur.execute("SELECT COUNT(*) FROM account_types")
+        total = cur.fetchone()["count"]
+
+        cur.execute("""
+            SELECT id, name, date_created, date_updated
+            FROM account_types
+            ORDER BY date_created DESC
+            LIMIT %s OFFSET %s
+        """, (page_size, offset))
+
         account_types = cur.fetchall()
 
-    return _success_response(200, {"account_types": process_db_results(account_types)})
+    return _success_response(200, {
+        "account_types": process_db_results(account_types),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
 
 
 def get_account_type_by_id(conn, event):

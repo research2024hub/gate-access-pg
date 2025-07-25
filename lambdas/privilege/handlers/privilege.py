@@ -99,6 +99,11 @@ def delete_privilege(conn, body, event):
 
 
 def get_privileges(conn, event):
+    """
+    Retrieves all privileges with optional pagination.
+    Supports query parameters: ?page=1&page_size=20
+    Only accessible to admins.
+    """
     payload, error = verify_token(event)
     if error:
         return error
@@ -107,11 +112,39 @@ def get_privileges(conn, event):
     if not is_admin:
         return _error_response(403, "Access denied. Only admins can get privileges.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+    
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id, name, date_created, date_updated FROM privileges")
+        cur.execute("SELECT COUNT(*) FROM privileges")
+        total = cur.fetchone()["count"]
+
+        cur.execute("""
+            SELECT id, name, date_created, date_updated
+            FROM privileges
+            ORDER BY date_created DESC
+            LIMIT %s OFFSET %s
+        """, (page_size, offset))
         privileges = cur.fetchall()
 
-    return _success_response(200, {"privileges": process_db_results(privileges)})
+    return _success_response(200, {
+        "privileges": process_db_results(privileges),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+
 
 
 def get_privilege_by_id(conn, event):

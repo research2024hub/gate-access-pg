@@ -149,11 +149,41 @@ def get_access_groups(conn, event):
     if not is_admin:
         return _error_response(403, "Access denied. Only admins can retrieve all access groups across all estates.")
 
+    # Extract query parameters for pagination
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id, name, date_created, date_updated FROM access_groups")
+        # Get total count
+        cur.execute("SELECT COUNT(*) FROM access_groups")
+        total_count = cur.fetchone()["count"]
+
+        # Get paginated records
+        cur.execute("""
+            SELECT id, name, date_created, date_updated
+            FROM access_groups
+            ORDER BY date_created DESC
+            LIMIT %s OFFSET %s
+        """, (page_size, offset))
         access_groups = cur.fetchall()
 
-    return _success_response(200, {"access_groups": process_db_results(access_groups)})
+    return _success_response(200, {
+        "access_groups": process_db_results(access_groups),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total_count,
+            "pages": (total_count + page_size - 1) // page_size
+        }
+    })
 
 
 def get_access_group_by_id(conn, event):
@@ -180,7 +210,7 @@ def get_access_group_by_id(conn, event):
 
     return _success_response(200, {"access_group": process_db_results([access_group])})
 
-def get_access_group_by_estate(conn, event):
+def get_access_groups_by_estate(conn, event):
     payload, error = verify_token(event)
     if error:
         return error
@@ -192,27 +222,55 @@ def get_access_group_by_estate(conn, event):
     if not estate_id:
         return _error_response(400, "Missing estate ID.")
 
+    # Handle pagination
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Check privilege
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = %s AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCESS')
-                    ) AS exists_flag
-                    """, (user_id, estate_id))
-        
-        if not (cur.fetchone()[0] or is_admin):
-            return _error_response(403, "You do not have privileges to manage access groups")
-        
+            SELECT EXISTS (
+                SELECT 1 FROM account_holders ah
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE ah.user_id = %s AND pi.estate_id = %s
+                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCESS')
+            ) AS exists_flag
+        """, (user_id, estate_id))
+        if not (cur.fetchone()["exists_flag"] or is_admin):
+            return _error_response(403, "You do not have privileges to manage access groups.")
+
+        # Count total access groups
+        cur.execute("SELECT COUNT(*) FROM access_groups WHERE estate_id = %s", (estate_id,))
+        total = cur.fetchone()["count"]
+
+        # Fetch paginated access groups
         cur.execute("""
             SELECT id, name, estate_id, date_created, date_updated
-            FROM access_groups WHERE estate_id = %s
-        """, (estate_id,))
-        access_group = cur.fetchone()
-        if not access_group:
-            return _error_response(404, "Access Group not found.")
+            FROM access_groups
+            WHERE estate_id = %s
+            ORDER BY date_created DESC
+            LIMIT %s OFFSET %s
+        """, (estate_id, page_size, offset))
+        access_groups = cur.fetchall()
 
-    return _success_response(200, {"access_group": process_db_results([access_group])})
+    return _success_response(200, {
+        "access_groups": process_db_results(access_groups),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+

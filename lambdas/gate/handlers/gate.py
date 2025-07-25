@@ -165,6 +165,11 @@ def delete_gate(conn, body, event):
 
 
 def get_gates(conn, event):
+    """
+    Retrieves all gates with optional pagination.
+    Supports query parameters: ?page=1&page_size=20
+    Only admins are allowed to perform this action.
+    """
     payload, error = verify_token(event)
     if error:
         return error
@@ -173,41 +178,110 @@ def get_gates(conn, event):
     if not is_admin:
         return _error_response(403, "Access denied. Only admins can retrieve gates.")
 
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id, name, estate_id, active, last_controller_heartbeat, date_created, date_updated FROM gates")
+        cur.execute("SELECT COUNT(*) FROM gates")
+        total = cur.fetchone()["count"]
+
+        cur.execute("""
+            SELECT id, name, estate_id, active, last_controller_heartbeat, date_created, date_updated
+            FROM gates
+            ORDER BY date_created DESC
+            LIMIT %s OFFSET %s
+        """, (page_size, offset))
         gates = cur.fetchall()
 
-    return _success_response(200, {"gates": process_db_results(gates)})
+    return _success_response(200, {
+        "gates": process_db_results(gates),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
 
 def get_gates_by_estate(conn, event):
+    """
+    Retrieves all gates for a specific estate with optional pagination.
+    Supports query parameters: ?page=1&page_size=20
+    Only estate admins or global admins can access this.
+    """
     payload, error = verify_token(event)
     if error:
         return error
-    
+
     is_admin = payload.get("is_admin", False)
     user_id = payload.get("user_id")
     estate_id = event.get("pathParameters", {}).get("estate_id")
 
+    if not estate_id:
+        return _error_response(400, "Missing 'estate_id' in path parameters.")
+
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Check estate-level privileges unless user is a global admin
+        if not is_admin:
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM account_holders ah
+                    JOIN personal_info pi ON ah.personal_info_id = pi.id
+                    JOIN account_types act ON pi.account_type_id = act.id
+                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                    JOIN privileges pv ON atpl.privilege_id = pv.id
+                    WHERE ah.user_id = %s
+                      AND pi.estate_id = %s
+                      AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
+                ) AS exists_flag
+            """, (user_id, estate_id))
+            has_privileges = cur.fetchone()["exists_flag"]
+            if not has_privileges:
+                return _error_response(403, "You do not have privileges to retrieve gates from this estate.")
+
+        # Count total for pagination
+        cur.execute("SELECT COUNT(*) FROM gates WHERE estate_id = %s", (estate_id,))
+        total = cur.fetchone()["count"]
+
+        # Retrieve paginated gates
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
-                    ) AS exists_flag
-                    """, (user_id, estate_id))
-        
-        has_privileges = cur.fetchone()["exists_flag"]
-        if not (has_privileges or is_admin):
-            return _error_response(403, "You do not have privileges to retrieve gates from this estate")
-        
-        cur.execute("SELECT id, name, estate_id, active, last_controller_heartbeat, date_created, date_updated FROM gates")
+            SELECT id, name, estate_id, active, last_controller_heartbeat, date_created, date_updated
+            FROM gates
+            WHERE estate_id = %s
+            ORDER BY date_created DESC
+            LIMIT %s OFFSET %s
+        """, (estate_id, page_size, offset))
         gates = cur.fetchall()
 
-    return _success_response(200, {"gates": process_db_results(gates)})
+    return _success_response(200, {
+        "gates": process_db_results(gates),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+
 
 def get_gate_by_id(conn, event):
     payload, error = verify_token(event)
@@ -498,6 +572,7 @@ def get_vehicles_by_gate_with_time_check(conn, event):
     """
     Retrieve vehicles allowed at a gate, considering the gate's time windows.
     This query supports time windows that cross midnight.
+    Supports pagination via ?page=1&page_size=20
     """
     payload, error = verify_token(event)
     if error:
@@ -505,14 +580,24 @@ def get_vehicles_by_gate_with_time_check(conn, event):
 
     user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False)
-    
-    # Get gate_id from path parameters
+
     gate_id = event.get("pathParameters", {}).get("gate_id")
     if not gate_id:
         return _error_response(400, "Missing gate id in path parameters.")
 
-    # Check user privileges
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Privilege check
         cur.execute("""
             SELECT EXISTS (
                 SELECT 1
@@ -530,9 +615,40 @@ def get_vehicles_by_gate_with_time_check(conn, event):
         if not (result and (result["exists_flag"] or is_admin)):
             return _error_response(403, "You do not have privileges to view vehicles for this gate.")
 
-        # Retrieve vehicles with time window check. The time conditions:
-        # - If opening_time <= closing_time: current time must be between them.
-        # - If opening_time > closing_time: allowed if current time is >= opening_time OR <= closing_time.
+        # Count total
+        cur.execute(f"""
+            SELECT COUNT(*) FROM (
+                SELECT v.id
+                FROM vehicles v
+                JOIN personal_info pi ON v.personal_info_id = pi.id
+                LEFT JOIN guests g ON g.personal_info_id = pi.id
+                WHERE pi.access_group_id IN (
+                    SELECT access_group_id
+                    FROM gate_access_group_links ga
+                    JOIN gates g2 ON g2.id = ga.gate_id
+                    WHERE g2.id = %s
+                    AND (
+                        (GREATEST(g2.opening_time, ga.opening_time) <= LEAST(g2.closing_time, ga.closing_time)
+                          AND CURRENT_TIME BETWEEN GREATEST(g2.opening_time, ga.opening_time)
+                          AND LEAST(g2.closing_time, ga.closing_time))
+                        OR
+                        (GREATEST(g2.opening_time, ga.opening_time) > LEAST(g2.closing_time, ga.closing_time)
+                          AND (CURRENT_TIME >= GREATEST(g2.opening_time, ga.opening_time)
+                          OR CURRENT_TIME <= LEAST(g2.closing_time, ga.closing_time)))
+                    )
+                )
+                AND (
+                    g.id IS NULL
+                    OR (
+                        (g.other_info->'entry_window'->>'start')::timestamp <= CURRENT_TIMESTAMP
+                        AND (g.other_info->'entry_window'->>'end')::timestamp >= CURRENT_TIMESTAMP
+                    )
+                )
+            ) AS valid_vehicles
+        """, (gate_id,))
+        total = cur.fetchone()["count"]
+
+        # Fetch paginated results
         cur.execute("""
             SELECT v.*, pi.expiry
             FROM vehicles v
@@ -544,33 +660,36 @@ def get_vehicles_by_gate_with_time_check(conn, event):
                 JOIN gates g2 ON g2.id = ga.gate_id
                 WHERE g2.id = %s
                 AND (
-                (
-                    -- standard case
-                    GREATEST(g2.opening_time, ga.opening_time) <= LEAST(g2.closing_time, ga.closing_time)
-                    AND CURRENT_TIME BETWEEN GREATEST(g2.opening_time, ga.opening_time)
-                    AND LEAST(g2.closing_time, ga.closing_time)
-                )
-                OR
-                (
-                    -- crosses midnight
-                    GREATEST(g2.opening_time, ga.opening_time) > LEAST(g2.closing_time, ga.closing_time)
-                    AND (CURRENT_TIME >= GREATEST(g2.opening_time, ga.opening_time)
-                    OR CURRENT_TIME <= LEAST(g2.closing_time, ga.closing_time))
-                )
+                    (GREATEST(g2.opening_time, ga.opening_time) <= LEAST(g2.closing_time, ga.closing_time)
+                      AND CURRENT_TIME BETWEEN GREATEST(g2.opening_time, ga.opening_time)
+                      AND LEAST(g2.closing_time, ga.closing_time))
+                    OR
+                    (GREATEST(g2.opening_time, ga.opening_time) > LEAST(g2.closing_time, ga.closing_time)
+                      AND (CURRENT_TIME >= GREATEST(g2.opening_time, ga.opening_time)
+                      OR CURRENT_TIME <= LEAST(g2.closing_time, ga.closing_time)))
                 )
             )
             AND (
                 g.id IS NULL
-                OR
-                (
-                (g.other_info->'entry_window'->>'start')::timestamp <= CURRENT_TIMESTAMP
-                AND (g.other_info->'entry_window'->>'end')::timestamp >= CURRENT_TIMESTAMP
+                OR (
+                    (g.other_info->'entry_window'->>'start')::timestamp <= CURRENT_TIMESTAMP
+                    AND (g.other_info->'entry_window'->>'end')::timestamp >= CURRENT_TIMESTAMP
                 )
-            );
-        """, (gate_id,))
+            )
+            ORDER BY v.date_created DESC
+            LIMIT %s OFFSET %s
+        """, (gate_id, page_size, offset))
         vehicles = cur.fetchall()
 
-    return _success_response(200, {"vehicles": process_db_results(vehicles)})
+    return _success_response(200, {
+        "vehicles": process_db_results(vehicles),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
 
 def activate_gate(conn, body, event):
     """
