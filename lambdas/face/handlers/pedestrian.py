@@ -1,17 +1,9 @@
-import cv2
 import boto3
 import base64
-import os
 from datetime import datetime
-import json
-import traceback
-import firebase_admin
-from firebase_admin import credentials
-from firebase_admin import messaging
-from utils import _error_response, _success_response, process_db_results, log, notify_user
+from utils import _error_response, _success_response, log, notify_user
 from middleware import verify_token
 from psycopg2.extras import RealDictCursor
-import random
 
 rekognition = boto3.client('rekognition')
 s3 = boto3.client('s3')
