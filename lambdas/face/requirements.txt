@@ -2,3 +2,4 @@ boto3
 urllib3<2
 requests
 firebase-admin==6.4.0
+psycopg2-binary

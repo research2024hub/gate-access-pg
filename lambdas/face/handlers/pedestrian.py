@@ -46,9 +46,11 @@ def upload_vehicle_image_to_s3(body, event):
     image_bytes = base64.b64decode(image)
     object_name = f'lpr-images/{file_name}'
     metadata=None
+    
     payload, error = verify_token(event)
     if error:
         return error
+    
     try:
         s3.put_object(Bucket="lpr-images", Key=object_name, Body=image_bytes, Metadata=metadata)
         # object_key = f"gate-app-faces/{object_name}"
