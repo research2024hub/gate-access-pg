@@ -3,6 +3,7 @@ import psycopg2
 from handlers.gate import (
     create_gate,
     update_gate,
+    update_gate_controller_heartbeat,
     delete_gate,
     activate_gate,
     deactivate_gate,
@@ -37,6 +38,8 @@ def lambda_handler(event, context):
                 return create_gate(conn, body, event)
             elif path == "/gate/update":
                 return update_gate(conn, body, event)
+            elif path == "/gate/heartbeat":
+                return update_gate_controller_heartbeat(conn, event)
             elif path == "/gate/activate":
                 return activate_gate(conn, body, event)
             elif path == "/gate/deactivate":

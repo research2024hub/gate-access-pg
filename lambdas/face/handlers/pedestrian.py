@@ -33,6 +33,10 @@ def upload_image_to_s3(image, object_name, metadata=None):
     return True
 
 def upload_vehicle_image_to_s3(body, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+    
     image = body["image"]
     file_name = body["file_name"]
     image_bytes = base64.b64decode(image)
