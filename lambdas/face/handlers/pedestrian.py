@@ -37,7 +37,7 @@ def upload_vehicle_image_to_s3(body, event):
     file_name = body["file_name"]
     image_bytes = base64.b64decode(image)
     object_name = f'lpr-images/{file_name}'
-    metadata=None
+    metadata = {'key': body["key"]}
     
     payload, error = verify_token(event)
     if error:
