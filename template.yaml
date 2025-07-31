@@ -143,8 +143,8 @@ Resources:
         HeartbeatSchedule:
           Type: Schedule
           Properties:
-            Schedule: rate(5 minutes)
-            Description: "Run every 5 minutes to monitor device heartbeat"
+            Schedule: rate(6 minutes)
+            Description: "Run every 6 minutes to monitor device heartbeat"
         
       Environment:
         Variables:

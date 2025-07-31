@@ -7,7 +7,7 @@ import boto3
 ses_client = boto3.client('ses')
 SENDER_EMAIL = "jagudogo@itconsortiumgh.com"
 RECIPIENT_EMAILS = ["research@itconsortiumgh.com"]
-THRESHOLD_SECONDS = 300  # Adjust based on your requirements
+THRESHOLD_SECONDS = 600  # Adjust based on your requirements
 
 
 def monitor_heartbeat(conn):

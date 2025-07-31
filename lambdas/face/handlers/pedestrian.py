@@ -48,7 +48,7 @@ def upload_vehicle_image_to_s3(body, event):
         return error
     
     try:
-        s3.put_object(Bucket="lpr-images", Key=object_name, Body=image_bytes, Metadata=metadata)
+        s3.put_object(Bucket=bucket_name, Key=object_name, Body=image_bytes, Metadata=metadata)
         # object_key = f"gate-app-faces/{object_name}"
         print(f"Image uploaded to S3 bucket '{bucket_name}' with object name '{object_name}'.")
     except Exception as e:
