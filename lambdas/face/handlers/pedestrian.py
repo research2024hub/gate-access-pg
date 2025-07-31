@@ -54,8 +54,8 @@ def upload_vehicle_image_to_s3(body, event):
         print(f"Image uploaded to S3 bucket '{bucket}' with object name '{object_name}'.")
     except Exception as e:
         print(f"Error uploading image to S3: {e}")
-        return False
-    return True
+        return _error_response(500, "Internal Server Error.")
+    return _success_response(200, {"message": "Match successful."})
 
 def index_face(image):
 
