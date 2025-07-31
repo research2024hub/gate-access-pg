@@ -23,10 +23,11 @@ def detect_face(image):
         return None
 
 def upload_image_to_s3(image, object_name, metadata=None):
+    bucket = "lpr-images-867721879638"
     try:
-        s3.put_object(Bucket=bucket_name, Key=object_name, Body=image, Metadata=metadata)
+        s3.put_object(Bucket=bucket, Key=object_name, Body=image, Metadata=metadata)
         # object_key = f"gate-app-faces/{object_name}"
-        print(f"Image uploaded to S3 bucket '{bucket_name}' with object name '{object_name}'.")
+        print(f"Image uploaded to S3 bucket '{bucket}' with object name '{object_name}'.")
     except Exception as e:
         print(f"Error uploading image to S3: {e}")
         return False
