@@ -1,6 +1,6 @@
 import json
 import psycopg2
-from handlers.auth import register_user, register_admin_user, login_user, change_password
+from handlers.auth import register_user, register_admin_user, login_user, change_password,send_user_otp,verify_user_otp
 from handlers.user import deactivate_user, activate_user, get_users, get_own_accounts, get_user_accounts, change_user_type
 import os
 from utils import _error_response
@@ -21,6 +21,10 @@ def lambda_handler(event, context):
         http_method = event.get("httpMethod", "").upper()
 
         if http_method == "POST":
+            if path == "/user/send_otp":  # Added /user prefix
+                return send_user_otp(conn, body)
+            if path == "/user/verify_otp":  # Added /user prefix
+                return verify_user_otp(conn, body)
             if path == "/user/register":  # Added /user prefix
                 return register_user(conn, body)
             elif path == "/user/register-admin":  # Added /user prefix

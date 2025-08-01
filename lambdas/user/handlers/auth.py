@@ -6,15 +6,98 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 from utils import _error_response, _success_response, process_db_results, log
 from middleware import verify_token
+import random
+import smtplib
+from email.mime.text import MIMEText
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key") 
+import random
+
+def generate_otp():
+    return ''.join(str(random.randint(0, 9)) for _ in range(6))
+
+
+def send_email_gmail(to_email, otp):
+    gmail_user = os.environ['vdowana@itconsortiumgh.com']  # e.g. "yourname@gmail.com"
+    gmail_app_password = os.environ['pkqd qmiq hqqb hnfw']  # the 16-char app password
+
+    msg = MIMEText(f"Your OTP is: {otp}\n\nExpires in 10 minutes.")
+    msg['Subject'] = 'Your OTP Code'
+    msg['From'] = gmail_user
+    msg['To'] = to_email
+
+    server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+    server.login(gmail_user, gmail_app_password)
+    server.send_message(msg)
+    server.quit()
+    
+def create_token(email):
+    payload = {
+        "email": email,
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
+
+def decode_token(token):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+        return payload["email"]
+    except jwt.ExpiredSignatureError:
+        raise ValueError("Token expired")
+    except Exception:
+        raise ValueError("Invalid token")
+
+
+def send_user_otp(conn, body):
+    email = body.get("email")
+    if not email:
+        return _error_response(400, "Missing email.")
+
+    otp = generate_otp()
+    send_email_gmail(email, otp)
+    # otp_expiry = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("DELETE FROM pending_users WHERE email = %s", (email,))
+        cur.execute("""
+            INSERT INTO pending_users (email, otp, otp_expiry)
+            VALUES (%s, %s, NOW() + INTERVAL '10 minutes')
+        """, (email, otp))
+        conn.commit()
+        token = create_token(email)
+    return _success_response(200,{"message": "OTP sent to email.","token":token})
+
+def verify_user_otp(conn, body):
+    token = body.get("token")
+    input_otp = body.get("otp")
+    email = decode_token(token)
+    if not input_otp or not token:
+        return _error_response(400, "Missing OTP and token.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""
+            SELECT otp, otp_expiry FROM pending_users
+            WHERE email = %s
+        """, (email,))
+        result = cur.fetchone()
+
+        if not result:
+            return _error_response(404, "OTP not found.")
+        if result["otp"] != input_otp:
+            return _error_response(401, "Invalid OTP.")
+        if result["otp_expiry"] < datetime.datetime.utcnow():
+            return _error_response(401, "OTP expired.")
+        cur.execute("DELETE FROM pending_users WHERE email = %s", (email,))
+        conn.commit()
+    return _success_response(200, {"message": "OTP verified. Please set your password.","token" : token})
 
 def register_user(conn, body):
     """
     Registers a new user with hashed password.
-    """
-    email = body.get("email")
+    """ 
+    # email = body.get("email")   
     password = body.get("password")
+    token = body.get("token")
+    email = decode_token(token)
 
     if not email or not password:
         return _error_response(400, "Missing 'email' or 'password'.")
