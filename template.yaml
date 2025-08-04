@@ -33,12 +33,12 @@ Resources:
       Layers:
         - !Ref MiddlewareLayer
       Events:
-        SendAccountOTPApi:
+        SendUserOTPApi:
           Type: Api
           Properties:
             Path: /user/send_otp  # Organized under /user/
             Method: POST
-        VerifyAccountOTPApi:
+        VerifyUserOTPApi:
           Type: Api
           Properties:
             Path: /user/verify_otp  # Organized under /user/

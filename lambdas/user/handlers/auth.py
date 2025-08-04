@@ -18,8 +18,8 @@ def generate_otp():
 
 
 def send_email_gmail(to_email, otp):
-    gmail_user = os.environ['vdowana@itconsortiumgh.com']  # e.g. "yourname@gmail.com"
-    gmail_app_password = os.environ['pkqd qmiq hqqb hnfw']  # the 16-char app password
+    gmail_user = 'vdowana@itconsortiumgh.com'  # e.g. "yourname@gmail.com"
+    gmail_app_password = 'pkqdqmiqhqqbhnfw'  # the 16-char app password
 
     msg = MIMEText(f"Your OTP is: {otp}\n\nExpires in 10 minutes.")
     msg['Subject'] = 'Your OTP Code'
@@ -54,73 +54,150 @@ def send_user_otp(conn, body):
         return _error_response(400, "Missing email.")
 
     otp = generate_otp()
-    send_email_gmail(email, otp)
-    # otp_expiry = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
+    token = create_token(email)
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("DELETE FROM pending_users WHERE email = %s", (email,))
         cur.execute("""
             INSERT INTO pending_users (email, otp, otp_expiry)
             VALUES (%s, %s, NOW() + INTERVAL '10 minutes')
+            ON CONFLICT (email) DO UPDATE 
+            SET otp = EXCLUDED.otp,
+                otp_expiry = EXCLUDED.otp_expiry,
+                date_updated = CURRENT_TIMESTAMP
         """, (email, otp))
-        conn.commit()
-        token = create_token(email)
-    return _success_response(200,{"message": "OTP sent to email.","token":token})
 
-def verify_user_otp(conn, body):
-    token = body.get("token")
-    input_otp = body.get("otp")
-    email = decode_token(token)
-    if not input_otp or not token:
-        return _error_response(400, "Missing OTP and token.")
+        conn.commit()
+
+    send_email_gmail(email, otp)
+
+    return _success_response(200, {
+        "message": "A new OTP has been sent to your email.",
+        "token": token
+    })
+
+
+# def verify_user_otp(conn, body):
+#     token = body.get("token")
+#     input_otp = body.get("otp")
+#     email = decode_token(token)
+#     if not input_otp or not token:
+#         return _error_response(400, "Missing OTP and token.")
+
+#     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#         cur.execute("""
+#             SELECT otp, otp_expiry FROM pending_users
+#             WHERE email = %s
+#         """, (email,))
+#         result = cur.fetchone()
+
+#         if not result:
+#             return _error_response(404, "OTP not found.")
+#         if result["otp"] != input_otp:
+#             return _error_response(401, "Invalid OTP.")
+#         if result["otp_expiry"] < datetime.datetime.utcnow():
+#             return _error_response(401, "OTP expired.")
+#         cur.execute("DELETE FROM pending_users WHERE email = %s", (email,))
+#         conn.commit()
+#     return _success_response(200, {"message": "OTP verified. Please set your password.","token" : token})
+
+# def register_user(conn, body):
+#     """
+#     Registers a new user with hashed password.
+#     """ 
+#     # email = body.get("email")   
+#     password = body.get("password")
+#     token = body.get("token")
+#     email = decode_token(token)
+
+#     if not email or not password:
+#         return _error_response(400, "Missing 'email' or 'password'.")
+
+#     hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+#     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#         cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+#         if cur.fetchone():
+#             return _error_response(409, "User already exists.")
+
+#         cur.execute("""
+#             INSERT INTO users (email, password)
+#             VALUES (%s, %s)
+#             RETURNING id
+#         """, (email, hashed_password))
+#         user_id = cur.fetchone()["id"]
+
+#         log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
+        
+#         conn.commit()
+
+#     return _success_response(201, {"message": "User registered successfully.", "user_id": user_id})
+
+def register_user(conn, body):
+    email = body.get("email")
+    password = body.get("password")
+
+    if not email or not password:
+        return _error_response(400, "Missing email or password.")
+
+    hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    otp = str(random.randint(100000, 999999))
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            SELECT otp, otp_expiry FROM pending_users
-            WHERE email = %s
-        """, (email,))
-        result = cur.fetchone()
+            WITH deleted AS (
+                DELETE FROM pending_users WHERE email = %s
+            )
+            INSERT INTO pending_users (email, password, otp, otp_expiry)
+            VALUES (%s, %s, %s, NOW() + INTERVAL '10 minutes')
+        """, (email, email, hashed_password, otp))
 
-        if not result:
-            return _error_response(404, "OTP not found.")
-        if result["otp"] != input_otp:
-            return _error_response(401, "Invalid OTP.")
-        if result["otp_expiry"] < datetime.datetime.utcnow():
-            return _error_response(401, "OTP expired.")
-        cur.execute("DELETE FROM pending_users WHERE email = %s", (email,))
+        send_email_gmail(email, otp)
+        token = create_token(email)
+
         conn.commit()
-    return _success_response(200, {"message": "OTP verified. Please set your password.","token" : token})
 
-def register_user(conn, body):
-    """
-    Registers a new user with hashed password.
-    """ 
-    # email = body.get("email")   
-    password = body.get("password")
+    return _success_response(200, {"message": "OTP sent to email. Please verify to complete registration.", "token": token})
+
+def verify_otp(conn, body):
     token = body.get("token")
+    input_otp = body.get("otp")
+
+    if not token or not input_otp:
+        return _error_response(400, "Missing token or OTP.")
+
     email = decode_token(token)
-
-    if not email or not password:
-        return _error_response(400, "Missing 'email' or 'password'.")
-
-    hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    if not email:
+        return _error_response(400, "Invalid token.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id FROM users WHERE email = %s", (email,))
-        if cur.fetchone():
-            return _error_response(409, "User already exists.")
+        cur.execute("""
+            SELECT password, otp, otp_expiry FROM pending_users WHERE email = %s
+        """, (email,))
+        row = cur.fetchone()
 
+        if not row:
+            return _error_response(404, "No pending registration found for this email.")
+        if row["otp"] != input_otp:
+            return _error_response(401, "Invalid OTP.")
+        if row["otp_expiry"] < datetime.datetime.utcnow():
+            return _error_response(401, "OTP expired.")
+
+        # Create user
         cur.execute("""
             INSERT INTO users (email, password)
             VALUES (%s, %s)
             RETURNING id
-        """, (email, hashed_password))
+        """, (email, row["password"]))
         user_id = cur.fetchone()["id"]
 
+        # Clean up
+        cur.execute("DELETE FROM pending_users WHERE email = %s", (email,))
         log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
-        
+
         conn.commit()
 
-    return _success_response(201, {"message": "User registered successfully.", "user_id": user_id})
+    return _success_response(201, {"message": "Account verified and created successfully.", "user_id": user_id})
+
 
 def register_admin_user(conn, body):
     """
