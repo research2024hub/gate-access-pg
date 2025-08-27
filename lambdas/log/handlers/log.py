@@ -59,7 +59,7 @@ def get_logs_by_estate(conn, event):
         cur.execute("""
             SELECT * FROM logs
             WHERE estate_id = %s
-            AND date_created BETWEEN %s AND %s
+                AND date_created BETWEEN %s AND %s
             ORDER BY date_created DESC
             LIMIT %s OFFSET %s
         """, (estate_id, start_date, end_date, page_size, offset))
@@ -152,9 +152,12 @@ def get_logs_by_account_holder(conn, event):
         cur.execute("""
             SELECT *
             FROM logs
-            WHERE target_account_holder_id = %s OR actor_user_id = (
+            WHERE (
+                target_account_holder_id = %s OR actor_user_id = (
                 SELECT user_id FROM account_holders WHERE id = %s
-            ) AND date_created BETWEEN %s AND %s
+            ) 
+            )
+            AND date_created BETWEEN %s AND %s
             ORDER BY date_created DESC
             LIMIT %s OFFSET %s
         """, (account_holder_id, account_holder_id, start_date, end_date, page_size, offset))
