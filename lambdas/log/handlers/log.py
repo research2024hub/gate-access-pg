@@ -2,6 +2,7 @@ import json
 from psycopg2.extras import RealDictCursor
 from utils import _error_response, _success_response, process_db_results
 from middleware import verify_token
+from datetime import datetime
 
 def get_logs_by_estate(conn, event):
     """
@@ -19,6 +20,8 @@ def get_logs_by_estate(conn, event):
     estate_id = path_params.get("estate_id")
     start_date =  path_params.get("start_data")
     end_date = path_params.get("end_date")
+    start = datetime.fromisoformat(start_date)
+    end = datetime.fromisoformat(end_date)
     if not estate_id:
         return _error_response(400, "Missing 'estate_id'.")
 
@@ -62,7 +65,7 @@ def get_logs_by_estate(conn, event):
                 AND date_created BETWEEN %s AND %s
             ORDER BY date_created DESC
             LIMIT %s OFFSET %s
-        """, (estate_id, start_date, end_date, page_size, offset))
+        """, (estate_id, start, end, page_size, offset))
 
         logs = cur.fetchall()
 
@@ -95,7 +98,8 @@ def get_logs_by_account_holder(conn, event):
     account_holder_id = path_params.get("account_holder_id")
     start_date =  path_params.get("start_data")
     end_date = path_params.get("end_date")
-
+    start = datetime.fromisoformat(start_date)
+    end = datetime.fromisoformat(end_date)
     if not account_holder_id:
         return _error_response(400, "Missing 'account_holder_id'.")
 
@@ -160,7 +164,7 @@ def get_logs_by_account_holder(conn, event):
             AND date_created BETWEEN %s AND %s
             ORDER BY date_created DESC
             LIMIT %s OFFSET %s
-        """, (account_holder_id, account_holder_id, start_date, end_date, page_size, offset))
+        """, (account_holder_id, account_holder_id, start, end, page_size, offset))
         
         logs = cur.fetchall()
 
