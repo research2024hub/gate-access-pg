@@ -17,8 +17,8 @@ def get_logs_by_estate(conn, event):
     is_admin = payload.get("is_admin", False)
     path_params = event.get("pathParameters", {})
     estate_id = path_params.get("estate_id")
-    start_date =  path_params("start_data")
-    end_date = path_params("end_date")
+    start_date =  path_params.get("start_data")
+    end_date = path_params.get("end_date")
     if not estate_id:
         return _error_response(400, "Missing 'estate_id'.")
 
@@ -93,8 +93,8 @@ def get_logs_by_account_holder(conn, event):
 
     path_params = event.get("pathParameters", {})
     account_holder_id = path_params.get("account_holder_id")
-    start_date =  path_params("start_data")
-    end_date = path_params("end_date")
+    start_date =  path_params.get("start_data")
+    end_date = path_params.get("end_date")
 
     if not account_holder_id:
         return _error_response(400, "Missing 'account_holder_id'.")
