@@ -2,6 +2,8 @@ import json
 from utils import _error_response, _success_response, process_db_results, log
 from middleware import verify_token
 from psycopg2.extras import RealDictCursor
+from auth import send_email_gmail
+import bcrypt
 
 def change_user_type(conn, body, event):
     """
@@ -291,3 +293,54 @@ def get_user_accounts(conn, event):
             "pages": (total + page_size - 1) // page_size
         }
     })
+
+# def forgot_password(body):
+#     payload, error = verify_token(event)
+#     if error:
+#         return error
+
+#     user_id = payload.get("user_id")
+#     email = body["email"]
+#     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#         # Look up active user (do not reveal existence to caller)
+#         cur.execute(
+#             "SELECT id FROM users WHERE user_id = %s AND email = %s AND is_active = TRUE LIMIT 1",
+#             (user_id, email),
+#         )
+#         row = cur.fetchone()
+#         if not row:
+#             # return error.
+#           return _error_response(500, "User not found")
+#     title = 'RESET PASSWORD'
+#     message = (
+#                 "We received a request to reset your password.\n\n"
+#                 f"Use the link below to reset it:\n{reset_link}\n\n"
+#                 "If you did not request this, you can safely ignore this email."
+#             )
+
+#     send_email_gmail(email, title, message)
+
+# def reset_password(conn, body):
+#     #receive new password
+#     payload, error = verify_token(event)
+#     if error:
+#         return error
+
+#     user_id = payload.get("user_id")
+#     new_password = body["new_password"]
+#     confirm_password = body["confirm_password"]
+#     if new_password == confirm_password:
+#         new_hashed_password = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+#         with conn.cursor(cursor_factory=RealDictCursor) as cur:  
+#             cur.execute("""
+#             UPDATE users SET password = %s
+#             WHERE id = %s
+#             """, (new_hashed_password, user_id))
+
+#             log(conn, "USER_PASSWORD_CHANGE", f"User '{user_id}' password changed", user_id, None, None)
+
+#             conn.commit()
+
+#             return _success_response(200, {"message": "Password changed successfully.", "user_id": user_id})
+    
+    

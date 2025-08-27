@@ -76,7 +76,7 @@ def create_vehicle(conn, body, event):
         result2 = cur.fetchone()
         
         if result2["car_exists"]:
-                return _error_response(403, "This license plate has already been registered at this estate.")
+                return _error_response(409, "This license plate has already been registered at this estate.")
             
         # Insert new vehicle
         cur.execute("""

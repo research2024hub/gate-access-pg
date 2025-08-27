@@ -17,12 +17,12 @@ def generate_otp():
     return ''.join(str(random.randint(0, 9)) for _ in range(6))
 
 
-def send_email_gmail(to_email, otp):
+def send_email_gmail(to_email, subject, message):
     gmail_user = 'vdowana@itconsortiumgh.com'  # e.g. "yourname@gmail.com"
     gmail_app_password = 'pkqdqmiqhqqbhnfw'  # the 16-char app password
 
-    msg = MIMEText(f"Your OTP is: {otp}\n\nExpires in 10 minutes.")
-    msg['Subject'] = 'Your OTP Code'
+    msg = MIMEText(message)
+    msg['Subject'] = subject
     msg['From'] = gmail_user
     msg['To'] = to_email
 
@@ -67,8 +67,9 @@ def send_user_otp(conn, body):
         """, (email, otp))
 
         conn.commit()
-
-    send_email_gmail(email, otp)
+    title = 'Your OTP Code'
+    message =f"Your OTP is: {otp}\n\nExpires in 10 minutes."
+    send_email_gmail(email, title, message)
 
     return _success_response(200, {
         "message": "A new OTP has been sent to your email.",
@@ -151,7 +152,9 @@ def register_user(conn, body):
             VALUES (%s, %s, %s, NOW() + INTERVAL '10 minutes')
         """, (email, email, hashed_password, otp))
 
-        send_email_gmail(email, otp)
+        title = 'Your OTP Code'
+        message =f"Your OTP is: {otp}\n\nExpires in 10 minutes."
+        send_email_gmail(email, title, message)
         token = create_token(email)
 
         conn.commit()

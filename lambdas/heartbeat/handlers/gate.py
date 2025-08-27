@@ -1,14 +1,29 @@
-# import json
-# from psycopg2.extras import RealDictCursor
-# from utils import _error_response, _success_response, process_db_results, log
-# from middleware import verify_token
-# import time
-# import boto3
+import json
+from psycopg2.extras import RealDictCursor
+from utils import _error_response, _success_response, process_db_results, log
+from middleware import verify_token
+import time
+import boto3
+import smtplib
+from email.mime.text import MIMEText
 # ses_client = boto3.client('ses')
-# SENDER_EMAIL = "jagudogo@itconsortiumgh.com"
-# RECIPIENT_EMAILS = ["research@itconsortiumgh.com"]
-# THRESHOLD_SECONDS = 600  # Adjust based on your requirements
+SENDER_EMAIL = 'vdowana@itconsortiumgh.com'
+RECIPIENT_EMAILS = ["research@itconsortiumgh.com"]
+THRESHOLD_SECONDS = 600  # Adjust based on your requirements
 
+def send_email_gmail(subject,message):
+    # gmail_user = 'vdowana@itconsortiumgh.com'  # e.g. "yourname@gmail.com"
+    gmail_app_password = 'pkqdqmiqhqqbhnfw'  # the 16-char app password
+    # to_email = "jnagai@itconsortiumgh.com"
+    msg = MIMEText(message)
+    msg['Subject'] = subject
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = RECIPIENT_EMAILS
+
+    server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+    server.login(SENDER_EMAIL, gmail_app_password)
+    server.send_message(msg)
+    server.quit()
 
 # def monitor_heartbeat(conn):
 
@@ -39,16 +54,17 @@
 #                         )
 
 #                         # Send email via SES
-#                         response = ses_client.send_email(
-#                             Source=SENDER_EMAIL,
-#                             Destination={"ToAddresses": RECIPIENT_EMAILS},
-#                             Message={
-#                                 "Subject": {"Data": subject},
-#                                 "Body": {
-#                                     "Text": {"Data": body}
-#                                 }
-#                             }
-#                         )
+#                         # response = ses_client.send_email(
+#                         #     Source=SENDER_EMAIL,
+#                         #     Destination={"ToAddresses": RECIPIENT_EMAILS},
+#                         #     Message={
+#                         #         "Subject": {"Data": subject},
+#                         #         "Body": {
+#                         #             "Text": {"Data": body}
+#                         #         }
+#                         #     }
+#                         # )
+#                         send_email_gmail(subject,body)
 #                         print(f"Email alert sent for device {device_id}")
 
 #                     except Exception as e:

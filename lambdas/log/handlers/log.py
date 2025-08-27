@@ -15,9 +15,10 @@ def get_logs_by_estate(conn, event):
     
     user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False)
-
     path_params = event.get("pathParameters", {})
     estate_id = path_params.get("estate_id")
+    start_date =  path_params("start_data")
+    end_date = path_params("end_date")
     if not estate_id:
         return _error_response(400, "Missing 'estate_id'.")
 
@@ -58,9 +59,10 @@ def get_logs_by_estate(conn, event):
         cur.execute("""
             SELECT * FROM logs
             WHERE estate_id = %s
+            AND date_created BETWEEN %s AND %s
             ORDER BY date_created DESC
             LIMIT %s OFFSET %s
-        """, (estate_id, page_size, offset))
+        """, (estate_id, start_date, end_date, page_size, offset))
 
         logs = cur.fetchall()
 
@@ -91,6 +93,8 @@ def get_logs_by_account_holder(conn, event):
 
     path_params = event.get("pathParameters", {})
     account_holder_id = path_params.get("account_holder_id")
+    start_date =  path_params("start_data")
+    end_date = path_params("end_date")
 
     if not account_holder_id:
         return _error_response(400, "Missing 'account_holder_id'.")
@@ -150,10 +154,10 @@ def get_logs_by_account_holder(conn, event):
             FROM logs
             WHERE target_account_holder_id = %s OR actor_user_id = (
                 SELECT user_id FROM account_holders WHERE id = %s
-            )
+            ) AND date_created BETWEEN %s AND %s
             ORDER BY date_created DESC
             LIMIT %s OFFSET %s
-        """, (account_holder_id, account_holder_id, page_size, offset))
+        """, (account_holder_id, account_holder_id, start_date, end_date, page_size, offset))
         
         logs = cur.fetchall()
 
