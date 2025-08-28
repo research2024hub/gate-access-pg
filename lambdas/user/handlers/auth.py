@@ -68,7 +68,7 @@ def send_user_otp(conn, body):
 
         conn.commit()
     title = 'Your OTP Code'
-    message =f"Your OTP is: {otp}\n\nExpires in 10 minutes."
+    message =f"Your OTP is: {otp}."
     send_email_gmail(email, title, message)
 
     return _success_response(200, {

@@ -2,7 +2,7 @@ import json
 from utils import _error_response, _success_response, process_db_results, log
 from middleware import verify_token
 from psycopg2.extras import RealDictCursor
-from auth import send_email_gmail
+from auth import send_email_gmail,generate_otp
 import bcrypt
 
 def change_user_type(conn, body, event):
@@ -295,33 +295,89 @@ def get_user_accounts(conn, event):
     })
 
 # def forgot_password(body):
-#     payload, error = verify_token(event)
-#     if error:
-#         return error
-
-#     user_id = payload.get("user_id")
-#     email = body["email"]
+#     email = body.get("email")
 #     with conn.cursor(cursor_factory=RealDictCursor) as cur:
 #         # Look up active user (do not reveal existence to caller)
 #         cur.execute(
-#             "SELECT id FROM users WHERE user_id = %s AND email = %s AND is_active = TRUE LIMIT 1",
-#             (user_id, email),
+#             "SELECT id FROM users WHERE email = %s AND is_active = TRUE LIMIT 1",
+#             (email,)
 #         )
 #         row = cur.fetchone()
 #         if not row:
-#             # return error.
-#           return _error_response(500, "User not found")
+#             return _error_response(500, "User not found")
+#         user_id = row["id"]
+#         # Create JWT (payload must be dict)
+#         token = jwt.encode({"user_id": user_id}, JWT_SECRET, algorithm="HS256")
+       
+#         # Generate OTP and expiry
+#         reset_otp = generate_otp()
+#         otp_expiry = int(time.time()) + expiry_minutes * 60 
+#         cur.execute(
+#             "SELECT reset_otp, otp_expiry FROM users WHERE email = %s AND is_active = TRUE LIMIT 1",
+#             (email,)
+#         )
+#         row = cur.fetchone()
+#         if not row:
+#             # return _error_response(500, "User not found")
+#         cur.execute(
+#             "UPDATE users SET reset_otp = %s, otp_expiry = %s WHERE id = %s",
+#             (reset_otp, expiry_time, user_id)
+#         )
+        
+#         # Save OTP to user record
+#         cur.execute("""
+#             UPDATE users
+#             SET reset_otp = %s, expiry_time = %s
+#             WHERE email = %s
+#         """, (reset_otp, otp_expiry, email))
+#         conn.commit()
+#     # Build email
 #     title = 'RESET PASSWORD'
 #     message = (
-#                 "We received a request to reset your password.\n\n"
-#                 f"Use the link below to reset it:\n{reset_link}\n\n"
-#                 "If you did not request this, you can safely ignore this email."
-#             )
+#         "We received a request to reset your password.\n"
+#         f"Use the One-Time Password (OTP) below to reset it.\n\n"
+#         f"Your OTP Code: {reset_otp}\n\n"
+#         "If you did not request this, you can safely ignore this email."
+#     )
 
 #     send_email_gmail(email, title, message)
+#     return _success_response(200, {"message": "success."}, token)
 
-# def reset_password(conn, body):
-#     #receive new password
+# def verify_otp(conn, body, event):
+#     # Verify token
+#     payload, error = verify_token(event)
+#     if error:
+#         return error
+#     user_id = payload.get("user_id")
+#     input_otp = body.get("reset_otp")
+#     if not user_id or not input_otp:
+#         return _error_response(400, "Missing user_id or OTP.")
+#     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#         cur.execute("""
+#             SELECT reset_otp, expiry_time 
+#             FROM users 
+#             WHERE id = %s
+#         """, (user_id,))
+#         row = cur.fetchone()
+#         if not row:
+#             return _error_response(404, "No OTP found for this user.")
+#         if row["reset_otp"] != input_otp:
+#             return _error_response(401, "Invalid OTP.")
+#         if row["otp_expiry"] < datetime.datetime.utcnow():
+#             return _error_response(401, "OTP expired.")
+#         # Clean up OTP after successful verification
+#         cur.execute("""
+#             UPDATE users 
+#             SET reset_otp = NULL, otp_expiry = NULL
+#             WHERE id = %s
+#         """, (user_id,))
+#         conn.commit()
+
+#     return _success_response(200, {"message": "OTP successfully verified."})
+
+
+# def reset_password():
+    
 #     payload, error = verify_token(event)
 #     if error:
 #         return error
@@ -343,4 +399,5 @@ def get_user_accounts(conn, event):
 
 #             return _success_response(200, {"message": "Password changed successfully.", "user_id": user_id})
     
-    
+#     else:
+#         return _error_response(500, "Failed to reset password.")
