@@ -4,7 +4,7 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime
 from utils import _error_response, _success_response, process_db_results, send_message, log
 from middleware import verify_token
-
+from vehicle.handlers.vehicle import create_vehicle
 def create_guest_regular(conn, body, event):
     """
     Registers a new guest under an account holder and creates a corresponding personal_info entry.
@@ -26,7 +26,6 @@ def create_guest_regular(conn, body, event):
     other_info = body.get("other_info", {})
 
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-
     start =  start if start else now
     other_info["entry_window"] = {
         "start": start,
@@ -88,10 +87,17 @@ def create_guest_regular(conn, body, event):
         personal_info_id = cur.fetchone()["id"]
          # --- conditional OTP / invite logic ---
         has_car = other_info.get("has_car", False)
-        # Make sure there aren't duplicates
         if has_car:
             # If guest has a car, no OTP needed
             other_info["purpose"] = "visit_with_car"
+            vehicle_body = {
+                "personal_info_id": personal_info_id,
+                "license_plate_number": body.get("license_plate_number"),
+                "make": body.get("make"),
+                "model": body.get("model"),
+                "color": body.get("color")
+            }
+            vehicle_response = create_vehicle(conn, vehicle_body, event)
         else:
             # Generate OTP if guest has no car
             while True:
@@ -107,23 +113,6 @@ def create_guest_regular(conn, body, event):
                     break
             other_info["otp"] = otp
             other_info["purpose"] = "visit"
-        # while True:
-        #     otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
-
-        #     cur.execute("""
-        #                 SELECT EXISTS (
-        #                     SELECT 1 FROM guests g
-        #                     JOIN personal_info pi ON pi.id = g.personal_info_id
-        #                     WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
-        #                 ) AS otp_match
-        #                 """, (otp, estate_id))
-
-        #     if not cur.fetchone()["otp_match"]:
-        #         break
-
-        # other_info["otp"] = otp
-        # other_info["purpose"] = "visit"
-
         # Create guest entry
         cur.execute("""
             INSERT INTO guests (personal_info_id, creator_id, other_info)
