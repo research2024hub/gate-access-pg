@@ -2,7 +2,7 @@ import json
 from utils import _error_response, _success_response, process_db_results, log
 from middleware import verify_token
 from psycopg2.extras import RealDictCursor
-# from handlers.auth import send_email_gmail,generate_otp
+from handlers.auth import send_email_gmail,generate_otp
 import bcrypt
 
 def change_user_type(conn, body, event):
