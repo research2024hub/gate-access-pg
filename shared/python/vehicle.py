@@ -12,7 +12,7 @@ def get_db_conn():
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
         raise RuntimeError("DATABASE_URL not set")
-    return psycopg2.connect(db_url, connect_timeout=5)
+    return psycopg2.connect(db_url)
 
 def create_vehicle(body,is_admin):
     """
@@ -33,6 +33,7 @@ def create_vehicle(body,is_admin):
 
     if not all([personal_info_id, license_plate_number, make, model, color]):
         return _error_response(400, "Missing required fields.")
+    conn = None
     try:
         conn = get_db_conn()
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
