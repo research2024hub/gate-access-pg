@@ -509,7 +509,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: lambdas/  #lambdas/guest/
-      Handler: app.lambda_handler
+      Handler: guest.app.lambda_handler
       Runtime: python3.9
       Architectures:
         - x86_64
@@ -570,7 +570,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: lambdas/        #lambdas/vehicle/  # Folder containing your app.py and handlers
-      Handler: app.lambda_handler
+      Handler: vehicle.app.lambda_handler
       Runtime: python3.9
       Architectures:
         - x86_64
