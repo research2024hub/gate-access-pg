@@ -273,7 +273,7 @@ def create_associate(conn, body, event):
         start_date_readable = datetime.fromisoformat(start).strftime("%A, %d %B %Y %H:%M:%S")
 
         phone_number = contact.lstrip('+')
-         if has_car:
+        if has_car:
             # Send invite message
             send_message(
                 phone_number,
