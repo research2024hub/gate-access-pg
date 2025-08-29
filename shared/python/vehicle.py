@@ -3,6 +3,8 @@ import os
 from psycopg2.extras import RealDictCursor
 from utils import _error_response, _success_response, process_db_results, log
 # from middleware import verify_token
+import psycopg2
+
 
 
 def get_db_conn():
