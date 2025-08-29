@@ -4,7 +4,7 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime
 from utils import _error_response, _success_response, process_db_results, send_message, log
 from middleware import verify_token
-from vehicle.handlers.vehicle import create_vehicle
+from vehicle import create_vehicle
 def create_guest_regular(conn, body, event):
     """
     Registers a new guest under an account holder and creates a corresponding personal_info entry.
