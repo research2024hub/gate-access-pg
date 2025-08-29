@@ -116,6 +116,6 @@ def create_vehicle(body,is_admin):
 
         return _success_response(201, {"message": "Vehicle registered successfully.", "vehicle_id": vehicle_id})
 
-finally:
-    if 'conn' in locals():
-        conn.close()
+    finally:
+        if 'conn' in locals():
+            conn.close()
