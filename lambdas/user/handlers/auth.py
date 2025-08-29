@@ -9,7 +9,6 @@ from middleware import verify_token
 import random
 import smtplib
 from email.mime.text import MIMEText
-from vehicle.handlers.vehicle import create_vehicle
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key") 
 import random
