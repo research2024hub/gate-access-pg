@@ -9,9 +9,10 @@ import psycopg2
 
 def get_db_conn():
     """Create and return a DB connection from DATABASE_URL env var."""
-    db_url = os.environ.get("DATABASE_URL")
+    db_url = "postgresql://itc:082001@54.246.247.31/gate_access"         #os.environ.get("DATABASE_URL")
     if not db_url:
-        raise RuntimeError("DATABASE_URL not set")
+        # raise RuntimeError("DATABASE_URL not set")
+        return _error_response(500, "DATABASE_URL not set")
     return psycopg2.connect(db_url)
 
 def create_vehicle(body,is_admin):
