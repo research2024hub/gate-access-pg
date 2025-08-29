@@ -18,7 +18,7 @@ def get_logs_by_estate(conn, event):
     is_admin = payload.get("is_admin", False)
     path_params = event.get("pathParameters", {})
     estate_id = path_params.get("estate_id")
-    start_date =  path_params.get("start_data")
+    start_date =  path_params.get("start_date")
     end_date = path_params.get("end_date")
     start = datetime.fromisoformat(start_date)
     end = datetime.fromisoformat(end_date)
@@ -96,7 +96,7 @@ def get_logs_by_account_holder(conn, event):
 
     path_params = event.get("pathParameters", {})
     account_holder_id = path_params.get("account_holder_id")
-    start_date =  path_params.get("start_data")
+    start_date =  path_params.get("start_date")
     end_date = path_params.get("end_date")
     start = datetime.fromisoformat(start_date)
     end = datetime.fromisoformat(end_date)
