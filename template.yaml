@@ -25,7 +25,7 @@ Resources:
   UserAuthFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: lambdas/         #lambdas/user/  
+      CodeUri: lambdas/user/  
       Handler: app.lambda_handler
       Runtime: python3.9
       Architectures:
@@ -508,7 +508,7 @@ Resources:
   GuestFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: lambdas/guest/
+      CodeUri: lambdas/  #lambdas/guest/
       Handler: app.lambda_handler
       Runtime: python3.9
       Architectures:
