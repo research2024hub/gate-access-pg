@@ -569,7 +569,7 @@ Resources:
   VehicleFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: lambdas/vehicle/  # Folder containing your app.py and handlers
+      CodeUri: lambdas/        #lambdas/vehicle/  # Folder containing your app.py and handlers
       Handler: app.lambda_handler
       Runtime: python3.9
       Architectures:
