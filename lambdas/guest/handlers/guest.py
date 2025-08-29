@@ -92,12 +92,13 @@ def create_guest_regular(conn, body, event):
             other_info["purpose"] = "visit_with_car"
             vehicle_body = {
                 "personal_info_id": personal_info_id,
+                "user_id": user_id,
                 "license_plate_number": body.get("license_plate_number"),
                 "make": body.get("make"),
                 "model": body.get("model"),
                 "color": body.get("color")
             }
-            vehicle_response = create_vehicle(conn, vehicle_body, event)
+            vehicle_response = create_vehicle(vehicle_body, is_admin)
         else:
             # Generate OTP if guest has no car
             while True:
@@ -225,24 +226,36 @@ def create_associate(conn, body, event):
             RETURNING id
         """, (estate_id, name, id_type, id_num, contact, expiry, account_type_id, estate_id))
         personal_info_id = cur.fetchone()["id"]
-
+        has_car = other_info.get("has_car", False)
+        if has_car:
+            # If guest has a car, no OTP needed
+            other_info["purpose"] = "visit_with_car"
+            vehicle_body = {
+                "personal_info_id": personal_info_id,
+                "license_plate_number": body.get("license_plate_number"),
+                "make": body.get("make"),
+                "model": body.get("model"),
+                "color": body.get("color")
+            }
+            vehicle_response = create_vehicle(vehicle_body, is_admin)
         # Make sure there aren't duplicates
-        while True:
-            otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+        else:
+            while True:
+                otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
 
-            cur.execute("""
-                        SELECT EXISTS (
-                            SELECT 1 FROM guests g
-                            JOIN personal_info pi ON pi.id = g.personal_info_id
-                            WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
-                        ) AS otp_match
-                        """, (otp, estate_id))
+                cur.execute("""
+                            SELECT EXISTS (
+                                SELECT 1 FROM guests g
+                                JOIN personal_info pi ON pi.id = g.personal_info_id
+                                WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
+                            ) AS otp_match
+                            """, (otp, estate_id))
 
-            if not cur.fetchone()["otp_match"]:
-                break
+                if not cur.fetchone()["otp_match"]:
+                    break
 
-        other_info["otp"] = otp
-        other_info["purpose"] = "visit"
+            other_info["otp"] = otp
+            other_info["purpose"] = "visit"
 
         # Create guest entry
         cur.execute("""
@@ -260,8 +273,16 @@ def create_associate(conn, body, event):
         start_date_readable = datetime.fromisoformat(start).strftime("%A, %d %B %Y %H:%M:%S")
 
         phone_number = contact.lstrip('+')
-
-        send_message(phone_number, f"Hi {name},\nYour One Time Password (OTP) for your visit at {estate_name} is {otp}, valid from {start_date_readable} to {expiry_date_readable}")
+         if has_car:
+            # Send invite message
+            send_message(
+                phone_number,
+                f"Hi {name},\nYou are invited to {estate_name}. Your access is valid from {start_date_readable} to {expiry_date_readable}. Please use the car entry lane."
+            )
+        else:
+            
+            send_message(phone_number, f"Hi {name},You are invited to {estate_name}.\nYour One Time Password (OTP) is {otp}, valid from {start_date_readable} to {expiry_date_readable}")
+        # send_message(phone_number, f"Hi {name},\nYour One Time Password (OTP) for your visit at {estate_name} is {otp}, valid from {start_date_readable} to {expiry_date_readable}")
 
         print(f"Window Opens: {start_date_readable}, Window Closes:{expiry_date_readable}")
 
