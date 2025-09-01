@@ -582,7 +582,7 @@ def update_guest(conn, body, event):
 
         guest_info_data = cur.fetchone()
 
-        log(conn, "GUEST_UPDATE", f"Guest '{guest_id}' [{name}] updated", user_id, guest_data[0], guest_info_data[0])
+        log(conn, "GUEST_UPDATE", f"Guest '{guest_id}' [{name}] updated", user_id, guest_data["creator_id"], guest_info_data["estate_id"])
 
         conn.commit()
 
@@ -647,8 +647,8 @@ def delete_guest(conn, body, event):
         if not result:
             return _error_response(404, "Personal info not found.")
 
-        guest_name = result[0]
-        estate_id = result[1]
+        guest_name = result["name"]
+        estate_id = result["estate_id"]
 
         log(conn, "GUEST_DELETION", f"Guest '{guest_id}' [{guest_name}] deleted", user_id, actor_id, estate_id)
 
