@@ -300,33 +300,16 @@ def send_otp(conn, body, event):
     start = start if start else datetime.now().isoformat()
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # 1) Privilege check (similar to your original logic)
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 
-                FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s
-                  AND pi.estate_id = (
-                      SELECT pi.estate_id
-                      FROM account_holders ah
-                      JOIN personal_info pi ON ah.personal_info_id = pi.id
-                      WHERE ah.id = %s
-                  )
-                  AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-            ) AS has_privileges
-        """, (user_id, account_holder_id))
+        # Check privileges using helper
+        privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
 
-        row = cur.fetchone()
-        has_privileges = row["has_privileges"] if row else False
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
 
-        if not (has_privileges or is_admin):
-            # Verify the guest belongs to the account holder and get personal_info_id
-            cur.execute("""SELECT g.personal_info_id FROM guests g 
-                        JOIN account_holders ah ON ah.id = g.creator_id 
+        if not privileges.can_manage_guests():
+            # Verify the guest belongs to the account holder
+            cur.execute("""SELECT g.personal_info_id FROM guests g
+                        JOIN account_holders ah ON ah.id = g.creator_id
                         WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE""", (guest_id, user_id))
             row = cur.fetchone()
             if not row:
@@ -541,32 +524,35 @@ def update_guest(conn, body, event):
     if not guest_id:
         return _error_response(400, "Missing 'guest_id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # First get the guest's creator (account_holder_id) and personal_info_id
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM guests g
-                            JOIN personal_info pi ON g.personal_info_id = pi.id
-                            WHERE g.id = %s
-                    ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-                    ) AS exists_flag
-                    """, (user_id, guest_id))
-        
-        if not (cur.fetchone()[0] or is_admin):
-            # Verify the guest belongs to the account holder and get personal_info_id
-            cur.execute("""SELECT g.personal_info_id FROM guests g 
-                        JOIN account_holders ah ON ah.id = g.creator_id 
+            SELECT g.creator_id, g.personal_info_id
+            FROM guests g
+            WHERE g.id = %s
+        """, (guest_id,))
+
+        guest_info = cur.fetchone()
+        if not guest_info:
+            return _error_response(404, "Guest not found.")
+
+        account_holder_id = guest_info["creator_id"]
+        personal_info_id = guest_info["personal_info_id"]
+
+        # Check privileges using helper
+        privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
+
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
+
+        if not privileges.can_manage_guests():
+            # Verify the guest belongs to the account holder
+            cur.execute("""SELECT g.personal_info_id FROM guests g
+                        JOIN account_holders ah ON ah.id = g.creator_id
                         WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE""", (guest_id, user_id))
             row = cur.fetchone()
             if not row:
                 return _error_response(403, "You do not have privileges to update this guest.")
-            personal_info_id = row[0]        
 
         # Update guest table
         cur.execute("""
@@ -617,27 +603,29 @@ def delete_guest(conn, body, event):
     if not guest_id:
         return _error_response(400, "Missing 'guest_id'.")
 
-    with conn.cursor() as cur:
-        # Check for estate-level privilege
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # First get the guest's creator (account_holder_id) and personal_info_id
         cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s AND pi.estate_id = ( 
-                    SELECT pi.estate_id 
-                    FROM guests g
-                    JOIN personal_info pi ON g.personal_info_id = pi.id
-                    WHERE g.id = %s
-                ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-            ) AS exists_flag
-        """, (user_id, guest_id))
+            SELECT g.creator_id, g.personal_info_id
+            FROM guests g
+            WHERE g.id = %s
+        """, (guest_id,))
 
-        has_privileges = cur.fetchone()[0]
+        guest_info = cur.fetchone()
+        if not guest_info:
+            return _error_response(404, "Guest not found.")
 
-        if not (has_privileges or is_admin):
+        account_holder_id = guest_info["creator_id"]
+        personal_info_id = guest_info["personal_info_id"]
+        actor_id = account_holder_id
+
+        # Check privileges using helper
+        privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
+
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
+
+        if not privileges.can_manage_guests():
             # Check if user is the creator of the guest
             cur.execute("""
                 SELECT g.personal_info_id, g.creator_id
@@ -648,20 +636,6 @@ def delete_guest(conn, body, event):
             row = cur.fetchone()
             if not row:
                 return _error_response(403, "You do not have privileges to delete this guest.")
-            personal_info_id = row[0]
-            actor_id = row[1]
-        else:
-            # Privileged user, fetch info
-            cur.execute("""
-                SELECT g.personal_info_id, g.creator_id
-                FROM guests g
-                WHERE g.id = %s
-            """, (guest_id,))
-            row = cur.fetchone()
-            if not row:
-                return _error_response(404, "Guest not found.")
-            personal_info_id = row[0]
-            actor_id = row[1]
 
         # Delete personal_info (guests table has ON DELETE CASCADE)
         cur.execute("""
@@ -701,23 +675,26 @@ def get_guest_details(conn, event):
         return _error_response(400, "Missing 'guest_id'.")
     
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # First get the guest's creator (account_holder_id)
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM guests g
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            WHERE g.id = %s
-                    ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-                    ) AS exists_flag
-                    """, (user_id, guest_id))
-        
-        if not (cur.fetchone()["exists_flag"] or is_admin):
+            SELECT g.creator_id
+            FROM guests g
+            WHERE g.id = %s
+        """, (guest_id,))
+
+        guest_info = cur.fetchone()
+        if not guest_info:
+            return _error_response(404, "Guest not found.")
+
+        account_holder_id = guest_info["creator_id"]
+
+        # Check privileges using helper
+        privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
+
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
+
+        if not privileges.can_manage_guests():
             # Verify the guest belongs to the user
             cur.execute("""
                         SELECT EXISTS (
@@ -726,10 +703,10 @@ def get_guest_details(conn, event):
                             WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE
                         ) AS exists_flag
                         """, (guest_id, user_id))
-            
+
             row = cur.fetchone()
             if not row:
-                return _error_response(403, "You do not have privileges to delete this guest.")
+                return _error_response(403, "You do not have privileges to view this guest.")
             
         cur.execute("""
             SELECT g.id AS guest_id, g.personal_info_id, es.name AS estate_name, at.name AS account_type_name, ag.name AS access_group_name, pi.name AS guest_name, pi.contact, pi.expiry, pi.estate_id, g.other_info
@@ -775,31 +752,17 @@ def get_account_holder_guests(conn, event):
     offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # Check privilege
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s 
-                  AND pi.estate_id = (
-                      SELECT pi.estate_id 
-                      FROM account_holders ah
-                      JOIN personal_info pi ON ah.personal_info_id = pi.id
-                      WHERE ah.id = %s
-                  )
-                  AND ah.is_active = TRUE
-                  AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-            ) AS exists_flag
-        """, (user_id, account_holder_id))
-        
-        if not (cur.fetchone()["exists_flag"] or is_admin):
+        # Check privileges using helper
+        privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
+
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
+
+        if not privileges.can_manage_guests():
             # Check if this user is the same account holder
             cur.execute("""
                 SELECT EXISTS(
-                    SELECT 1 FROM account_holders 
+                    SELECT 1 FROM account_holders
                     WHERE user_id = %s AND id = %s AND is_active = TRUE
                 ) AS exists_flag
             """, (user_id, account_holder_id))
@@ -870,21 +833,22 @@ def get_estate_guests(conn, event):
     offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # Check privileges
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s AND pi.estate_id = %s AND ah.is_active = TRUE AND
-                      (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-            ) AS has_privileges
-        """, (user_id, estate_id))
+        # Check privileges - simplified query for estate-level access
+        if not is_admin:
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM account_holders ah
+                    JOIN personal_info pi ON ah.personal_info_id = pi.id
+                    JOIN account_types act ON pi.account_type_id = act.id
+                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                    JOIN privileges pv ON atpl.privilege_id = pv.id
+                    WHERE ah.user_id = %s AND pi.estate_id = %s AND ah.is_active = TRUE AND
+                          (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+                ) AS has_privileges
+            """, (user_id, estate_id))
 
-        if not (cur.fetchone()["has_privileges"] or is_admin):
-            return _error_response(403, "You do not have privileges to get estate guests.")
+            if not cur.fetchone()["has_privileges"]:
+                return _error_response(403, "You do not have privileges to get estate guests.")
 
         # Total count
         cur.execute("""
