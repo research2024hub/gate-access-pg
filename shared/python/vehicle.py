@@ -78,21 +78,8 @@ def create_vehicle(body,is_admin):
 
                 if not (result["for_myself"] or result["for_my_guest"]):
                     return _error_response(403, "You do not have privileges to create a vehicle for this person.")
-                
-            cur.execute("""
-                    SELECT 
-                    EXISTS(SELECT 1 FROM vehicles v
-                        JOIN personal_info pi ON v.personal_info_id = pi.id
-                        WHERE pi.estate_id = (SELECT pi2.estate_id FROM personal_info pi2 WHERE pi2.id = %s)
-                        AND v.license_plate_number = %s) as car_exists
-                    """, (personal_info_id, license_plate_number))
-            
-            result2 = cur.fetchone()
-            
-            if result2["car_exists"]:
-                    return _error_response(409, "This license plate has already been registered at this estate.")
-                
-            # Insert new vehicle
+
+            # Insert new vehicle (removed duplicate license plate check)
             cur.execute("""
                 INSERT INTO vehicles (personal_info_id, license_plate_number, make, model, color)
                 VALUES (%s, %s, %s, %s, %s)

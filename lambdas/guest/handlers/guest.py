@@ -2,7 +2,7 @@ import json
 import random
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
-from utils import _error_response, _success_response, process_db_results, send_message, log
+from utils import _error_response, _success_response, process_db_results, send_message, log, get_user_privileges
 from middleware import verify_token
 
 def create_guest_regular(conn, body, event):
@@ -48,48 +48,17 @@ def create_guest_regular(conn, body, event):
 
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # Check privileges
-            cur.execute("""
-                        SELECT EXISTS (
-                            SELECT 1 FROM account_holders ah
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            JOIN account_types act ON pi.account_type_id = act.id
-                            JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                            JOIN privileges pv ON atpl.privilege_id = pv.id
-                            WHERE ah.user_id = %s AND pi.estate_id = (
-                                SELECT pi.estate_id
-                                FROM account_holders ah
-                                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                                WHERE ah.id = %s
-                        ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-                        ) AS exists_flag
-                        """, (user_id, account_holder_id))
+            # Check privileges using helper
+            privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
 
-            if not (cur.fetchone()["exists_flag"] or is_admin):
-                cur.execute("""
-                    SELECT EXISTS(SELECT 1 FROM account_holders ah
-                            WHERE ah.id = %s AND ah.user_id = %s AND ah.is_active = TRUE) as same_person
-                    """, (account_holder_id, user_id))
-                row = cur.fetchone()
-                if not row["same_person"]:
-                    return _error_response(403, "You do not have privileges to create a guest for this account.")
-
-            # Retrieve the estate_id linked to the account holder
-            cur.execute("""
-            SELECT pi.estate_id, es.name AS estate_name
-            FROM personal_info pi
-            JOIN account_holders ah ON ah.personal_info_id = pi.id
-            JOIN estates es ON es.id = pi.estate_id
-            WHERE ah.id = %s
-            """, (account_holder_id,))
-
-            result = cur.fetchone()
-
-            if not result:
+            if not privileges.is_valid:
                 return _error_response(400, "No estate found for this account holder.")
 
-            estate_id = result["estate_id"]
-            estate_name = result["estate_name"]
+            if not privileges.can_manage_guests():
+                return _error_response(403, "You do not have privileges to create a guest for this account.")
+
+            estate_id = privileges.estate_id
+            estate_name = privileges.estate_name
 
             # Create personal_info entry
             cur.execute("""
@@ -101,50 +70,12 @@ def create_guest_regular(conn, body, event):
 
             # Handle vehicle creation if license plate is provided
             if license_plate_number:
-                # Check for vehicle privileges
-                cur.execute("""
-                            SELECT EXISTS (
-                                SELECT 1 FROM account_holders ah
-                                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                                JOIN account_types act ON pi.account_type_id = act.id
-                                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                                JOIN privileges pv ON atpl.privilege_id = pv.id
-                                WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = %s
-                                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
-                            ) AS exists_flag
-                            """, (user_id, estate_id))
-
-                if not (cur.fetchone()["exists_flag"] or is_admin):
-                    # Check if user can create vehicles for their guests
-                    cur.execute("""
-                                SELECT EXISTS(
-                                    SELECT 1 FROM account_holders ah
-                                    JOIN personal_info pi ON ah.personal_info_id = pi.id
-                                    JOIN account_types act ON pi.account_type_id = act.id
-                                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                                    JOIN privileges pv ON atpl.privilege_id = pv.id
-                                    WHERE ah.is_active = TRUE AND ah.user_id = %s AND ah.id = %s AND pv.name = 'CREATE_VEHICLES'
-                                ) AS can_create_vehicles
-                                """, (user_id, account_holder_id))
-
-                    if not cur.fetchone()["can_create_vehicles"]:
-                        conn.rollback()
-                        return _error_response(403, "You do not have privileges to create a vehicle for this guest.")
-
-                # Check for duplicate license plate in the estate
-                cur.execute("""
-                        SELECT EXISTS(
-                            SELECT 1 FROM vehicles v
-                            JOIN personal_info pi ON v.personal_info_id = pi.id
-                            WHERE pi.estate_id = %s AND v.license_plate_number = %s
-                        ) as car_exists
-                        """, (estate_id, license_plate_number))
-
-                if cur.fetchone()["car_exists"]:
+                # Check for vehicle privileges using helper
+                if not privileges.can_create_vehicles():
                     conn.rollback()
-                    return _error_response(409, "This license plate has already been registered at this estate.")
+                    return _error_response(403, "You do not have privileges to create a vehicle for this guest.")
 
-                # Create vehicle
+                # Create vehicle (removed duplicate license plate check)
                 cur.execute("""
                     INSERT INTO vehicles (personal_info_id, license_plate_number, make, model, color)
                     VALUES (%s, %s, %s, %s, %s)
@@ -248,48 +179,17 @@ def create_associate(conn, body, event):
 
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # Check privileges
-            cur.execute("""
-                        SELECT EXISTS (
-                            SELECT 1 FROM account_holders ah
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            JOIN account_types act ON pi.account_type_id = act.id
-                            JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                            JOIN privileges pv ON atpl.privilege_id = pv.id
-                            WHERE ah.user_id = %s AND pi.estate_id = (
-                                SELECT pi.estate_id
-                                FROM account_holders ah
-                                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                                WHERE ah.id = %s
-                        ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-                        ) AS exists_flag
-                        """, (user_id, account_holder_id))
+            # Check privileges using helper
+            privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
 
-            if not (cur.fetchone()["exists_flag"] or is_admin):
-                cur.execute("""
-                    SELECT EXISTS(SELECT 1 FROM account_holders ah
-                            WHERE ah.id = %s AND ah.user_id = %s AND ah.is_active = TRUE) as same_person
-                    """, (account_holder_id, user_id))
-                row = cur.fetchone()
-                if not row["same_person"]:
-                    return _error_response(403, "You do not have privileges to create an associate for this account.")
-
-            # Retrieve the estate_id linked to the account holder
-            cur.execute("""
-            SELECT pi.estate_id, es.name AS estate_name
-            FROM personal_info pi
-            JOIN account_holders ah ON ah.personal_info_id = pi.id
-            JOIN estates es ON es.id = pi.estate_id
-            WHERE ah.id = %s
-            """, (account_holder_id,))
-
-            result = cur.fetchone()
-
-            if not result:
+            if not privileges.is_valid:
                 return _error_response(400, "No estate found for this account holder.")
 
-            estate_id = result["estate_id"]
-            estate_name = result["estate_name"]
+            if not privileges.can_manage_guests():
+                return _error_response(403, "You do not have privileges to create an associate for this account.")
+
+            estate_id = privileges.estate_id
+            estate_name = privileges.estate_name
 
             # Create personal_info entry
             cur.execute("""
@@ -301,50 +201,12 @@ def create_associate(conn, body, event):
 
             # Handle vehicle creation if license plate is provided
             if license_plate_number:
-                # Check for vehicle privileges
-                cur.execute("""
-                            SELECT EXISTS (
-                                SELECT 1 FROM account_holders ah
-                                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                                JOIN account_types act ON pi.account_type_id = act.id
-                                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                                JOIN privileges pv ON atpl.privilege_id = pv.id
-                                WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = %s
-                                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
-                            ) AS exists_flag
-                            """, (user_id, estate_id))
-
-                if not (cur.fetchone()["exists_flag"] or is_admin):
-                    # Check if user can create vehicles for their guests
-                    cur.execute("""
-                                SELECT EXISTS(
-                                    SELECT 1 FROM account_holders ah
-                                    JOIN personal_info pi ON ah.personal_info_id = pi.id
-                                    JOIN account_types act ON pi.account_type_id = act.id
-                                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                                    JOIN privileges pv ON atpl.privilege_id = pv.id
-                                    WHERE ah.is_active = TRUE AND ah.user_id = %s AND ah.id = %s AND pv.name = 'CREATE_VEHICLES'
-                                ) AS can_create_vehicles
-                                """, (user_id, account_holder_id))
-
-                    if not cur.fetchone()["can_create_vehicles"]:
-                        conn.rollback()
-                        return _error_response(403, "You do not have privileges to create a vehicle for this associate.")
-
-                # Check for duplicate license plate in the estate
-                cur.execute("""
-                        SELECT EXISTS(
-                            SELECT 1 FROM vehicles v
-                            JOIN personal_info pi ON v.personal_info_id = pi.id
-                            WHERE pi.estate_id = %s AND v.license_plate_number = %s
-                        ) as car_exists
-                        """, (estate_id, license_plate_number))
-
-                if cur.fetchone()["car_exists"]:
+                # Check for vehicle privileges using helper
+                if not privileges.can_create_vehicles():
                     conn.rollback()
-                    return _error_response(409, "This license plate has already been registered at this estate.")
+                    return _error_response(403, "You do not have privileges to create a vehicle for this associate.")
 
-                # Create vehicle
+                # Create vehicle (removed duplicate license plate check)
                 cur.execute("""
                     INSERT INTO vehicles (personal_info_id, license_plate_number, make, model, color)
                     VALUES (%s, %s, %s, %s, %s)
