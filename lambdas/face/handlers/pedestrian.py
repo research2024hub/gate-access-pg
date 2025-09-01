@@ -120,22 +120,24 @@ def match_guest_face(conn, body, event):
                 confidence = match['Face']['Confidence']
                 print(f"Rekognition match: FaceId={face_id}, Confidence={confidence}")
 
-                # Correctly pass parameters as a tuple
+                # Check if face exists AND guest hasn't expired
                 cur.execute("""
                     SELECT EXISTS (
-                        SELECT 1 FROM faces
-                        WHERE faces.id = %s
-                    ) AS face_exists
+                        SELECT 1 FROM faces f
+                        JOIN guests g ON f.guest_id = g.id
+                        JOIN personal_info pi ON g.personal_info_id = pi.id
+                        WHERE f.id = %s AND pi.expiry >= CURRENT_TIMESTAMP
+                    ) AS face_exists_and_valid
                 """, (face_id,))
 
-                if cur.fetchone()["face_exists"]:
-                    # We found a matching face in our DB
+                if cur.fetchone()["face_exists_and_valid"]:
+                    # We found a matching face in our DB and guest hasn't expired
                     face_id_to_delete = face_id
                     break  # Stop looking for other matches
 
             if not face_id_to_delete:
-                # No matching face found in local DB
-                _error_response(404, "Face not found in DB.")
+                # No matching face found in local DB or guest has expired
+                return _error_response(404, "Face not found or guest access has expired.")
 
             # Delete the face from our 'faces' table
             cur.execute(
@@ -226,12 +228,23 @@ def save_guest_face(conn, body, event):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            
+            # First check if guest exists and hasn't expired
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM guests g
+                    JOIN personal_info pi ON g.personal_info_id = pi.id
+                    WHERE g.id = %s AND pi.expiry >= CURRENT_TIMESTAMP
+                ) AS guest_valid
+            """, (guest_id,))
+
+            if not cur.fetchone()["guest_valid"]:
+                return _error_response(400, "Guest not found or access has expired.")
+
             cur.execute("""
                         INSERT INTO faces (id, guest_id)
                         VALUES (%s, %s)
-                        RETURNING id 
-                        """, (face_id, guest_id))   
+                        RETURNING id
+                        """, (face_id, guest_id))
 
             cur.execute(
                 """
