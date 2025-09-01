@@ -4,15 +4,16 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime
 from utils import _error_response, _success_response, process_db_results, send_message, log
 from middleware import verify_token
-from vehicle import create_vehicle
+
 def create_guest_regular(conn, body, event):
     """
     Registers a new guest under an account holder and creates a corresponding personal_info entry.
+    All operations are performed in a single transaction.
     """
     payload, error = verify_token(event)
     if error:
         return error
-    
+
     user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False)
 
@@ -25,133 +26,193 @@ def create_guest_regular(conn, body, event):
     start = body.get("start", None)
     other_info = body.get("other_info", {})
 
+    # Vehicle fields (optional)
+    license_plate_number = body.get("license_plate_number")
+    make = body.get("make")
+    model = body.get("model")
+    color = body.get("color")
+
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    start =  start if start else now
+    start = start if start else now
     other_info["entry_window"] = {
         "start": start,
         "end": expiry
     }
-    
+
     if not all([account_holder_id, name, id_type, id_num, contact, expiry]):
         return _error_response(400, "Missing required fields.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = (
-                            SELECT pi.estate_id
-                            FROM account_holders ah
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            WHERE ah.id = %s
-                    ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-                    ) AS exists_flag
-                    """, (user_id, account_holder_id))
-        
-        if not (cur.fetchone()["exists_flag"] or is_admin):
+    # Check if vehicle info is provided
+    if license_plate_number and not all([make, model, color]):
+        return _error_response(400, "If license plate is provided, make, model, and color are required.")
+
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check privileges
             cur.execute("""
-                SELECT EXISTS(SELECT 1 FROM account_holders ah
-                        WHERE ah.id = %s AND ah.user_id = %s AND ah.is_active = TRUE) as same_person
-                """, (account_holder_id, user_id))
-            row = cur.fetchone()
-            if not row["same_person"]:
-                return _error_response(403, "You do not have privileges to create a guest for this account.")
-        
-        # Retrieve the estate_id linked to the account holder
-        cur.execute("""
-        SELECT pi.estate_id, es.name AS estate_name
-        FROM personal_info pi
-        JOIN account_holders ah ON ah.personal_info_id = pi.id 
-        JOIN estates es ON es.id = pi.estate_id 
-        WHERE ah.id = %s
-        """, (account_holder_id,))
+                        SELECT EXISTS (
+                            SELECT 1 FROM account_holders ah
+                            JOIN personal_info pi ON ah.personal_info_id = pi.id
+                            JOIN account_types act ON pi.account_type_id = act.id
+                            JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                            JOIN privileges pv ON atpl.privilege_id = pv.id
+                            WHERE ah.user_id = %s AND pi.estate_id = (
+                                SELECT pi.estate_id
+                                FROM account_holders ah
+                                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                                WHERE ah.id = %s
+                        ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+                        ) AS exists_flag
+                        """, (user_id, account_holder_id))
 
-        result = cur.fetchone()
+            if not (cur.fetchone()["exists_flag"] or is_admin):
+                cur.execute("""
+                    SELECT EXISTS(SELECT 1 FROM account_holders ah
+                            WHERE ah.id = %s AND ah.user_id = %s AND ah.is_active = TRUE) as same_person
+                    """, (account_holder_id, user_id))
+                row = cur.fetchone()
+                if not row["same_person"]:
+                    return _error_response(403, "You do not have privileges to create a guest for this account.")
 
-        if not result:
-            return _error_response(400, "No estate found for this account holder.")
+            # Retrieve the estate_id linked to the account holder
+            cur.execute("""
+            SELECT pi.estate_id, es.name AS estate_name
+            FROM personal_info pi
+            JOIN account_holders ah ON ah.personal_info_id = pi.id
+            JOIN estates es ON es.id = pi.estate_id
+            WHERE ah.id = %s
+            """, (account_holder_id,))
 
-        estate_id = result["estate_id"]
-        estate_name = result["estate_name"]
+            result = cur.fetchone()
 
-        # Create personal_info entry
-        cur.execute("""
-            INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, expiry, account_type_id, access_group_id)
-            VALUES (%s, %s, %s, %s, %s, %s, (SELECT id FROM account_types WHERE name = 'GUEST'), (SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'))
-            RETURNING id
-        """, (estate_id, name, id_type, id_num, contact, expiry, estate_id))
-        personal_info_id = cur.fetchone()["id"]
-         # --- conditional OTP / invite logic ---
-        has_car = other_info.get("has_car", False)
-        if has_car:
-            # If guest has a car, no OTP needed
-            other_info["purpose"] = "visit_with_car"
-            vehicle_body = {
-                "personal_info_id": personal_info_id,
-                "user_id": user_id,
-                "license_plate_number": body.get("license_plate_number"),
-                "make": body.get("make"),
-                "model": body.get("model"),
-                "color": body.get("color")
-            }
-            vehicle_response = create_vehicle(vehicle_body, is_admin)
-        else:
-            # Generate OTP if guest has no car
-            while True:
-                otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+            if not result:
+                return _error_response(400, "No estate found for this account holder.")
+
+            estate_id = result["estate_id"]
+            estate_name = result["estate_name"]
+
+            # Create personal_info entry
+            cur.execute("""
+                INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, expiry, account_type_id, access_group_id)
+                VALUES (%s, %s, %s, %s, %s, %s, (SELECT id FROM account_types WHERE name = 'GUEST'), (SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'))
+                RETURNING id
+            """, (estate_id, name, id_type, id_num, contact, expiry, estate_id))
+            personal_info_id = cur.fetchone()["id"]
+
+            # Handle vehicle creation if license plate is provided
+            if license_plate_number:
+                # Check for vehicle privileges
                 cur.execute("""
                             SELECT EXISTS (
-                                SELECT 1 FROM guests g
-                                JOIN personal_info pi ON pi.id = g.personal_info_id
-                                WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
-                            ) AS otp_match
-                            """, (otp, estate_id))
-                if not cur.fetchone()["otp_match"]:
-                    break
-            other_info["otp"] = otp
-            other_info["purpose"] = "visit"
-        # Create guest entry
-        cur.execute("""
-            INSERT INTO guests (personal_info_id, creator_id, other_info)
-            VALUES (%s, %s, %s)
-            RETURNING id
-        """, (personal_info_id, account_holder_id, json.dumps(other_info)))
-        guest_id = cur.fetchone()["id"]
+                                SELECT 1 FROM account_holders ah
+                                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                                JOIN account_types act ON pi.account_type_id = act.id
+                                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                                JOIN privileges pv ON atpl.privilege_id = pv.id
+                                WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = %s
+                                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
+                            ) AS exists_flag
+                            """, (user_id, estate_id))
 
-        log(conn, "GUEST_CREATION", f"Guest '{guest_id}' [{name}] created", user_id, account_holder_id, estate_id)
+                if not (cur.fetchone()["exists_flag"] or is_admin):
+                    # Check if user can create vehicles for their guests
+                    cur.execute("""
+                                SELECT EXISTS(
+                                    SELECT 1 FROM account_holders ah
+                                    JOIN personal_info pi ON ah.personal_info_id = pi.id
+                                    JOIN account_types act ON pi.account_type_id = act.id
+                                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                                    JOIN privileges pv ON atpl.privilege_id = pv.id
+                                    WHERE ah.is_active = TRUE AND ah.user_id = %s AND ah.id = %s AND pv.name = 'CREATE_VEHICLES'
+                                ) AS can_create_vehicles
+                                """, (user_id, account_holder_id))
 
-        conn.commit()
+                    if not cur.fetchone()["can_create_vehicles"]:
+                        conn.rollback()
+                        return _error_response(403, "You do not have privileges to create a vehicle for this guest.")
 
-        expiry_date_readable = datetime.fromisoformat(expiry).strftime("%A, %d %B %Y %H:%M:%S")
-        start_date_readable = datetime.fromisoformat(start).strftime("%A, %d %B %Y %H:%M:%S")
+                # Check for duplicate license plate in the estate
+                cur.execute("""
+                        SELECT EXISTS(
+                            SELECT 1 FROM vehicles v
+                            JOIN personal_info pi ON v.personal_info_id = pi.id
+                            WHERE pi.estate_id = %s AND v.license_plate_number = %s
+                        ) as car_exists
+                        """, (estate_id, license_plate_number))
 
-        phone_number = contact.lstrip('+')
-        if has_car:
-            # Send invite message
-            send_message(
-                phone_number,
-                f"Hi {name},\nYou are invited to {estate_name}. Your access is valid from {start_date_readable} to {expiry_date_readable}. Please use the car entry lane."
-            )
-        else:
-            
-            send_message(phone_number, f"Hi {name},\nYour One Time Password (OTP) for your visit at {estate_name} is {otp}, valid from {start_date_readable} to {expiry_date_readable}")
+                if cur.fetchone()["car_exists"]:
+                    conn.rollback()
+                    return _error_response(409, "This license plate has already been registered at this estate.")
 
-        print(f"Window Opens: {start_date_readable}, Window Closes:{expiry_date_readable}")
+                # Create vehicle
+                cur.execute("""
+                    INSERT INTO vehicles (personal_info_id, license_plate_number, make, model, color)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (personal_info_id, license_plate_number, make, model, color))
 
-    return _success_response(201, {"message": "Guest registered successfully.", "guest_id": guest_id, "personal_info_id": personal_info_id})
+                vehicle_id = cur.fetchone()["id"]
+                other_info["purpose"] = "visit_with_car"
+                other_info["vehicle_id"] = vehicle_id
+            else:
+                # Generate OTP if guest has no car
+                while True:
+                    otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+                    cur.execute("""
+                                SELECT EXISTS (
+                                    SELECT 1 FROM guests g
+                                    JOIN personal_info pi ON pi.id = g.personal_info_id
+                                    WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
+                                ) AS otp_match
+                                """, (otp, estate_id))
+                    if not cur.fetchone()["otp_match"]:
+                        break
+                other_info["otp"] = otp
+                other_info["purpose"] = "visit"
+
+            # Create guest entry
+            cur.execute("""
+                INSERT INTO guests (personal_info_id, creator_id, other_info)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            """, (personal_info_id, account_holder_id, json.dumps(other_info)))
+            guest_id = cur.fetchone()["id"]
+
+            log(conn, "GUEST_CREATION", f"Guest '{guest_id}' [{name}] created", user_id, account_holder_id, estate_id)
+
+            conn.commit()
+
+            expiry_date_readable = datetime.fromisoformat(expiry).strftime("%A, %d %B %Y %H:%M:%S")
+            start_date_readable = datetime.fromisoformat(start).strftime("%A, %d %B %Y %H:%M:%S")
+
+            phone_number = contact.lstrip('+')
+            if license_plate_number:
+                # Send invite message for guest with car
+                send_message(
+                    phone_number,
+                    f"Hi {name},\nYou are invited to {estate_name}. Your access is valid from {start_date_readable} to {expiry_date_readable}. Please use the car entry lane."
+                )
+            else:
+                # Send OTP message for guest without car
+                send_message(phone_number, f"Hi {name},\nYour One Time Password (OTP) for your visit at {estate_name} is {otp}, valid from {start_date_readable} to {expiry_date_readable}")
+
+            print(f"Window Opens: {start_date_readable}, Window Closes:{expiry_date_readable}")
+
+        return _success_response(201, {"message": "Guest registered successfully.", "guest_id": guest_id, "personal_info_id": personal_info_id})
+
+    except Exception as e:
+        conn.rollback()
+        return _error_response(500, f"Error creating guest: {str(e)}")
 
 def create_associate(conn, body, event):
     """
-    Registers a new guest under an account holder and creates a corresponding personal_info entry.
+    Registers a new associate under an account holder and creates a corresponding personal_info entry.
+    All operations are performed in a single transaction.
     """
     payload, error = verify_token(event)
     if error:
         return error
-    
+
     user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False)
 
@@ -165,128 +226,183 @@ def create_associate(conn, body, event):
     start = body.get("start", None)
     other_info = body.get("other_info", {})
 
-    now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    # Vehicle fields (optional)
+    license_plate_number = body.get("license_plate_number")
+    make = body.get("make")
+    model = body.get("model")
+    color = body.get("color")
 
-    start =  start if start else now
+    now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    start = start if start else now
     other_info["entry_window"] = {
         "start": start,
         "end": expiry
     }
-    
+
     if not all([account_holder_id, name, id_type, id_num, contact, expiry, account_type_id]):
         return _error_response(400, "Missing required fields.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = (
-                            SELECT pi.estate_id
-                            FROM account_holders ah
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            WHERE ah.id = %s
-                    ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
-                    ) AS exists_flag
-                    """, (user_id, account_holder_id))
-        
-        if not (cur.fetchone()["exists_flag"] or is_admin):
+    # Check if vehicle info is provided
+    if license_plate_number and not all([make, model, color]):
+        return _error_response(400, "If license plate is provided, make, model, and color are required.")
+
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check privileges
             cur.execute("""
-                SELECT EXISTS(SELECT 1 FROM account_holders ah
-                        WHERE ah.id = %s AND ah.user_id = %s AND ah.is_active = TRUE) as same_person
-                """, (account_holder_id, user_id))
-            row = cur.fetchone()
-            if not row["same_person"]:
-                return _error_response(403, "You do not have privileges to create an associate for this account.")
-        
-        # Retrieve the estate_id linked to the account holder
-        cur.execute("""
-        SELECT pi.estate_id, es.name AS estate_name
-        FROM personal_info pi
-        JOIN account_holders ah ON ah.personal_info_id = pi.id 
-        JOIN estates es ON es.id = pi.estate_id 
-        WHERE ah.id = %s
-        """, (account_holder_id,))
+                        SELECT EXISTS (
+                            SELECT 1 FROM account_holders ah
+                            JOIN personal_info pi ON ah.personal_info_id = pi.id
+                            JOIN account_types act ON pi.account_type_id = act.id
+                            JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                            JOIN privileges pv ON atpl.privilege_id = pv.id
+                            WHERE ah.user_id = %s AND pi.estate_id = (
+                                SELECT pi.estate_id
+                                FROM account_holders ah
+                                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                                WHERE ah.id = %s
+                        ) AND ah.is_active = TRUE AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
+                        ) AS exists_flag
+                        """, (user_id, account_holder_id))
 
-        result = cur.fetchone()
+            if not (cur.fetchone()["exists_flag"] or is_admin):
+                cur.execute("""
+                    SELECT EXISTS(SELECT 1 FROM account_holders ah
+                            WHERE ah.id = %s AND ah.user_id = %s AND ah.is_active = TRUE) as same_person
+                    """, (account_holder_id, user_id))
+                row = cur.fetchone()
+                if not row["same_person"]:
+                    return _error_response(403, "You do not have privileges to create an associate for this account.")
 
-        if not result:
-            return _error_response(400, "No estate found for this account holder.")
+            # Retrieve the estate_id linked to the account holder
+            cur.execute("""
+            SELECT pi.estate_id, es.name AS estate_name
+            FROM personal_info pi
+            JOIN account_holders ah ON ah.personal_info_id = pi.id
+            JOIN estates es ON es.id = pi.estate_id
+            WHERE ah.id = %s
+            """, (account_holder_id,))
 
-        estate_id = result["estate_id"]
-        estate_name = result["estate_name"]
+            result = cur.fetchone()
 
-        # Create personal_info entry
-        cur.execute("""
-            INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, expiry, account_type_id, access_group_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, (SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'))
-            RETURNING id
-        """, (estate_id, name, id_type, id_num, contact, expiry, account_type_id, estate_id))
-        personal_info_id = cur.fetchone()["id"]
-        has_car = other_info.get("has_car", False)
-        if has_car:
-            # If guest has a car, no OTP needed
-            other_info["purpose"] = "visit_with_car"
-            vehicle_body = {
-                "personal_info_id": personal_info_id,
-                "license_plate_number": body.get("license_plate_number"),
-                "make": body.get("make"),
-                "model": body.get("model"),
-                "color": body.get("color")
-            }
-            vehicle_response = create_vehicle(vehicle_body, is_admin)
-        # Make sure there aren't duplicates
-        else:
-            while True:
-                otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+            if not result:
+                return _error_response(400, "No estate found for this account holder.")
 
+            estate_id = result["estate_id"]
+            estate_name = result["estate_name"]
+
+            # Create personal_info entry
+            cur.execute("""
+                INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, expiry, account_type_id, access_group_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, (SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'))
+                RETURNING id
+            """, (estate_id, name, id_type, id_num, contact, expiry, account_type_id, estate_id))
+            personal_info_id = cur.fetchone()["id"]
+
+            # Handle vehicle creation if license plate is provided
+            if license_plate_number:
+                # Check for vehicle privileges
                 cur.execute("""
                             SELECT EXISTS (
-                                SELECT 1 FROM guests g
-                                JOIN personal_info pi ON pi.id = g.personal_info_id
-                                WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
-                            ) AS otp_match
-                            """, (otp, estate_id))
+                                SELECT 1 FROM account_holders ah
+                                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                                JOIN account_types act ON pi.account_type_id = act.id
+                                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                                JOIN privileges pv ON atpl.privilege_id = pv.id
+                                WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = %s
+                                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
+                            ) AS exists_flag
+                            """, (user_id, estate_id))
 
-                if not cur.fetchone()["otp_match"]:
-                    break
+                if not (cur.fetchone()["exists_flag"] or is_admin):
+                    # Check if user can create vehicles for their guests
+                    cur.execute("""
+                                SELECT EXISTS(
+                                    SELECT 1 FROM account_holders ah
+                                    JOIN personal_info pi ON ah.personal_info_id = pi.id
+                                    JOIN account_types act ON pi.account_type_id = act.id
+                                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                                    JOIN privileges pv ON atpl.privilege_id = pv.id
+                                    WHERE ah.is_active = TRUE AND ah.user_id = %s AND ah.id = %s AND pv.name = 'CREATE_VEHICLES'
+                                ) AS can_create_vehicles
+                                """, (user_id, account_holder_id))
 
-            other_info["otp"] = otp
-            other_info["purpose"] = "visit"
+                    if not cur.fetchone()["can_create_vehicles"]:
+                        conn.rollback()
+                        return _error_response(403, "You do not have privileges to create a vehicle for this associate.")
 
-        # Create guest entry
-        cur.execute("""
-            INSERT INTO guests (personal_info_id, creator_id, other_info)
-            VALUES (%s, %s, %s)
-            RETURNING id
-        """, (personal_info_id, account_holder_id, json.dumps(other_info)))
-        guest_id = cur.fetchone()["id"]
+                # Check for duplicate license plate in the estate
+                cur.execute("""
+                        SELECT EXISTS(
+                            SELECT 1 FROM vehicles v
+                            JOIN personal_info pi ON v.personal_info_id = pi.id
+                            WHERE pi.estate_id = %s AND v.license_plate_number = %s
+                        ) as car_exists
+                        """, (estate_id, license_plate_number))
 
-        log(conn, "GUEST_CREATION", f"Guest '{guest_id}' [{name}] created", user_id, account_holder_id, estate_id)
+                if cur.fetchone()["car_exists"]:
+                    conn.rollback()
+                    return _error_response(409, "This license plate has already been registered at this estate.")
 
-        conn.commit()
+                # Create vehicle
+                cur.execute("""
+                    INSERT INTO vehicles (personal_info_id, license_plate_number, make, model, color)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (personal_info_id, license_plate_number, make, model, color))
 
-        expiry_date_readable = datetime.fromisoformat(expiry).strftime("%A, %d %B %Y %H:%M:%S")
-        start_date_readable = datetime.fromisoformat(start).strftime("%A, %d %B %Y %H:%M:%S")
+                vehicle_id = cur.fetchone()["id"]
+                other_info["purpose"] = "visit_with_car"
+                other_info["vehicle_id"] = vehicle_id
+            else:
+                # Generate OTP if associate has no car
+                while True:
+                    otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+                    cur.execute("""
+                                SELECT EXISTS (
+                                    SELECT 1 FROM guests g
+                                    JOIN personal_info pi ON pi.id = g.personal_info_id
+                                    WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
+                                ) AS otp_match
+                                """, (otp, estate_id))
+                    if not cur.fetchone()["otp_match"]:
+                        break
+                other_info["otp"] = otp
+                other_info["purpose"] = "visit"
 
-        phone_number = contact.lstrip('+')
-        if has_car:
-            # Send invite message
-            send_message(
-                phone_number,
-                f"Hi {name},\nYou are invited to {estate_name}. Your access is valid from {start_date_readable} to {expiry_date_readable}. Please use the car entry lane."
-            )
-        else:
-            
-            send_message(phone_number, f"Hi {name},You are invited to {estate_name}.\nYour One Time Password (OTP) is {otp}, valid from {start_date_readable} to {expiry_date_readable}")
-        # send_message(phone_number, f"Hi {name},\nYour One Time Password (OTP) for your visit at {estate_name} is {otp}, valid from {start_date_readable} to {expiry_date_readable}")
+            # Create guest entry
+            cur.execute("""
+                INSERT INTO guests (personal_info_id, creator_id, other_info)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            """, (personal_info_id, account_holder_id, json.dumps(other_info)))
+            guest_id = cur.fetchone()["id"]
 
-        print(f"Window Opens: {start_date_readable}, Window Closes:{expiry_date_readable}")
+            log(conn, "GUEST_CREATION", f"Guest '{guest_id}' [{name}] created", user_id, account_holder_id, estate_id)
 
-    return _success_response(201, {"message": "Guest registered successfully.", "guest_id": guest_id, "personal_info_id": personal_info_id})
+            conn.commit()
+
+            expiry_date_readable = datetime.fromisoformat(expiry).strftime("%A, %d %B %Y %H:%M:%S")
+            start_date_readable = datetime.fromisoformat(start).strftime("%A, %d %B %Y %H:%M:%S")
+
+            phone_number = contact.lstrip('+')
+            if license_plate_number:
+                # Send invite message for associate with car
+                send_message(
+                    phone_number,
+                    f"Hi {name},\nYou are invited to {estate_name}. Your access is valid from {start_date_readable} to {expiry_date_readable}. Please use the car entry lane."
+                )
+            else:
+                # Send OTP message for associate without car
+                send_message(phone_number, f"Hi {name},You are invited to {estate_name}.\nYour One Time Password (OTP) is {otp}, valid from {start_date_readable} to {expiry_date_readable}")
+
+            print(f"Window Opens: {start_date_readable}, Window Closes:{expiry_date_readable}")
+
+        return _success_response(201, {"message": "Guest registered successfully.", "guest_id": guest_id, "personal_info_id": personal_info_id})
+
+    except Exception as e:
+        conn.rollback()
+        return _error_response(500, f"Error creating associate: {str(e)}")
 
 def send_otp(conn, body, event):
     """
