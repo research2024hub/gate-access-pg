@@ -2,7 +2,7 @@ import json
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
 
-from utils import _error_response, _success_response, process_db_results, log
+from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_gate
 from middleware import verify_token
 
 def create_gate(conn, body, event):
@@ -22,22 +22,13 @@ def create_gate(conn, body, event):
         return _error_response(400, "Missing 'name' or 'estate_id'.")
 
     with conn.cursor() as cur:
-        # Check user privileges
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s 
-                AND pi.estate_id = %s 
-                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
-            ) AS exists_flag
-        """, (user_id, estate_id))
-        
-        has_privileges = cur.fetchone()[0]
-        if not (has_privileges or is_admin):
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in this estate")
+
+        if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to manage gates in this estate")
 
         # Insert gate with optional opening_time and closing_time
@@ -82,21 +73,13 @@ def update_gate(conn, body, event):
         return _error_response(400, "Missing 'id'.")
 
     with conn.cursor() as cur:
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s 
-                AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) 
-                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
-            ) AS exists_flag
-        """, (user_id, gate_id))
-        
-        has_privileges = cur.fetchone()[0]
-        if not (has_privileges or is_admin):
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to manage gates")
 
         cur.execute("""
@@ -169,19 +152,13 @@ def delete_gate(conn, body, event):
         return _error_response(400, "Missing 'id'.")
 
     with conn.cursor() as cur:
-        cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
-                    ) AS exists_flag
-                    """, (user_id, gate_id))
-        
-        has_privileges = cur.fetchone()[0]
-        if not (has_privileges or is_admin):
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to manage gates")
         
         cur.execute("""
@@ -275,23 +252,14 @@ def get_gates_by_estate(conn, event):
     offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # Check estate-level privileges unless user is a global admin
-        if not is_admin:
-            cur.execute("""
-                SELECT EXISTS (
-                    SELECT 1 FROM account_holders ah
-                    JOIN personal_info pi ON ah.personal_info_id = pi.id
-                    JOIN account_types act ON pi.account_type_id = act.id
-                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                    JOIN privileges pv ON atpl.privilege_id = pv.id
-                    WHERE ah.user_id = %s
-                      AND pi.estate_id = %s
-                      AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
-                ) AS exists_flag
-            """, (user_id, estate_id))
-            has_privileges = cur.fetchone()["exists_flag"]
-            if not has_privileges:
-                return _error_response(403, "You do not have privileges to retrieve gates from this estate.")
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in this estate")
+
+        if not privileges.can_manage_gates():
+            return _error_response(403, "You do not have privileges to retrieve gates from this estate.")
 
         # Count total for pagination
         cur.execute("SELECT COUNT(*) FROM gates WHERE estate_id = %s", (estate_id,))
@@ -331,24 +299,14 @@ def get_gate_by_id(conn, event):
         return _error_response(400, "Missing gate ID.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # Check user privileges if not admin
-        if not is_admin:
-            cur.execute("""
-                SELECT EXISTS (
-                    SELECT 1 FROM account_holders ah
-                    JOIN personal_info pi ON ah.personal_info_id = pi.id
-                    JOIN account_types act ON pi.account_type_id = act.id
-                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                    JOIN privileges pv ON atpl.privilege_id = pv.id
-                    WHERE ah.user_id = %s 
-                    AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) 
-                    AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
-                ) AS exists_flag
-            """, (user_id, gate_id))
-            
-            has_privileges = cur.fetchone()["exists_flag"]
-            if not has_privileges:
-                return _error_response(403, "You do not have privileges to view this gate")
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_gates():
+            return _error_response(403, "You do not have privileges to view this gate")
 
         cur.execute("""
             SELECT id, name, estate_id, active, last_controller_heartbeat, date_created, date_updated
@@ -410,21 +368,13 @@ def get_vehicles_by_gate_no_time_check(conn, event):
 
     # Check user privileges
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1
-                FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s
-                  AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s)
-                  AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
-            ) AS exists_flag;
-        """, (user_id, gate_id))
-        result = cur.fetchone()
-        if not (result and (result["exists_flag"] or is_admin)):
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to view vehicles for this gate.")
 
         cur.execute("""
@@ -632,22 +582,13 @@ def get_vehicles_by_gate_with_time_check(conn, event):
     offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # Privilege check
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1
-                FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s
-                  AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s)
-                  AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
-            ) AS exists_flag;
-        """, (user_id, gate_id))
-        result = cur.fetchone()
-        if not (result and (result["exists_flag"] or is_admin)):
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to view vehicles for this gate.")
 
         # Count total
@@ -742,21 +683,13 @@ def activate_gate(conn, body, event):
         return _error_response(400, "Missing 'id'.")
 
     with conn.cursor() as cur:
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s 
-                AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) 
-                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
-            ) AS exists_flag
-        """, (user_id, gate_id))
-        
-        has_privileges = cur.fetchone()[0]
-        if not (has_privileges or is_admin):
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to manage gates")
 
         cur.execute("""
@@ -794,21 +727,13 @@ def deactivate_gate(conn, body, event):
         return _error_response(400, "Missing 'id'.")
 
     with conn.cursor() as cur:
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s 
-                AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) 
-                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GATES')
-            ) AS exists_flag
-        """, (user_id, gate_id))
-        
-        has_privileges = cur.fetchone()[0]
-        if not (has_privileges or is_admin):
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to manage gates")
 
         cur.execute("""

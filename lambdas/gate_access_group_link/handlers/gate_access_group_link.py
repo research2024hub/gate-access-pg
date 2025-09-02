@@ -1,6 +1,6 @@
 import json
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results, log
+from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_gate, get_user_privileges_for_access_group
 from middleware import verify_token
 
 def create_access_group_link(conn, body, event):
@@ -43,22 +43,13 @@ def create_access_group_link(conn, body, event):
         if gate_estate != access_group_estate:
             return _error_response(400, "Estate mismatch: gate and access group belong to different estates.")
 
-        # Check user privileges
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s 
-                AND pi.estate_id = %s 
-                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCESS')
-            ) AS exists_flag
-        """, (user_id, gate_estate))
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
-        has_privileges = cur.fetchone()[0]
-        if not (has_privileges or is_admin):
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_access_groups():
             return _error_response(403, "You do not have privileges to manage access group links.")
 
         # Dynamically build the insert with optional opening_time / closing_time
@@ -141,22 +132,13 @@ def update_access_group_link(conn, body, event):
         if gate_estate != access_group_estate:
             return _error_response(400, "Estate mismatch. Gate and access group belong to different estates.")
 
-        # Check privileges
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s 
-                AND pi.estate_id = %s 
-                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCESS')
-            ) AS exists_flag
-        """, (user_id, gate_estate))
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
-        has_privileges = cur.fetchone()[0]
-        if not (has_privileges or is_admin):
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_access_groups():
             return _error_response(403, "You do not have privileges to update access group links.")
 
         # Update only provided fields using COALESCE to retain existing values
@@ -198,20 +180,14 @@ def remove_access_group_link(conn, body, event):
     if not gate_id or not access_group_id:
         return _error_response(400, "Missing 'gate_id' or 'access_group_id'.")
 
-    with conn.cursor() as cur:   
-        cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCESS')
-                    ) AS exists_flag
-                    """, (user_id, gate_id))
-        
-        has_privileges = cur.fetchone()[0]
-        if not (has_privileges or is_admin):
+    with conn.cursor() as cur:
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_access_groups():
             return _error_response(403, "You do not have privileges to manage access group links")
         
         cur.execute("""
@@ -264,21 +240,13 @@ def list_gate_access_groups(conn, event):
     offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # Privilege check
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s)
-                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCESS')
-            ) AS exists_flag
-        """, (user_id, gate_id))
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
-        has_privileges = cur.fetchone()["exists_flag"]
-        if not (has_privileges or is_admin):
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_access_groups():
             return _error_response(403, "You do not have privileges to retrieve access groups related to this gate")
 
         # Count total linked access groups
@@ -341,21 +309,13 @@ def list_access_group_gates(conn, event):
     offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # Privilege check
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s AND pi.estate_id = (SELECT estate_id FROM access_groups WHERE id = %s)
-                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCESS')
-            ) AS exists_flag
-        """, (user_id, access_group_id))
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_access_group(cur, user_id, access_group_id, is_admin)
 
-        has_privileges = cur.fetchone()["exists_flag"]
-        if not (has_privileges or is_admin):
+        if not privileges:
+            return _error_response(403, "Access group not found or you do not have an account in this estate")
+
+        if not privileges.can_manage_access_groups():
             return _error_response(403, "You do not have privileges to retrieve gates for this access group")
 
         # Count total

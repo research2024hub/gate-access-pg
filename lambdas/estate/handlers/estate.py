@@ -1,6 +1,6 @@
 import json
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results, log
+from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_estate
 from middleware import verify_token
 
 def create_estate(conn, body, event):
@@ -53,18 +53,13 @@ def update_estate(conn, body, event):
         return _error_response(400, "Missing 'id' or update fields ('name' or 'location_coordinates').")
 
     with conn.cursor() as cur:
-        cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = %s AND (pv.name = 'MANAGE_ALL')
-                    ) AS exists_flag
-                    """, (user_id, estate_id))
-        
-        if not (cur.fetchone()[0] or is_admin):
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in this estate")
+
+        if not privileges.can_manage_all():
             return _error_response(403, "You do not have privileges to manage this estate")
         
         cur.execute("""
@@ -125,11 +120,6 @@ def get_estates(conn, event):
     if error:
         return error
 
-    # If needed in the future:
-    # is_admin = payload.get("is_admin", False)
-    # if not is_admin:
-    #     return _error_response(403, "Access denied. Only admins can get estates.")
-
     query_params = event.get("queryStringParameters") or {}
     try:
         page = int(query_params.get("page", 1))
@@ -172,10 +162,6 @@ def get_estate_by_id(conn, event):
     payload, error = verify_token(event)
     if error:
         return error
-    
-    # is_admin = payload.get("is_admin", False)
-    # if not is_admin:
-    #     return _error_response(403, "Access denied. Only admins can get estate by id.")
 
     estate_id = event.get("pathParameters", {}).get("id")
     if not estate_id:

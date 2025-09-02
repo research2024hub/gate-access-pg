@@ -4,7 +4,7 @@ import os
 import json
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
-from utils import _error_response, _success_response, process_db_results, log
+from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_gate
 from middleware import verify_token
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")  # Replace with a secure key in production
@@ -32,24 +32,15 @@ def generate_gate_controller_token(conn, body, event):
     user_id = payload.get("user_id")
 
     # If caller is not a global admin, check estate admin privileges.
-    if not is_admin:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM account_holders ah
-                    JOIN personal_info pi ON ah.personal_info_id = pi.id
-                    JOIN account_types act ON pi.account_type_id = act.id
-                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                    JOIN privileges pv ON atpl.privilege_id = pv.id
-                    WHERE ah.user_id = %s
-                      AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s)
-                      AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_DEVICES')
-                ) AS has_privilege;
-            """, (payload.get("user_id"), gate_id))
-            result = cur.fetchone()
-            if not (result and result["has_privilege"]):
-                return _error_response(403, "Not authorized to generate a gate controller token for this estate.")
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, payload.get("user_id"), gate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_devices():
+            return _error_response(403, "Not authorized to generate a gate controller token for this estate.")
             
             cur.execute("""
                 SELECT estate_id, name FROM gates g
@@ -94,25 +85,15 @@ def generate_tablet_token(conn, body, event):
     is_admin = payload.get("is_admin", False)
     user_id = payload.get("user_id")
 
-    # If caller is not a global admin, check estate admin privileges.
-    if not is_admin:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM account_holders ah
-                    JOIN personal_info pi ON ah.personal_info_id = pi.id
-                    JOIN account_types act ON pi.account_type_id = act.id
-                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                    JOIN privileges pv ON atpl.privilege_id = pv.id
-                    WHERE ah.user_id = %s
-                      AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s)
-                      AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_DEVICES')
-                ) AS has_privilege;
-            """, (payload.get("user_id"), gate_id))
-            result = cur.fetchone()
-            if not (result and result["has_privilege"]):
-                return _error_response(403, "Not authorized to generate a tablet token for this estate.")
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "You do not have an account in the estate for this gate")
+
+        if not privileges.can_manage_devices():
+            return _error_response(403, "Not authorized to generate a tablet token for this estate.")
             
             cur.execute("""
                 SELECT estate_id, name FROM gates g

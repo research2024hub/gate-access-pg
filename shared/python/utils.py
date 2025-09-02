@@ -148,7 +148,13 @@ class PrivilegeContext:
                     bool_or(pv.name = 'MANAGE_ALL') as can_manage_all,
                     bool_or(pv.name = 'MANAGE_GUESTS') as can_manage_guests,
                     bool_or(pv.name = 'MANAGE_VEHICLES') as can_manage_vehicles,
-                    bool_or(pv.name = 'CREATE_VEHICLES') as can_create_vehicles
+                    bool_or(pv.name = 'CREATE_VEHICLES') as can_create_vehicles,
+                    bool_or(pv.name = 'MANAGE_GATES') as can_manage_gates,
+                    bool_or(pv.name = 'MANAGE_ACCOUNTS') as can_manage_accounts,
+                    bool_or(pv.name = 'MANAGE_EVENTS') as can_manage_events,
+                    bool_or(pv.name = 'MANAGE_ACCESS') as can_manage_access,
+                    bool_or(pv.name = 'MANAGE_DEVICES') as can_manage_devices,
+                    bool_or(pv.name = 'VIEW_LOGS') as can_view_logs
                 FROM account_holders ah
                 JOIN personal_info pi ON ah.personal_info_id = pi.id
                 LEFT JOIN account_types act ON pi.account_type_id = act.id
@@ -167,6 +173,12 @@ class PrivilegeContext:
                 COALESCE(up.can_manage_guests, FALSE) as can_manage_guests,
                 COALESCE(up.can_manage_vehicles, FALSE) as can_manage_vehicles,
                 COALESCE(up.can_create_vehicles, FALSE) as can_create_vehicles,
+                COALESCE(up.can_manage_gates, FALSE) as can_manage_gates,
+                COALESCE(up.can_manage_accounts, FALSE) as can_manage_accounts,
+                COALESCE(up.can_manage_events, FALSE) as can_manage_events,
+                COALESCE(up.can_manage_access, FALSE) as can_manage_access,
+                COALESCE(up.can_manage_devices, FALSE) as can_manage_devices,
+                COALESCE(up.can_view_logs, FALSE) as can_view_logs,
                 EXISTS(SELECT 1 FROM target_estate) as account_holder_exists
             FROM target_estate te
             LEFT JOIN user_privileges up ON TRUE
@@ -184,7 +196,13 @@ class PrivilegeContext:
                 "can_manage_all": result["can_manage_all"],
                 "can_manage_guests": result["can_manage_guests"],
                 "can_manage_vehicles": result["can_manage_vehicles"],
-                "can_create_vehicles": result["can_create_vehicles"]
+                "can_create_vehicles": result["can_create_vehicles"],
+                "can_manage_gates": result["can_manage_gates"],
+                "can_manage_accounts": result["can_manage_accounts"],
+                "can_manage_events": result["can_manage_events"],
+                "can_manage_access": result["can_manage_access"],
+                "can_manage_devices": result["can_manage_devices"],
+                "can_view_logs": result["can_view_logs"]
             }
         else:
             self._estate_info = None
@@ -206,6 +224,14 @@ class PrivilegeContext:
     def estate_name(self):
         """Get the estate name."""
         return self._estate_info["estate_name"] if self._estate_info else None
+
+    def can_manage_all(self):
+        """Check if user has MANAGE_ALL privilege (super admin level)."""
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+        return self._privileges["can_manage_all"]
 
     def can_manage_guests(self):
         """Check if user can manage guests."""
@@ -236,6 +262,129 @@ class PrivilegeContext:
                 self._privileges["can_manage_vehicles"] or
                 self._privileges["can_create_vehicles"])
 
+    def can_manage_gates(self):
+        """Check if user can manage gates."""
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+        return (self._privileges["can_manage_all"] or
+                self._privileges["can_manage_gates"])
+
+    def can_manage_accounts(self):
+        """Check if user can manage accounts."""
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+        return (self._privileges["can_manage_all"] or
+                self._privileges["can_manage_accounts"])
+
+    def can_manage_events(self):
+        """Check if user can manage events."""
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+        return (self._privileges["can_manage_all"] or
+                self._privileges["can_manage_events"])
+
+    def can_manage_access_groups(self):
+        """Check if user can manage access groups."""
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+        return (self._privileges["can_manage_all"] or
+                self._privileges["can_manage_access"])
+
+    def can_manage_devices(self):
+        """Check if user can manage devices."""
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+        return (self._privileges["can_manage_all"] or
+                self._privileges["can_manage_devices"])
+
+    def can_view_logs(self):
+        """Check if user can view logs."""
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+        return (self._privileges["can_manage_all"] or
+                self._privileges["can_view_logs"])
+
+    def can_manage_vehicle_for_person(self, cur, personal_info_id):
+        """
+        Check if user can manage vehicles for a specific person.
+        Supports both direct ownership and guest relationships.
+        """
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+
+        # Check if user has general vehicle management privileges
+        if (self._privileges["can_manage_all"] or
+            self._privileges["can_manage_vehicles"]):
+            return True
+
+        # Check if user can create vehicles and has relationship to this person
+        if self._privileges["can_create_vehicles"]:
+            cur.execute("""
+                SELECT
+                    EXISTS(SELECT 1 FROM personal_info pi
+                        JOIN account_holders ah ON ah.personal_info_id = pi.id
+                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS for_myself,
+                    EXISTS(SELECT 1 FROM personal_info pi
+                        JOIN guests g ON g.personal_info_id = pi.id
+                        JOIN account_holders ah ON ah.id = g.creator_id
+                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS for_my_guest
+            """, (self.user_id, personal_info_id, self.user_id, personal_info_id))
+            result = cur.fetchone()
+            return result["for_myself"] or result["for_my_guest"]
+
+        return False
+
+    def can_view_vehicle_for_person(self, cur, personal_info_id):
+        """
+        Check if user can view vehicles for a specific person.
+        More permissive than management - includes ownership.
+        """
+        # Can manage implies can view
+        if self.can_manage_vehicle_for_person(cur, personal_info_id):
+            return True
+
+        # Check direct ownership even without CREATE_VEHICLES privilege
+        cur.execute("""
+            SELECT EXISTS(SELECT 1 FROM personal_info pi
+                JOIN account_holders ah ON ah.personal_info_id = pi.id
+                WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS is_owner
+        """, (self.user_id, personal_info_id))
+        result = cur.fetchone()
+        return result["is_owner"]
+
+    def is_owner_of_account_holder(self, cur, target_account_holder_id):
+        """Check if the user owns the target account holder."""
+        cur.execute("""
+            SELECT EXISTS(SELECT 1 FROM account_holders
+                WHERE user_id = %s AND id = %s AND is_active = TRUE) AS is_owner
+        """, (self.user_id, target_account_holder_id))
+        result = cur.fetchone()
+        return result["is_owner"]
+
+    def is_creator_of_event(self, cur, event_id):
+        """Check if the user created the event."""
+        cur.execute("""
+            SELECT EXISTS(SELECT 1 FROM events e
+                JOIN account_holders ah ON e.creator_id = ah.id
+                WHERE ah.user_id = %s AND e.id = %s AND ah.is_active = TRUE) AS is_creator
+        """, (self.user_id, event_id))
+        result = cur.fetchone()
+        return result["is_creator"]
+
 
 def get_user_privileges(cur, user_id, account_holder_id, is_admin=False):
     """
@@ -264,3 +413,219 @@ def get_user_privileges(cur, user_id, account_holder_id, is_admin=False):
         estate_name = privileges.estate_name
     """
     return PrivilegeContext(cur, user_id, account_holder_id, is_admin)
+
+
+def get_user_privileges_for_vehicle(cur, user_id, vehicle_id, is_admin=False):
+    """
+    Helper function to get user privileges for vehicle operations.
+    Resolves the account holder from the vehicle's personal_info.
+
+    Args:
+        cur: Database cursor
+        user_id: ID of the user making the request
+        vehicle_id: ID of the vehicle being acted upon
+        is_admin: Whether the user is an admin
+
+    Returns:
+        PrivilegeContext: Object containing all privilege and estate information
+        None: If vehicle not found
+    """
+    # Get account holder from vehicle
+    cur.execute("""
+        SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
+        FROM vehicles v
+        JOIN personal_info pi ON v.personal_info_id = pi.id
+        LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
+        LEFT JOIN guests g ON pi.id = g.personal_info_id
+        WHERE v.id = %s
+    """, (vehicle_id,))
+
+    result = cur.fetchone()
+    if not result:
+        return None
+
+    return PrivilegeContext(cur, user_id, result["account_holder_id"], is_admin)
+
+
+def get_user_privileges_for_event(cur, user_id, event_id, is_admin=False):
+    """
+    Helper function to get user privileges for event operations.
+    Resolves the account holder from the event's creator.
+
+    Args:
+        cur: Database cursor
+        user_id: ID of the user making the request
+        event_id: ID of the event being acted upon
+        is_admin: Whether the user is an admin
+
+    Returns:
+        PrivilegeContext: Object containing all privilege and estate information
+        None: If event not found
+    """
+    # Get account holder from event
+    cur.execute("""
+        SELECT creator_id as account_holder_id
+        FROM events
+        WHERE id = %s
+    """, (event_id,))
+
+    result = cur.fetchone()
+    if not result:
+        return None
+
+    return PrivilegeContext(cur, user_id, result["account_holder_id"], is_admin)
+
+
+def get_user_privileges_for_gate(cur, user_id, gate_id, is_admin=False):
+    """
+    Helper function to get user privileges for gate operations.
+    Uses any account holder in the same estate as the gate.
+
+    Args:
+        cur: Database cursor
+        user_id: ID of the user making the request
+        gate_id: ID of the gate being acted upon
+        is_admin: Whether the user is an admin
+
+    Returns:
+        PrivilegeContext: Object containing all privilege and estate information
+        None: If gate not found or user has no account in that estate
+    """
+    # Get any account holder for the user in the same estate as the gate
+    cur.execute("""
+        SELECT ah.id as account_holder_id
+        FROM gates g
+        JOIN account_holders ah ON TRUE
+        JOIN personal_info pi ON ah.personal_info_id = pi.id
+        WHERE g.id = %s
+          AND ah.user_id = %s
+          AND ah.is_active = TRUE
+          AND pi.estate_id = g.estate_id
+        LIMIT 1
+    """, (gate_id, user_id))
+
+    result = cur.fetchone()
+    if not result:
+        return None
+
+    return PrivilegeContext(cur, user_id, result["account_holder_id"], is_admin)
+
+
+def get_user_privileges_for_estate(cur, user_id, estate_id, is_admin=False):
+    """
+    Helper function to get user privileges for estate-level operations.
+    Uses any account holder for the user in the specified estate.
+
+    Args:
+        cur: Database cursor
+        user_id: ID of the user making the request
+        estate_id: ID of the estate
+        is_admin: Whether the user is an admin
+
+    Returns:
+        PrivilegeContext: Object containing all privilege and estate information
+        None: If user has no account in that estate
+    """
+    # Get any account holder for the user in this estate
+    cur.execute("""
+        SELECT ah.id as account_holder_id
+        FROM account_holders ah
+        JOIN personal_info pi ON ah.personal_info_id = pi.id
+        WHERE ah.user_id = %s
+          AND ah.is_active = TRUE
+          AND pi.estate_id = %s
+        LIMIT 1
+    """, (user_id, estate_id))
+
+    result = cur.fetchone()
+    if not result:
+        return None
+
+    return PrivilegeContext(cur, user_id, result["account_holder_id"], is_admin)
+
+
+def get_user_privileges_for_access_group(cur, user_id, access_group_id, is_admin=False):
+    """
+    Helper function to get user privileges for access group operations.
+    Resolves the estate from the access group.
+
+    Args:
+        cur: Database cursor
+        user_id: ID of the user making the request
+        access_group_id: ID of the access group being acted upon
+        is_admin: Whether the user is an admin
+
+    Returns:
+        PrivilegeContext: Object containing all privilege and estate information
+        None: If access group not found or user has no account in that estate
+    """
+    # Get estate from access group
+    cur.execute("""
+        SELECT estate_id FROM access_groups WHERE id = %s
+    """, (access_group_id,))
+
+    result = cur.fetchone()
+    if not result:
+        return None
+
+    estate_id = result["estate_id"]
+    return get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
+
+
+def get_user_privileges_for_personal_info(cur, user_id, personal_info_id, is_admin=False):
+    """
+    Helper function to get user privileges for personal info operations.
+    Resolves the estate from the personal info.
+
+    Args:
+        cur: Database cursor
+        user_id: ID of the user making the request
+        personal_info_id: ID of the personal info being acted upon
+        is_admin: Whether the user is an admin
+
+    Returns:
+        PrivilegeContext: Object containing all privilege and estate information
+        None: If personal info not found or user has no account in that estate
+    """
+    # Get estate from personal info
+    cur.execute("""
+        SELECT estate_id FROM personal_info WHERE id = %s
+    """, (personal_info_id,))
+
+    result = cur.fetchone()
+    if not result:
+        return None
+
+    estate_id = result["estate_id"]
+    return get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
+
+
+def get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin=False):
+    """
+    Helper function to get user privileges for account holder operations.
+    Resolves the estate from the account holder.
+
+    Args:
+        cur: Database cursor
+        user_id: ID of the user making the request
+        account_holder_id: ID of the account holder being acted upon
+        is_admin: Whether the user is an admin
+
+    Returns:
+        PrivilegeContext: Object containing all privilege and estate information
+        None: If account holder not found or user has no account in that estate
+    """
+    # Get estate from account holder
+    cur.execute("""
+        SELECT pi.estate_id
+        FROM account_holders ah
+        JOIN personal_info pi ON ah.personal_info_id = pi.id
+        WHERE ah.id = %s
+    """, (account_holder_id,))
+
+    result = cur.fetchone()
+    if not result:
+        return None
+
+    estate_id = result["estate_id"]
+    return get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)

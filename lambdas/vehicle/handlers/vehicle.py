@@ -1,6 +1,6 @@
 import json
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results, log
+from utils import _error_response, _success_response, process_db_results, log, get_user_privileges
 from middleware import verify_token
 
 def create_vehicle(conn, body, event):
@@ -24,46 +24,29 @@ def create_vehicle(conn, body, event):
         return _error_response(400, "Missing required fields.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Get account holder from personal_info to establish privilege context
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM personal_info pi
-                            WHERE pi.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
-                    ) AS exists_flag
-                    """, (user_id, personal_info_id))
-        
-        if not (cur.fetchone()["exists_flag"] or is_admin):
-            # Verify the guest belongs to the account holder and get personal_info_id
-            cur.execute("""
-                        SELECT 
-                        EXISTS(SELECT 1 FROM guests g
-                            JOIN account_holders ah ON ah.id = g.creator_id
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            JOIN account_types act ON pi.account_type_id = act.id
-                            JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                            JOIN privileges pv ON atpl.privilege_id = pv.id
-                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND g.personal_info_id = %s AND pv.name = 'CREATE_VEHICLES') AS for_my_guest,
-                        EXISTS(SELECT 1 FROM account_holders ah
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            JOIN account_types act ON pi.account_type_id = act.id
-                            JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                            JOIN privileges pv ON atpl.privilege_id = pv.id
-                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s AND pv.name = 'CREATE_VEHICLES') AS for_myself
-                        """, 
-                        (user_id, personal_info_id, user_id, personal_info_id,))
+            SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
+            FROM personal_info pi
+            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
+            LEFT JOIN guests g ON pi.id = g.personal_info_id
+            WHERE pi.id = %s
+        """, (personal_info_id,))
 
-            # Instead of calling cur.fetchone() multiple times, do:
-            result = cur.fetchone()  # This fetches the single row you need.
+        result = cur.fetchone()
+        if not result:
+            return _error_response(400, "Personal info not found.")
 
-            if not (result["for_myself"] or result["for_my_guest"]):
-                return _error_response(403, "You do not have privileges to create a vehicle for this person.")
+        account_holder_id = result["account_holder_id"]
+
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
+
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
+
+        if not privileges.can_manage_vehicle_for_person(cur, personal_info_id):
+            return _error_response(403, "You do not have privileges to create a vehicle for this person.")
             
         cur.execute("""
                 SELECT 
@@ -129,43 +112,40 @@ def update_vehicle(conn, body, event):
         return _error_response(400, "Missing 'vehicle_id' or 'personal_info_id'.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Get vehicle's personal_info_id first
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM vehicles v
-                            JOIN personal_info pi ON v.personal_info_id = pi.id
-                            WHERE v.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
-                    ) AS exists_flag
-                    """, (user_id, vehicle_id))
-        
-        if not (cur.fetchone()["exists_flag"] or is_admin):
-            # Verify the guest belongs to the account holder and get personal_info_id
-            cur.execute("""
-                        SELECT 
-                        EXISTS(SELECT 1 FROM vehicles v
-                            JOIN personal_info pi ON v.personal_info_id = pi.id
-                            JOIN guests g ON g.personal_info_id = pi.id
-                            JOIN account_holders ah ON ah.id = g.creator_id
-                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND v.id = %s) AS for_my_guest,
-                        EXISTS(SELECT 1 FROM vehicles v
-                            JOIN personal_info pi ON v.personal_info_id = pi.id
-                            JOIN account_holders ah ON ah.personal_info_id = pi.id
-                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND v.id = %s) AS for_myself
-                        """, 
-                        (user_id, vehicle_id, user_id, vehicle_id,))
+            SELECT personal_info_id FROM vehicles WHERE id = %s
+        """, (vehicle_id,))
 
-            # Instead of calling cur.fetchone() multiple times, do:
-            result = cur.fetchone()  # This fetches the single row you need.
+        vehicle_result = cur.fetchone()
+        if not vehicle_result:
+            return _error_response(404, "Vehicle not found.")
 
-            if not (result["for_myself"] or result["for_my_guest"]):
-                return _error_response(403, "You do not have privileges to update this vehicle.")
+        vehicle_personal_info_id = vehicle_result["personal_info_id"]
+
+        # Get account holder from personal_info to establish privilege context
+        cur.execute("""
+            SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
+            FROM personal_info pi
+            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
+            LEFT JOIN guests g ON pi.id = g.personal_info_id
+            WHERE pi.id = %s
+        """, (vehicle_personal_info_id,))
+
+        result = cur.fetchone()
+        if not result:
+            return _error_response(400, "Personal info not found.")
+
+        account_holder_id = result["account_holder_id"]
+
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
+
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
+
+        if not privileges.can_manage_vehicle_for_person(cur, vehicle_personal_info_id):
+            return _error_response(403, "You do not have privileges to update this vehicle.")
 
         # Update vehicle details
         cur.execute("""
@@ -219,42 +199,40 @@ def delete_vehicle(conn, body, event):
         return _error_response(400, "Missing 'vehicle_id'.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Get vehicle's personal_info_id first
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM vehicles v
-                            JOIN personal_info pi ON v.personal_info_id = pi.id
-                            WHERE v.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
-                    ) AS exists_flag
-                    """, (user_id, vehicle_id))
-        
-        if not (cur.fetchone()["exists_flag"] or is_admin):
-            # Verify the guest belongs to the account holder and get personal_info_id
-            cur.execute("""
-                        SELECT 
-                        EXISTS(SELECT 1 FROM vehicles v
-                            JOIN personal_info pi ON v.personal_info_id = pi.id
-                            JOIN guests g ON g.personal_info_id = pi.id
-                            JOIN account_holders ah ON ah.id = g.creator_id
-                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND v.id = %s) AS for_my_guest,
-                        EXISTS(SELECT 1 FROM vehicles v
-                            JOIN personal_info pi ON v.personal_info_id = pi.id
-                            JOIN account_holders ah ON ah.personal_info_id = pi.id
-                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND v.id = %s) AS for_myself
-                        """, 
-                        (user_id, vehicle_id, user_id, vehicle_id,))
-            # Instead of calling cur.fetchone() multiple times, do:
-            result = cur.fetchone()  # This fetches the single row you need.
+            SELECT personal_info_id FROM vehicles WHERE id = %s
+        """, (vehicle_id,))
 
-            if not (result["for_myself"] or result["for_my_guest"]):
-                return _error_response(403, "You do not have privileges to delete this vehicle.")
+        vehicle_result = cur.fetchone()
+        if not vehicle_result:
+            return _error_response(404, "Vehicle not found.")
+
+        vehicle_personal_info_id = vehicle_result["personal_info_id"]
+
+        # Get account holder from personal_info to establish privilege context
+        cur.execute("""
+            SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
+            FROM personal_info pi
+            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
+            LEFT JOIN guests g ON pi.id = g.personal_info_id
+            WHERE pi.id = %s
+        """, (vehicle_personal_info_id,))
+
+        result = cur.fetchone()
+        if not result:
+            return _error_response(400, "Personal info not found.")
+
+        account_holder_id = result["account_holder_id"]
+
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
+
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
+
+        if not privileges.can_manage_vehicle_for_person(cur, vehicle_personal_info_id):
+            return _error_response(403, "You do not have privileges to delete this vehicle.")
 
         
         cur.execute("""
@@ -301,42 +279,40 @@ def get_vehicle_details(conn, event):
         return _error_response(400, "Missing 'vehicle_id'.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Get vehicle's personal_info_id first
         cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM vehicles v
-                            JOIN personal_info pi ON v.personal_info_id = pi.id
-                            WHERE v.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
-                    ) AS exists_flag
-                    """, (user_id, vehicle_id))
-        
-        if not (cur.fetchone()["exists_flag"] or is_admin):
-            # Verify the guest belongs to the account holder and get personal_info_id
-            cur.execute("""
-                        SELECT 
-                        EXISTS(SELECT 1 FROM vehicles v
-                            JOIN personal_info pi ON v.personal_info_id = pi.id
-                            JOIN guests g ON g.personal_info_id = pi.id
-                            JOIN account_holders ah ON ah.id = g.creator_id
-                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND v.id = %s) AS for_my_guest,
-                        EXISTS(SELECT 1 FROM vehicles v
-                            JOIN personal_info pi ON v.personal_info_id = pi.id
-                            JOIN account_holders ah ON ah.personal_info_id = pi.id
-                            WHERE ah.is_active = TRUE AND ah.user_id = %s AND v.id = %s) AS for_myself
-                        """, 
-                        (user_id, vehicle_id, user_id, vehicle_id,))
-            # Instead of calling cur.fetchone() multiple times, do:
-            result = cur.fetchone()  # This fetches the single row you need.
+            SELECT personal_info_id FROM vehicles WHERE id = %s
+        """, (vehicle_id,))
 
-            if not (result["for_myself"] or result["for_my_guest"]):
-                return _error_response(403, "You do not have privileges to get information about this vehicle")
+        vehicle_result = cur.fetchone()
+        if not vehicle_result:
+            return _error_response(404, "Vehicle not found.")
+
+        vehicle_personal_info_id = vehicle_result["personal_info_id"]
+
+        # Get account holder from personal_info to establish privilege context
+        cur.execute("""
+            SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
+            FROM personal_info pi
+            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
+            LEFT JOIN guests g ON pi.id = g.personal_info_id
+            WHERE pi.id = %s
+        """, (vehicle_personal_info_id,))
+
+        result = cur.fetchone()
+        if not result:
+            return _error_response(400, "Personal info not found.")
+
+        account_holder_id = result["account_holder_id"]
+
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
+
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
+
+        if not privileges.can_view_vehicle_for_person(cur, vehicle_personal_info_id):
+            return _error_response(403, "You do not have privileges to get information about this vehicle")
             
         cur.execute("""
             SELECT v.id, v.license_plate_number, v.make, v.model, v.color, pi.name AS owner_name, pi.contact
@@ -381,34 +357,29 @@ def list_vehicles_by_owner(conn, event):
     offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # Check privileges
+        # Get account holder from personal_info to establish privilege context
         cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.estate_id = ( 
-                    SELECT pi.estate_id FROM personal_info pi WHERE pi.id = %s
-                ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_VEHICLES')
-            ) AS exists_flag
-        """, (user_id, personal_info_id))
-        
-        if not (cur.fetchone()["exists_flag"] or is_admin):
-            cur.execute("""
-                SELECT 
-                    EXISTS(SELECT 1 FROM personal_info pi
-                        JOIN account_holders ah ON ah.personal_info_id = pi.id
-                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS for_myself,
-                    EXISTS(SELECT 1 FROM personal_info pi
-                        JOIN guests g ON g.personal_info_id = pi.id
-                        JOIN account_holders ah ON ah.id = g.creator_id
-                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS for_my_guest
-            """, (user_id, personal_info_id, user_id, personal_info_id))
-            result = cur.fetchone()
-            if not (result["for_myself"] or result["for_my_guest"]):
-                return _error_response(403, "You do not have privileges to view vehicles for this person.")
+            SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
+            FROM personal_info pi
+            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
+            LEFT JOIN guests g ON pi.id = g.personal_info_id
+            WHERE pi.id = %s
+        """, (personal_info_id,))
+
+        result = cur.fetchone()
+        if not result:
+            return _error_response(400, "Personal info not found.")
+
+        account_holder_id = result["account_holder_id"]
+
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
+
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
+
+        if not privileges.can_view_vehicle_for_person(cur, personal_info_id):
+            return _error_response(403, "You do not have privileges to view vehicles for this person.")
         
         # Count total
         cur.execute("SELECT COUNT(*) FROM vehicles WHERE personal_info_id = %s", (personal_info_id,))

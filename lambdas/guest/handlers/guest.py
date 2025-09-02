@@ -499,94 +499,269 @@ def verify_guest_otp(conn, body, event):
 
 def update_guest(conn, body, event):
     """
-    Updates guest details, including personal_info attributes. Only allowed by the creator.
+    Updates guest details, including personal_info attributes and vehicle operations.
+    Supports creating, updating, or removing vehicles as part of the guest update.
+    Uses the same API structure as create_guest_regular for consistency.
+    Only allowed by the creator or users with MANAGE_GUESTS privilege.
     """
     payload, error = verify_token(event)
     if error:
         return error
-    
+
     user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False)
 
+    # Extract fields using the same pattern as create_guest_regular
     guest_id = body.get("guest_id")
-    
-    # Guest fields
-    expiry = body.get("expiry")
-    other_info = body.get("other_info")
-
-    # Personal Info fields
+    account_holder_id = body.get("account_holder_id")  # Now consistent with create API
     name = body.get("name")
     id_type = body.get("id_type")
     id_num = body.get("id_num")
     contact = body.get("contact")
-    access_group_id = body.get("access_group_id")
+    expiry = body.get("expiry")
+    start = body.get("start", None)
+    other_info = body.get("other_info", {})
 
+    # Vehicle fields (optional) - same as create_guest_regular
+    license_plate_number = body.get("license_plate_number")
+    make = body.get("make")
+    model = body.get("model")
+    color = body.get("color")
+
+    # Handle entry window using the same logic as create_guest_regular
+    # Only set entry_window if expiry is provided (like create_guest_regular)
+    if expiry is not None:
+        # Default 'start' to now if not provided (same as create_guest_regular)
+        if start is None:
+            start = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+        # Set entry_window (consistent with create_guest_regular)
+        other_info["entry_window"] = {
+            "start": start,
+            "end": expiry
+        }
+
+    # Validate required fields - guest_id is required for updates
     if not guest_id:
         return _error_response(400, "Missing 'guest_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # First get the guest's creator (account_holder_id) and personal_info_id
-        cur.execute("""
-            SELECT g.creator_id, g.personal_info_id
-            FROM guests g
-            WHERE g.id = %s
-        """, (guest_id,))
+    # Check if vehicle info is provided (same validation as create_guest_regular)
+    if license_plate_number and not all([make, model, color]):
+        return _error_response(400, "If license plate is provided, make, model, and color are required.")
 
-        guest_info = cur.fetchone()
-        if not guest_info:
-            return _error_response(404, "Guest not found.")
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # First get the guest's creator (account_holder_id), personal_info_id, and existing vehicle info
+            cur.execute("""
+                SELECT g.creator_id, g.personal_info_id, g.other_info,
+                       v.id as vehicle_id, v.license_plate_number, v.make, v.model, v.color,
+                       pi.estate_id, pi.contact as current_contact
+                FROM guests g
+                JOIN personal_info pi ON g.personal_info_id = pi.id
+                LEFT JOIN vehicles v ON v.personal_info_id = g.personal_info_id
+                WHERE g.id = %s
+            """, (guest_id,))
 
-        account_holder_id = guest_info["creator_id"]
-        personal_info_id = guest_info["personal_info_id"]
+            guest_info = cur.fetchone()
+            if not guest_info:
+                return _error_response(404, "Guest not found.")
 
-        # Check privileges using helper
-        privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
+            # Use account_holder_id from body if provided, otherwise use the existing creator_id
+            # This allows for consistency with create API while maintaining backward compatibility
+            if account_holder_id is None:
+                account_holder_id = guest_info["creator_id"]
+            else:
+                # If account_holder_id is provided, verify it matches the existing creator
+                if account_holder_id != guest_info["creator_id"]:
+                    return _error_response(403, "This guest does not belong to the specified account holder.")
 
-        if not privileges.is_valid:
-            return _error_response(400, "No estate found for this account holder.")
+            personal_info_id = guest_info["personal_info_id"]
+            existing_vehicle_id = guest_info["vehicle_id"]
+            estate_id = guest_info["estate_id"]
+            current_other_info = guest_info["other_info"] or {}
+            current_contact = guest_info["current_contact"]
 
-        if not privileges.can_manage_guests():
-            # Verify the guest belongs to the account holder
-            cur.execute("""SELECT g.personal_info_id FROM guests g
-                        JOIN account_holders ah ON ah.id = g.creator_id
-                        WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE""", (guest_id, user_id))
-            row = cur.fetchone()
-            if not row:
-                return _error_response(403, "You do not have privileges to update this guest.")
+            # Check privileges using helper (same pattern as create_guest_regular)
+            privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
 
-        # Update guest table
-        cur.execute("""
-            UPDATE guests
-            SET other_info = COALESCE(%s, other_info)
-            WHERE id = %s
-            RETURNING creator_id
-        """, (json.dumps(other_info) if other_info else None, guest_id))
+            if not privileges.is_valid:
+                return _error_response(400, "No estate found for this account holder.")
 
-        guest_data = cur.fetchone()
+            if not privileges.can_manage_guests():
+                # Verify the guest belongs to the account holder
+                cur.execute("""SELECT g.personal_info_id FROM guests g
+                            JOIN account_holders ah ON ah.id = g.creator_id
+                            WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE""", (guest_id, user_id))
+                row = cur.fetchone()
+                if not row:
+                    return _error_response(403, "You do not have privileges to update this guest.")
 
-        if not guest_data:
-            return _error_response(404, "Guest not found.")
+            # Handle vehicle operations using the same logic as create_guest_regular
+            estate_name = privileges.estate_name
 
-        # Update personal_info table
-        cur.execute("""
-            UPDATE personal_info
-            SET name = COALESCE(%s, name),
-                id_type = COALESCE(%s, id_type),
-                id_num = COALESCE(%s, id_num),
-                contact = COALESCE(%s, contact),
-                expiry = COALESCE(%s, expiry),
-                access_group_id = COALESCE(%s, access_group_id)
-            WHERE id = %s
-            RETURNING estate_id
-        """, (name, id_type, id_num, contact, expiry, access_group_id, personal_info_id))
+            # Start with current other_info and merge with provided other_info
+            updated_other_info = current_other_info.copy()
+            if other_info:
+                updated_other_info.update(other_info)
 
-        guest_info_data = cur.fetchone()
+            # Determine vehicle operation based on provided data
+            vehicle_data_provided = license_plate_number or make or model or color
+            has_existing_vehicle = existing_vehicle_id is not None
 
-        log(conn, "GUEST_UPDATE", f"Guest '{guest_id}' [{name}] updated", user_id, guest_data["creator_id"], guest_info_data["estate_id"])
+            # Handle vehicle creation if license plate is provided (same pattern as create_guest_regular)
+            if license_plate_number:
+                # Check for vehicle privileges using helper (same as create)
+                if not privileges.can_create_vehicles():
+                    return _error_response(403, "You do not have privileges to create/update a vehicle for this guest.")
 
-        conn.commit()
+                if has_existing_vehicle:
+                    # UPDATE EXISTING VEHICLE
+                    cur.execute("""
+                        UPDATE vehicles
+                        SET license_plate_number = COALESCE(%s, license_plate_number),
+                            make = COALESCE(%s, make),
+                            model = COALESCE(%s, model),
+                            color = COALESCE(%s, color)
+                        WHERE id = %s
+                    """, (license_plate_number, make, model, color, existing_vehicle_id))
+                    vehicle_id = existing_vehicle_id
+                else:
+                    # CREATE NEW VEHICLE (same as create_guest_regular)
+                    cur.execute("""
+                        INSERT INTO vehicles (personal_info_id, license_plate_number, make, model, color)
+                        VALUES (%s, %s, %s, %s, %s)
+                        RETURNING id
+                    """, (personal_info_id, license_plate_number, make, model, color))
+                    vehicle_id = cur.fetchone()["id"]
 
-    return _success_response(200, {"message": "Guest and personal info updated successfully."})
+                # Set vehicle-related other_info (same as create_guest_regular)
+                updated_other_info["purpose"] = "visit_with_car"
+                updated_other_info["vehicle_id"] = vehicle_id
+                # Remove OTP if it exists (guest now has car)
+                updated_other_info.pop("otp", None)
+
+            elif not vehicle_data_provided and has_existing_vehicle:
+                # REMOVE EXISTING VEHICLE AND GENERATE OTP (only if explicitly removing vehicle)
+                # This happens when no vehicle data is provided but guest currently has a vehicle
+                if not privileges.can_create_vehicles():
+                    return _error_response(403, "You do not have privileges to remove the vehicle for this guest.")
+
+                # Delete vehicle
+                cur.execute("DELETE FROM vehicles WHERE id = %s", (existing_vehicle_id,))
+
+                # Generate new OTP (same pattern as create_guest_regular)
+                while True:
+                    otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+                    cur.execute("""
+                        SELECT EXISTS (
+                            SELECT 1 FROM guests g
+                            JOIN personal_info pi ON pi.id = g.personal_info_id
+                            WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
+                        ) AS otp_match
+                    """, (otp, estate_id))
+                    if not cur.fetchone()["otp_match"]:
+                        break
+
+                updated_other_info["otp"] = otp
+                updated_other_info["purpose"] = "visit"
+                updated_other_info.pop("vehicle_id", None)
+
+            elif not license_plate_number and not has_existing_vehicle:
+                # NO VEHICLE SCENARIO - Generate OTP if guest doesn't have one (same as create_guest_regular)
+                if "otp" not in updated_other_info:
+                    while True:
+                        otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+                        cur.execute("""
+                            SELECT EXISTS (
+                                SELECT 1 FROM guests g
+                                JOIN personal_info pi ON pi.id = g.personal_info_id
+                                WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
+                            ) AS otp_match
+                        """, (otp, estate_id))
+                        if not cur.fetchone()["otp_match"]:
+                            break
+                    updated_other_info["otp"] = otp
+                    updated_other_info["purpose"] = "visit"
+
+            # Update guest table
+            cur.execute("""
+                UPDATE guests
+                SET other_info = %s
+                WHERE id = %s
+                RETURNING creator_id
+            """, (json.dumps(updated_other_info), guest_id))
+
+            guest_data = cur.fetchone()
+            if not guest_data:
+                return _error_response(404, "Guest not found.")
+
+            # Update personal_info table
+            # Note: access_group_id is not updated - guests always stay in 'REGULAR' access group
+            cur.execute("""
+                UPDATE personal_info
+                SET name = COALESCE(%s, name),
+                    id_type = COALESCE(%s, id_type),
+                    id_num = COALESCE(%s, id_num),
+                    contact = COALESCE(%s, contact),
+                    expiry = COALESCE(%s, expiry)
+                WHERE id = %s
+                RETURNING estate_id
+            """, (name, id_type, id_num, contact, expiry, personal_info_id))
+
+            guest_info_data = cur.fetchone()
+
+            # Get final contact info (use updated contact or existing)
+            final_contact = contact if contact else current_contact
+
+            log(conn, "GUEST_UPDATE", f"Guest '{guest_id}' [{name or 'Unknown'}] updated", user_id, guest_data["creator_id"], guest_info_data["estate_id"])
+
+            conn.commit()
+
+            # Send notification messages using the same pattern as create_guest_regular
+            if final_contact and expiry is not None:
+                try:
+                    # Get current entry window from updated_other_info
+                    entry_window = updated_other_info.get("entry_window", {})
+                    current_start = entry_window.get("start")
+                    current_expiry = entry_window.get("end")
+
+                    if current_start and current_expiry:
+                        expiry_date_readable = datetime.fromisoformat(current_expiry).strftime("%A, %d %B %Y %H:%M:%S")
+                        start_date_readable = datetime.fromisoformat(current_start).strftime("%A, %d %B %Y %H:%M:%S")
+
+                        phone_number = final_contact.lstrip('+')
+
+                        # Determine final vehicle status
+                        final_has_vehicle = "vehicle_id" in updated_other_info
+
+                        if final_has_vehicle:
+                            # Send updated invite message for guest with car (same pattern as create_guest_regular)
+                            send_message(
+                                phone_number,
+                                f"Hi {name or 'Guest'},\nYour visit details have been updated. Your access to {estate_name} is valid from {start_date_readable} to {expiry_date_readable}. Please use the car entry lane."
+                            )
+                        else:
+                            # Send updated OTP message for guest without car (same pattern as create_guest_regular)
+                            otp_text = f"Your One Time Password (OTP) is {updated_other_info.get('otp')}, " if updated_other_info.get('otp') else ""
+                            send_message(
+                                phone_number,
+                                f"Hi {name or 'Guest'},\nYour visit details have been updated. {otp_text}valid from {start_date_readable} to {expiry_date_readable}"
+                            )
+                except Exception as msg_error:
+                    # Don't fail the update if messaging fails
+                    print(f"Failed to send update message: {str(msg_error)}")
+
+        return _success_response(200, {
+            "message": "Guest and personal info updated successfully.",
+            "guest_id": guest_id,
+            "has_vehicle": "vehicle_id" in updated_other_info,
+            "otp_generated": "otp" in updated_other_info,
+            "entry_window_updated": expiry is not None
+        })
+
+    except Exception as e:
+        conn.rollback()
+        return _error_response(500, f"An error occurred while updating guest: {str(e)}")
 
 def delete_guest(conn, body, event):
     """

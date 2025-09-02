@@ -1,7 +1,7 @@
 import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results, log
+from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_personal_info, get_user_privileges_for_account_holder
 import random
 from datetime import datetime, timedelta
 from middleware import verify_token
@@ -306,22 +306,13 @@ def change_account_type(conn, body, event):
         #             """, (user_id, personal_info_id))
         # result = cur.fetchone()
         # Check if account type exists
-        cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT estate_id FROM personal_info
-                            WHERE personal_info.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCOUNTS')
-                    ) AS exists_flag
-                    """, (user_id, personal_info_id))
-        
-        has_privileges = cur.fetchone()[0]
-        if not (has_privileges or is_admin):
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_personal_info(cur, user_id, personal_info_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "Personal info not found or you do not have an account in this estate")
+
+        if not privileges.can_manage_accounts():
             return _error_response(403, "You do not have privileges to manage accounts")
         
         cur.execute("SELECT id FROM account_types WHERE id = %s", (account_type_id,))
@@ -368,24 +359,13 @@ def deactivate_account(conn, body, event):
         return _error_response(400, "Missing 'id'.")
 
     with conn.cursor() as cur:
-        cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM account_holders ah
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            WHERE ah.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCOUNTS')
-                    ) AS exists_flag
-                    """, (user_id, account_holder_id))
-        
-        has_privileges = cur.fetchone()[0]
-        if not (has_privileges or is_admin):
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "Account holder not found or you do not have an account in this estate")
+
+        if not privileges.can_manage_accounts():
             return _error_response(403, "You do not have privileges to manage accounts")
         
         cur.execute("""
@@ -473,26 +453,13 @@ def activate_account(conn, body, event):
         return _error_response(400, "Missing 'account_holder_id'.")
 
     with conn.cursor() as cur:
-        # Privilege check
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s
-                  AND pi.estate_id = (
-                      SELECT pi2.estate_id
-                      FROM account_holders ah2
-                      JOIN personal_info pi2 ON pi2.id = ah2.personal_info_id
-                      WHERE ah2.id = %s
-                  )
-                  AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCOUNTS')
-            ) AS exists_flag
-        """, (user_id, account_holder_id))
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin=False)
 
-        if not cur.fetchone()[0]:
+        if not privileges:
+            return _error_response(403, "Account holder not found or you do not have an account in this estate")
+
+        if not privileges.can_manage_accounts():
             return _error_response(403, "You do not have privileges to manage accounts")
 
         # Activate the account
@@ -537,24 +504,13 @@ def delete_account(conn, body, event):
         return _error_response(400, "Missing 'account_holder_id'.")
 
     with conn.cursor() as cur:
-        cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM account_holders ah
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            WHERE ah.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCOUNTS')
-                    ) AS exists_flag
-                    """, (user_id, account_holder_id))
-        
-        has_privileges = cur.fetchone()[0]
-        if not (has_privileges or is_admin):
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin)
+
+        if not privileges:
+            return _error_response(403, "Account holder not found or you do not have an account in this estate")
+
+        if not privileges.can_manage_accounts():
             return _error_response(403, "You do not have privileges to manage accounts")
         
         # Delete the personal info associated with this account
@@ -609,25 +565,14 @@ def get_estate_accounts(conn, event):
     offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # Access check for non-admins
-        if not is_admin:
-            cur.execute("""
-                SELECT EXISTS (
-                    SELECT 1 
-                    FROM account_holders ah
-                    JOIN personal_info pi ON ah.personal_info_id = pi.id
-                    JOIN account_types act ON pi.account_type_id = act.id
-                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                    JOIN privileges pv ON atpl.privilege_id = pv.id
-                    WHERE ah.user_id = %s
-                      AND pi.estate_id = %s
-                      AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCOUNTS')
-                ) AS has_privilege
-            """, (user_id, estate_id))
+        # Check privileges using enhanced helper
+        privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
 
-            result = cur.fetchone()
-            if not result or not result["has_privilege"]:
-                return _error_response(403, "You do not have privileges to view accounts in this estate.")
+        if not privileges:
+            return _error_response(403, "You do not have an account in this estate")
+
+        if not privileges.can_manage_accounts():
+            return _error_response(403, "You do not have privileges to view accounts in this estate.")
 
         # Count total
         cur.execute("SELECT COUNT(*) FROM account_holders ah JOIN personal_info pi ON ah.personal_info_id = pi.id WHERE pi.estate_id = %s", (estate_id,))
@@ -706,21 +651,11 @@ def generate_account_otp(conn, body, event):
         # Check if user is the owner
         is_owner = (user_id == account_user_id)
 
-        # If not owner, check privileges
+        # If not owner, check privileges using enhanced helper
         has_privileges = False
         if not is_owner and not is_admin:
-            cur.execute("""
-                SELECT EXISTS (
-                    SELECT 1 FROM account_holders ah
-                    JOIN personal_info pi ON ah.personal_info_id = pi.id
-                    JOIN account_types act ON pi.account_type_id = act.id
-                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                    JOIN privileges pv ON atpl.privilege_id = pv.id
-                    WHERE ah.user_id = %s AND pi.estate_id = %s AND 
-                          (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_ACCOUNTS')
-                ) AS has_privileges
-            """, (user_id, estate_id))
-            has_privileges = cur.fetchone()["has_privileges"]
+            privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin=False)
+            has_privileges = privileges and privileges.can_manage_accounts()
 
         if not (is_owner or has_privileges or is_admin):
             return _error_response(403, "You do not have privileges to generate OTP for this account.")
