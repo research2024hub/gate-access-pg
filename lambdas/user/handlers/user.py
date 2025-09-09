@@ -294,110 +294,104 @@ def get_user_accounts(conn, event):
         }
     })
 
-# def forgot_password(body):
-#     email = body.get("email")
-#     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-#         # Look up active user (do not reveal existence to caller)
-#         cur.execute(
-#             "SELECT id FROM users WHERE email = %s AND is_active = TRUE LIMIT 1",
-#             (email,)
-#         )
-#         row = cur.fetchone()
-#         if not row:
-#             return _error_response(500, "User not found")
-#         user_id = row["id"]
-#         # Create JWT (payload must be dict)
-#         token = jwt.encode({"user_id": user_id}, JWT_SECRET, algorithm="HS256")
-       
-#         # Generate OTP and expiry
-#         reset_otp = generate_otp()
-#         otp_expiry = int(time.time()) + expiry_minutes * 60 
-#         cur.execute(
-#             "SELECT reset_otp, otp_expiry FROM users WHERE email = %s AND is_active = TRUE LIMIT 1",
-#             (email,)
-#         )
-#         row = cur.fetchone()
-#         if not row:
-#             # return _error_response(500, "User not found")
-#         cur.execute(
-#             "UPDATE users SET reset_otp = %s, otp_expiry = %s WHERE id = %s",
-#             (reset_otp, expiry_time, user_id)
-#         )
-        
-#         # Save OTP to user record
-#         cur.execute("""
-#             UPDATE users
-#             SET reset_otp = %s, expiry_time = %s
-#             WHERE email = %s
-#         """, (reset_otp, otp_expiry, email))
-#         conn.commit()
-#     # Build email
-#     title = 'RESET PASSWORD'
-#     message = (
-#         "We received a request to reset your password.\n"
-#         f"Use the One-Time Password (OTP) below to reset it.\n\n"
-#         f"Your OTP Code: {reset_otp}\n\n"
-#         "If you did not request this, you can safely ignore this email."
-#     )
+def forgot_password(conn, body):
+    email = body.get("email")
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Look up active user (do not reveal existence to caller)
+        cur.execute(
+            "SELECT id FROM users WHERE email = %s AND is_active = TRUE LIMIT 1",
+            (email,)
+        )
+        row = cur.fetchone()
+        if not row:
+            return _error_response(400, "User not found")
+        user_id = row["id"]
+        # Create JWT (payload must be dict)
+        token = jwt.encode({"user_id": user_id}, JWT_SECRET, algorithm="HS256")
+        # Generate OTP and expiry
+        reset_otp = generate_otp()
+        cur.execute(
+            """UPDATE users SET reset_otp = %s, reset_expiry = NOW() + INTERVAL '10 minutes' 
+            WHERE id = %s""",
+            (reset_otp, user_id)
+        )
+        conn.commit()
+    # Build email
+    title = 'RESET PASSWORD'
+    message = (
+        "We received a request to reset your password.\n"
+        f"Use the One-Time Password (OTP) below to reset it.\n\n"
+        f"Your OTP Code: {reset_otp}\n\n"
+        "If you did not request this, you can safely ignore this email."
+    )
 
-#     send_email_gmail(email, title, message)
-#     return _success_response(200, {"message": "success."}, token)
+    send_email_gmail(email, title, message)
+    return _success_response(200, {"message": "success."}, token)
 
-# def verify_otp(conn, body, event):
-#     # Verify token
-#     payload, error = verify_token(event)
-#     if error:
-#         return error
-#     user_id = payload.get("user_id")
-#     input_otp = body.get("reset_otp")
-#     if not user_id or not input_otp:
-#         return _error_response(400, "Missing user_id or OTP.")
-#     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-#         cur.execute("""
-#             SELECT reset_otp, expiry_time 
-#             FROM users 
-#             WHERE id = %s
-#         """, (user_id,))
-#         row = cur.fetchone()
-#         if not row:
-#             return _error_response(404, "No OTP found for this user.")
-#         if row["reset_otp"] != input_otp:
-#             return _error_response(401, "Invalid OTP.")
-#         if row["otp_expiry"] < datetime.datetime.utcnow():
-#             return _error_response(401, "OTP expired.")
-#         # Clean up OTP after successful verification
-#         cur.execute("""
-#             UPDATE users 
-#             SET reset_otp = NULL, otp_expiry = NULL
-#             WHERE id = %s
-#         """, (user_id,))
-#         conn.commit()
-
-#     return _success_response(200, {"message": "OTP successfully verified."})
-
-
-# def reset_password():
+def verify_reset_otp(conn, body):
+    # Verify token
+    try:
+        token = body.get("token")
+        payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+        user_id = payload["user_id"]
+        # return user_id
+    except jwt.ExpiredSignatureError:
+        raise ValueError("Token expired")
+    except Exception:
+        raise ValueError("Invalid token")
     
-#     payload, error = verify_token(event)
-#     if error:
-#         return error
+    input_otp = body.get("reset_otp")
+    if not user_id or not input_otp:
+        return _error_response(400, "Missing user_id or OTP.")
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""
+            SELECT reset_otp, reset_expiry 
+            FROM users 
+            WHERE id = %s
+        """, (user_id,))
+        row = cur.fetchone()
+        if not row:
+            return _error_response(404, "No OTP found for this user.")
+        if row["reset_otp"] != input_otp:
+            return _error_response(401, "Invalid OTP.")
+        if row["reset_expiry"] < datetime.datetime.now(datetime.timezone.utc):
+            return _error_response(401, "OTP expired.")
+        # Clean up OTP after successful verification
+        cur.execute("""
+            UPDATE users 
+            SET reset_otp = NULL, reset_expiry = NULL
+            WHERE id = %s
+        """, (user_id,))
+        conn.commit()
 
-#     user_id = payload.get("user_id")
-#     new_password = body["new_password"]
-#     confirm_password = body["confirm_password"]
-#     if new_password == confirm_password:
-#         new_hashed_password = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-#         with conn.cursor(cursor_factory=RealDictCursor) as cur:  
-#             cur.execute("""
-#             UPDATE users SET password = %s
-#             WHERE id = %s
-#             """, (new_hashed_password, user_id))
+    return _success_response(200, {"message": "OTP successfully verified."})
 
-#             log(conn, "USER_PASSWORD_CHANGE", f"User '{user_id}' password changed", user_id, None, None)
 
-#             conn.commit()
-
-#             return _success_response(200, {"message": "Password changed successfully.", "user_id": user_id})
+def reset_password(conn,body):
+   try:
+        token = body.get("token")
+        payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+        user_id = payload["user_id"]
+        # return user_id
+    except jwt.ExpiredSignatureError:
+        raise ValueError("Token expired")
+    except Exception:
+        raise ValueError("Invalid token")
     
-#     else:
-#         return _error_response(500, "Failed to reset password.")
+    new_password = body["new_password"]
+    confirm_password = body["confirm_password"]
+    if new_password == confirm_password:
+        new_hashed_password = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:  
+            cur.execute("""
+            UPDATE users SET password = %s
+            WHERE id = %s
+            """, (new_hashed_password, user_id))
+
+            log(conn, "USER_PASSWORD_CHANGE", f"User '{user_id}' password changed", user_id, None, None)
+            conn.commit()
+
+            return _success_response(200, {"message": "Password changed successfully.", "user_id": user_id})
+    
+    else:
+        return _error_response(500, "Failed to reset password.")

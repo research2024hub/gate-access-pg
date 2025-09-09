@@ -97,6 +97,21 @@ Resources:
           Properties:
             Path: /user/activate  # Organized under /user/
             Method: POST
+        ForgotPasswordApi:
+          Type: Api
+          Properties:
+            Path: /user/forgot_password  # Organized under /user/
+            Method: POST
+        VerifyResetApi:
+          Type: Api
+          Properties:
+            Path: /user/verify_reset_otp  # Organized under /user/
+            Method: POST
+        VerifyResetApi:
+          Type: Api
+          Properties:
+            Path: /user/reset_password  # Organized under /user/
+            Method: POST
       Environment:  # ✅ Global environment variables apply to all Lambda functions
         Variables:
           DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"

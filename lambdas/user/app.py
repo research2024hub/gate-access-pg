@@ -39,6 +39,13 @@ def lambda_handler(event, context):
                 return activate_user(conn, body, event)
             elif path == "/user/change_type":  # Updated (consistent with template.yaml)
                 return change_user_type(conn, body, event)
+            elif path == "/user/forgot_password":  # Updated (consistent with template.yaml)
+                return forgot_password(conn, body)
+            elif path == "/user/verify_reset_otp":  # Updated (consistent with template.yaml)
+                return verify_reset_otp(conn, body)
+            elif path == "/user/reset_password":  # Updated (consistent with template.yaml)
+                return reset_password(conn, body)
+            
             else:
                 return _error_response(404, f"Path '{path}' not found.")
         if http_method == "GET":
