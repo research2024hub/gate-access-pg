@@ -34,7 +34,7 @@ def send_email_gmail(to_email, subject, message):
 def create_token(email):
     payload = {
         "email": email,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
+        "exp": datetime.utcnow() + timedelta(minutes=15)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
 
@@ -154,8 +154,9 @@ def register_user(conn, body):
 
         title = 'Your OTP Code'
         message =f"Your OTP is: {otp}\n\nExpires in 10 minutes."
-        send_email_gmail(email, title, message)
         token = create_token(email)
+        send_email_gmail(email, title, message)
+      
 
         conn.commit()
 
@@ -182,7 +183,7 @@ def verify_otp(conn, body):
             return _error_response(404, "No pending registration found for this email.")
         if row["otp"] != input_otp:
             return _error_response(401, "Invalid OTP.")
-        if row["otp_expiry"] < datetime.datetime.utcnow():
+        if row["otp_expiry"] < datetime.utcnow():
             return _error_response(401, "OTP expired.")
 
         # Create user
