@@ -144,13 +144,16 @@ def register_user(conn, body):
     otp = str(random.randint(100000, 999999))
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT 1 FROM users WHERE email = %s LIMIT 1;", (email,))
+            if cur.fetchone():
+                return _error_response(409, "Email already exist as a user.")
         cur.execute("""
-            WITH deleted AS (
                 DELETE FROM pending_users WHERE email = %s
-            )
+            """,(email,))
+        cur.execute("""
             INSERT INTO pending_users (email, password, otp, otp_expiry)
             VALUES (%s, %s, %s, NOW() + INTERVAL '10 minutes')
-        """, (email, email, hashed_password, otp))
+        """, (email, hashed_password, otp))
 
         title = 'Your OTP Code'
         message =f"Your OTP is: {otp}\n\nExpires in 10 minutes."
