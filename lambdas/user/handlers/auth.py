@@ -145,7 +145,7 @@ def register_user(conn, body):
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("SELECT 1 FROM users WHERE email = %s LIMIT 1;", (email,))
-            if cur.fetchone():
+        if cur.fetchone():
                 return _error_response(409, "Email already exist as a user.")
         cur.execute("""
                 DELETE FROM pending_users WHERE email = %s
