@@ -368,7 +368,7 @@ def verify_reset_otp(conn, body):
 
 
 def reset_password(conn,body):
-   try:
+    try:
         token = body.get("token")
         payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
         user_id = payload["user_id"]
