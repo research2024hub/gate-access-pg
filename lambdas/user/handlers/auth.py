@@ -19,7 +19,7 @@ def generate_otp():
 
 def send_email_gmail(to_email, subject, message):
     gmail_user = 'vdowana@itconsortiumgh.com'  # e.g. "yourname@gmail.com"
-    gmail_app_password = 'pkqdqmiqhqqbhnfw'  # the 16-char app password
+    gmail_app_password = 'rfzlhzhjbdjcqtzj'  # the 16-char app password
 
     msg = MIMEText(message)
     msg['Subject'] = subject
