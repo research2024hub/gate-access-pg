@@ -6,6 +6,7 @@ from handlers.auth import send_email_gmail,generate_otp
 import bcrypt
 import jwt
 import os
+from datetime import datetime, timezone
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key") 
 
@@ -358,7 +359,7 @@ def verify_reset_otp(conn, body):
             return _error_response(404, "No OTP found for this user.")
         if row["reset_otp"] != input_otp:
             return _error_response(401, "Invalid OTP.")
-        if row["reset_expiry"] < datetime.datetime.now(datetime.timezone.utc):
+        if row["reset_expiry"] < datetime.now(timezone.utc):
             return _error_response(401, "OTP expired.")
         # Clean up OTP after successful verification
         cur.execute("""
