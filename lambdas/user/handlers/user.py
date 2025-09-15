@@ -331,7 +331,7 @@ def forgot_password(conn, body):
     )
 
     send_email_gmail(email, title, message)
-    return _success_response(200, {"message": "success."}, token)
+    return _success_response(200, {"message": "success.","token": token})
 
 def verify_reset_otp(conn, body):
     # Verify token
