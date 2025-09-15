@@ -453,14 +453,15 @@ def get_vehicles_by_gate_with_time_check_by_gate_controller(conn, event):
 
 def person_arrives_with_vehicle_callback(conn, body, event):
     """
-    Verifies a guest's OTP and checks that the current time is within the allowed entry window.
-    For account holders, bypasses the entry window check.
-    Removes 'otp' and 'entry_window' from other_info upon successful guest verification.
+    Handles vehicle entry and exit for guests and account holders.
+    For guests: validates entry window on entry, updates status to CHECKED_IN/CHECKED_OUT.
+    For account holders: bypasses entry window check.
+    Removes 'otp' and 'entry_window' from other_info upon successful guest entry.
     """
     payload, error = verify_token(event)
     if error:
         return error
-    
+
     gate_id = payload.get("gate_id", None)
     device_type = payload.get("type", None)
 
@@ -468,11 +469,17 @@ def person_arrives_with_vehicle_callback(conn, body, event):
         return _error_response(401, "Unauthorized. Not a registered gate controller")
 
     license_plate_number = body.get("license_plate_number", None)
+    status = body.get("status", None)
+
     if not license_plate_number:
         return _error_response(400, "Missing required field: 'license_plate_number'.")
 
+    if not status or status not in ["entry", "exit"]:
+        return _error_response(400, "Missing or invalid 'status' field. Must be 'entry' or 'exit'.")
+
     now = datetime.now()
-    print(f"License plate: {license_plate_number}\nTime of arrival: {now.strftime('%A %d %B %Y %H:%M:%S')}")
+    action_text = "arrival" if status == "entry" else "departure"
+    print(f"License plate: {license_plate_number}\nTime of {action_text}: {now.strftime('%A %d %B %Y %H:%M:%S')}")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Retrieve person info based on license plate
@@ -503,53 +510,76 @@ def person_arrives_with_vehicle_callback(conn, body, event):
 
         if is_guest:
             other_info = person_data["other_info"] or {}
-            entry_window = other_info.get("entry_window", {})
-            start_str = entry_window.get("start")
-            end_str = entry_window.get("end")
 
-            if not (start_str and end_str):
-                return _error_response(400, "No valid entry window found for this guest.")
+            if status == "entry":
+                # Entry validation - check entry window
+                entry_window = other_info.get("entry_window", {})
+                start_str = entry_window.get("start")
+                end_str = entry_window.get("end")
 
-            try:
-                start_dt = datetime.fromisoformat(start_str)
-                end_dt = datetime.fromisoformat(end_str)
-            except ValueError:
-                return _error_response(400, "Invalid date format in entry window.")
+                if not (start_str and end_str):
+                    return _error_response(400, "No valid entry window found for this guest.")
 
-            if not (start_dt <= now <= end_dt):
-                return _error_response(400, "Guest cannot enter at this time (not yet valid or expired).")
+                try:
+                    start_dt = datetime.fromisoformat(start_str)
+                    end_dt = datetime.fromisoformat(end_str)
+                except ValueError:
+                    return _error_response(400, "Invalid date format in entry window.")
 
-            # Remove OTP and entry window
-            other_info.pop("otp", None)
-            other_info.pop("entry_window", None)
+                if not (start_dt <= now <= end_dt):
+                    return _error_response(400, "Guest cannot enter at this time (not yet valid or expired).")
+
+                # Remove OTP and entry window on successful entry
+                other_info.pop("otp", None)
+                other_info.pop("entry_window", None)
+                guest_status = "CHECKED_IN"
+                log_action = "GUEST_VEHICLE_ENTRY"
+                log_message = f"Guest '{person_data['guest_id']}' [{person_data['name']}] entered with vehicle license plate '{license_plate_number}'"
+
+            else:  # status == "exit"
+                # Exit - no validation needed, just update status
+                guest_status = "CHECKED_OUT"
+                log_action = "GUEST_VEHICLE_EXIT"
+                log_message = f"Guest '{person_data['guest_id']}' [{person_data['name']}] exited with vehicle license plate '{license_plate_number}'"
 
             # Update guest record
             cur.execute(
                 """
                 UPDATE guests
-                SET status = 'CHECKED_IN', other_info = %s
+                SET status = %s, other_info = %s
                 WHERE id = %s
                 RETURNING id
                 """,
-                (json.dumps(other_info), person_data["guest_id"])
+                (guest_status, json.dumps(other_info), person_data["guest_id"])
             )
             if not cur.fetchone():
                 return _error_response(400, "Guest could not be updated.")
 
-            log(conn, "GUEST_VEHICLE_ARRIVAL", f"Guest '{person_data['guest_id']}' [{person_data['name']}] arrived with vehicle license plate '{license_plate_number}'", person_data["creator_user_id"], person_data["creator_id"], person_data["estate_id"])
+            log(conn, log_action, log_message, person_data["creator_user_id"], person_data["creator_id"], person_data["estate_id"])
 
         else:
-            # Account holder — no OTP or time check
-            log(conn, "ACCOUNT_HOLDER_VEHICLE_ARRIVAL", f"Account holder '{person_data['account_holder_id']}' [{person_data['name']}] arrived with vehicle license plate '{license_plate_number}'", person_data['user_id'], person_data["account_holder_id"], person_data["estate_id"])
+            # Account holder — no OTP or time check, just log the appropriate action
+            if status == "entry":
+                log_action = "ACCOUNT_HOLDER_VEHICLE_ENTRY"
+                log_message = f"Account holder '{person_data['account_holder_id']}' [{person_data['name']}] entered with vehicle license plate '{license_plate_number}'"
+            else:  # status == "exit"
+                log_action = "ACCOUNT_HOLDER_VEHICLE_EXIT"
+                log_message = f"Account holder '{person_data['account_holder_id']}' [{person_data['name']}] exited with vehicle license plate '{license_plate_number}'"
+
+            log(conn, log_action, log_message, person_data['user_id'], person_data["account_holder_id"], person_data["estate_id"])
 
         conn.commit()
+
+    action_message = "Gate opened for vehicle entry" if status == "entry" else "Gate opened for vehicle exit"
 
     return _success_response(
         200,
         {
-            "message": "Gate opened for vehicle",
+            "message": action_message,
             "person_name": person_data["name"],
-            "type": "guest" if is_guest else "account_holder"
+            "type": "guest" if is_guest else "account_holder",
+            "status": status,
+            "guest_status": guest_status if is_guest else None
         }
     )
     
