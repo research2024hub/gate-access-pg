@@ -4,6 +4,10 @@ from middleware import verify_token
 from psycopg2.extras import RealDictCursor
 from handlers.auth import send_email_gmail,generate_otp
 import bcrypt
+import jwt
+import os
+
+JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key") 
 
 def change_user_type(conn, body, event):
     """
