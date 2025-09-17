@@ -42,9 +42,9 @@ def lambda_handler(event, context):
             elif path == "/user/forgot_password":  # Updated (consistent with template.yaml)
                 return forgot_password(conn, body)
             elif path == "/user/verify_reset_otp":  # Updated (consistent with template.yaml)
-                return verify_reset_otp(conn, body)
+                return verify_reset_otp(conn, body, event)
             elif path == "/user/reset_password":  # Updated (consistent with template.yaml)
-                return reset_password(conn, body)
+                return reset_password(conn, body, event)
             
             else:
                 return _error_response(404, f"Path '{path}' not found.")

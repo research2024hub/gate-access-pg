@@ -333,17 +333,13 @@ def forgot_password(conn, body):
     send_email_gmail(email, title, message)
     return _success_response(200, {"message": "success.","token": token})
 
-def verify_reset_otp(conn, body):
-    # Verify token
-    try:
-        token = body.get("token")
-        payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
-        user_id = payload["user_id"]
-        # return user_id
-    except jwt.ExpiredSignatureError:
-        raise ValueError("Token expired")
-    except Exception:
-        raise ValueError("Invalid token")
+def verify_reset_otp(conn, body, event):
+    # Verify token  
+    payload, error = verify_token(event)
+    if error:
+        return error
+    
+    user_id = payload.get("user_id")
     
     input_otp = body.get("reset_otp")
     if not user_id or not input_otp:
@@ -372,16 +368,12 @@ def verify_reset_otp(conn, body):
     return _success_response(200, {"message": "OTP successfully verified."})
 
 
-def reset_password(conn,body):
-    try:
-        token = body.get("token")
-        payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
-        user_id = payload["user_id"]
-        # return user_id
-    except jwt.ExpiredSignatureError:
-        raise ValueError("Token expired")
-    except Exception:
-        raise ValueError("Invalid token")
+def reset_password(conn,body,event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+    
+    user_id = payload.get("user_id")
     
     new_password = body["new_password"]
     confirm_password = body["confirm_password"]
