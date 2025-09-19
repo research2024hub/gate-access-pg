@@ -356,7 +356,7 @@ def verify_reset_otp(conn, body, event):
             return _error_response(404, "No OTP found for this user.")
         if row["reset_otp"] != input_otp:
             return _error_response(401, "Invalid OTP.")
-        if row["reset_expiry"] < datetime.now(timezone.utc):
+        if row["reset_expiry"] < datetime.utcnow():
             return _error_response(401, "OTP expired.")
         # Clean up OTP after successful verification
         cur.execute("""
