@@ -1,7 +1,7 @@
 import json
 import psycopg2
 from handlers.auth import register_user, verify_otp, send_user_otp, register_admin_user, login_user, change_password
-from handlers.user import deactivate_user, activate_user, get_users, get_own_accounts, get_user_accounts, change_user_type,forgot_password,verify_reset_otp,reset_password
+from handlers.user import deactivate_user, activate_user, get_users, get_own_accounts, get_user_accounts, change_user_type,forgot_password,verify_reset_otp,reset_password,delete_user
 import os
 from utils import _error_response
 
@@ -45,6 +45,8 @@ def lambda_handler(event, context):
                 return verify_reset_otp(conn, body, event)
             elif path == "/user/reset_password":  # Updated (consistent with template.yaml)
                 return reset_password(conn, body, event)
+            elif path == "/user/delete_user":  # Updated (consistent with template.yaml)
+                return delete_user(conn, body, event)
             
             else:
                 return _error_response(404, f"Path '{path}' not found.")
