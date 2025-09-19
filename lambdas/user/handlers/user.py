@@ -341,7 +341,7 @@ def verify_reset_otp(conn, body, event):
     
     user_id = payload.get("user_id")
     
-    input_otp = body.get("reset_otp")
+    input_otp =str(body.get("reset_otp"))
     if not user_id or not input_otp:
         return _error_response(400, "Missing user_id or OTP.")
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
