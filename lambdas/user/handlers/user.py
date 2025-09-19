@@ -145,6 +145,41 @@ def activate_user(conn, body, event):
 
     return _success_response(200, {"message": "User reactivated successfully."})
 
+def delete_user(conn, body, event):
+    """
+    Deletes a user account. Requires authentication.
+    """
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    is_admin = payload.get("is_admin", False)
+    user_id = body.get("user_id")
+
+    if not is_admin:
+        return _error_response(403, "Access denied. Only admins can delete users.")
+
+    if not user_id:
+        return _error_response(400, "No user id in request body.")
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            DELETE FROM users 
+            WHERE id = %s 
+            RETURNING id
+        """, (user_id,))
+        
+        deleted = cur.fetchone()
+        if not deleted:
+            return _error_response(404, "User not found.")
+
+        log(conn, "USER_DELETED", f"User '{user_id}' deleted", user_id, None, None)
+
+        conn.commit()
+
+    return _success_response(200, {"message": "User deleted successfully."})
+
+
 def get_users(conn, event):
     """
     Returns a paginated list of all users. Only admins can access this endpoint.
