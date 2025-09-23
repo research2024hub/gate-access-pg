@@ -298,7 +298,7 @@ def change_account_type(conn, body, event):
     if not personal_info_id or not account_type_id:
         return _error_response(400, "Missing 'personal_info_id' or 'account_type_id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # cur.execute("""
         #                 SELECT estate_id FROM personal_info
         #                 JOIN account_holders ah ON ah.personal_info
@@ -314,7 +314,7 @@ def change_account_type(conn, body, event):
 
         if not privileges.can_manage_accounts():
             return _error_response(403, "You do not have privileges to manage accounts")
-        
+
         cur.execute("SELECT id FROM account_types WHERE id = %s", (account_type_id,))
         if not cur.fetchone():
             return _error_response(404, "Account type not found.")
@@ -325,19 +325,19 @@ def change_account_type(conn, body, event):
             SET account_type_id = %s, date_updated = CURRENT_TIMESTAMP
             WHERE id = %s RETURNING id
         """, (account_type_id, personal_info_id))
-        
+
         if not cur.fetchone():
             return _error_response(404, "Personal info not found.")
-        
+
         cur.execute("""
-                    SELECT ah.id, pi.estate_id FROM account_holders ah 
+                    SELECT ah.id, pi.estate_id FROM account_holders ah
                     JOIN personal_info pi ON pi.id = ah.personal_info_id
                     WHERE ah.personal_info_id = %s
                     """, (personal_info_id,))
-        
+
         result = cur.fetchone()
 
-        log(conn, "ACCOUNT_TYPE_CHANGE", "Account type changed", user_id, result[0], result[1])
+        log(conn, "ACCOUNT_TYPE_CHANGE", "Account type changed", user_id, result["id"], result["estate_id"])
 
         conn.commit()
 
@@ -358,7 +358,7 @@ def deactivate_account(conn, body, event):
     if not account_holder_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin)
 
@@ -367,7 +367,7 @@ def deactivate_account(conn, body, event):
 
         if not privileges.can_manage_accounts():
             return _error_response(403, "You do not have privileges to manage accounts")
-        
+
         cur.execute("""
             UPDATE account_holders SET is_active = false, date_updated = CURRENT_TIMESTAMP
             WHERE id = %s RETURNING id
@@ -375,16 +375,16 @@ def deactivate_account(conn, body, event):
 
         if not cur.fetchone():
             return _error_response(404, "Account not found or already deactivated.")
-        
+
         cur.execute("""
-                    SELECT pi.estate_id FROM account_holders ah 
+                    SELECT pi.estate_id FROM account_holders ah
                     JOIN personal_info pi ON pi.id = ah.personal_info_id
                     WHERE ah.id = %s
                     """, (account_holder_id,))
-        
+
         result = cur.fetchone()
 
-        log(conn, "ACCOUNT_DEACTIVATION", "Account deactivated", user_id, account_holder_id, result[0])
+        log(conn, "ACCOUNT_DEACTIVATION", "Account deactivated", user_id, account_holder_id, result["estate_id"])
 
         conn.commit()
 
@@ -452,7 +452,7 @@ def activate_account(conn, body, event):
     if not account_holder_id:
         return _error_response(400, "Missing 'account_holder_id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin=False)
 
@@ -481,7 +481,7 @@ def activate_account(conn, body, event):
         """, (account_holder_id,))
         result = cur.fetchone()
 
-        log(conn, "ACCOUNT_ACTIVATION", "Account activated", user_id, account_holder_id, result[0])
+        log(conn, "ACCOUNT_ACTIVATION", "Account activated", user_id, account_holder_id, result["estate_id"])
 
         conn.commit()
 
@@ -503,7 +503,7 @@ def delete_account(conn, body, event):
     if not account_holder_id:
         return _error_response(400, "Missing 'account_holder_id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin)
 
@@ -512,7 +512,7 @@ def delete_account(conn, body, event):
 
         if not privileges.can_manage_accounts():
             return _error_response(403, "You do not have privileges to manage accounts")
-        
+
         # Delete the personal info associated with this account
         cur.execute("""
             DELETE FROM personal_info
@@ -523,11 +523,11 @@ def delete_account(conn, body, event):
         """, (account_holder_id,))
 
         result = cur.fetchone()
-        
+
         if not result:
             return _error_response(404, "Personal info not found.")
 
-        log(conn, "ACCOUNT_DELETION", f"Account deleted {account_holder_id}", user_id, None, result[0])
+        log(conn, "ACCOUNT_DELETION", f"Account deleted {account_holder_id}", user_id, None, result["estate_id"])
 
         conn.commit()
 
