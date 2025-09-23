@@ -122,6 +122,7 @@ def activate_user(conn, body, event):
         return error
 
     is_admin = payload.get("is_admin", False)
+    actor_user_id = payload.get("user_id", False)
 
     user_id = body.get("user_id")
 
@@ -139,7 +140,7 @@ def activate_user(conn, body, event):
         if not cur.fetchone():
             return _error_response(404, "User not found or already active.")
         
-        log(conn, "USER_ACTIVATED", f"User '{user_id}' activated", user_id, None, None)
+        log(conn, "USER_ACTIVATED", f"User '{user_id}' activated", actor_user_id, None, None)
 
         conn.commit()
 
@@ -154,6 +155,7 @@ def delete_user(conn, body, event):
         return error
 
     is_admin = payload.get("is_admin", False)
+    actor_user_id = payload.get("user_id", False)
     user_id = body.get("user_id")
 
     if not is_admin:
@@ -173,7 +175,7 @@ def delete_user(conn, body, event):
         if not deleted:
             return _error_response(404, "User not found.")
 
-        log(conn, "USER_DELETED", f"User '{user_id}' deleted", user_id, None, None)
+        log(conn, "USER_DELETED", f"User '{user_id}' deleted.", actor_user_id, None, None)
 
         conn.commit()
 
