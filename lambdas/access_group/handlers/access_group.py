@@ -17,7 +17,7 @@ def create_access_group(conn, body, event):
     if not all([name, estate_id]):
         return _error_response(400, "Missing 'estate_id' or 'name'.")
         
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
 
@@ -26,13 +26,13 @@ def create_access_group(conn, body, event):
 
         if not privileges.can_manage_access_groups():
             return _error_response(403, "You do not have privileges to manage access groups")
-    
+
         cur.execute("""
             INSERT INTO access_groups (estate_id, name)
             VALUES (%s, %s)
             RETURNING id
         """, (estate_id, name.upper()))
-        access_group_id = cur.fetchone()[0]
+        access_group_id = cur.fetchone()["id"]
 
         log(conn, "ACCESS_GROUP_CREATION", f"Access group {access_group_id} [{name.upper()}] created", user_id, None, estate_id)
 
@@ -55,7 +55,7 @@ def update_access_group(conn, body, event):
     if not (access_group_id and name):
         return _error_response(400, "Missing 'id' or 'name'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_access_group(cur, user_id, access_group_id, is_admin)
 
@@ -64,7 +64,7 @@ def update_access_group(conn, body, event):
 
         if not privileges.can_manage_access_groups():
             return _error_response(403, "You do not have privileges to manage access groups")
-        
+
         cur.execute("""
             UPDATE access_groups
             SET name = %s
@@ -76,8 +76,8 @@ def update_access_group(conn, body, event):
 
         if not result:
             return _error_response(404, "Access Group not found.")
-        
-        log(conn, "ACCESS_GROUP_UPDATE", f"Access group {access_group_id} [{name.upper()}] updated", user_id, None, result[0])
+
+        log(conn, "ACCESS_GROUP_UPDATE", f"Access group {access_group_id} [{name.upper()}] updated", user_id, None, result["estate_id"])
 
         conn.commit()
 
@@ -96,7 +96,7 @@ def delete_access_group(conn, body, event):
     if not access_group_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_access_group(cur, user_id, access_group_id, is_admin)
 
@@ -105,7 +105,7 @@ def delete_access_group(conn, body, event):
 
         if not privileges.can_manage_access_groups():
             return _error_response(403, "You do not have privileges to manage access groups")
-        
+
         cur.execute("""
             DELETE FROM access_groups WHERE id = %s RETURNING name, estate_id
         """, (access_group_id,))
@@ -113,8 +113,8 @@ def delete_access_group(conn, body, event):
         result = cur.fetchone()
         if not result:
             return _error_response(404, "Access Group not found.")
-        
-        log(conn, "ACCESS_GROUP_DELETION", f"Access group {access_group_id} [{result[0]}] deleted", user_id, None, result[1])
+
+        log(conn, "ACCESS_GROUP_DELETION", f"Access group {access_group_id} [{result['name']}] deleted", user_id, None, result["estate_id"])
 
         conn.commit()
 

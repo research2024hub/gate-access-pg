@@ -21,7 +21,7 @@ def create_gate(conn, body, event):
     if not name or not estate_id:
         return _error_response(400, "Missing 'name' or 'estate_id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
 
@@ -45,7 +45,7 @@ def create_gate(conn, body, event):
                 RETURNING id
             """, (name, estate_id))
 
-        gate_id = cur.fetchone()[0]
+        gate_id = cur.fetchone()["id"]
 
         log(conn, "GATE_CREATION", 
             f"Gate '{gate_id}' [{name}] created with opening_time={opening_time} and closing_time={closing_time}", 
@@ -72,7 +72,7 @@ def update_gate(conn, body, event):
     if not gate_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -98,7 +98,7 @@ def update_gate(conn, body, event):
 
         log(conn, "GATE_UPDATE", 
             f"Gate '{gate_id}' updated: name={name}, opening_time={opening_time}, closing_time={closing_time}", 
-            user_id, None, result[0])
+            user_id, None, result["estate_id"])
 
         conn.commit()
 
@@ -121,7 +121,7 @@ def update_gate_controller_heartbeat(conn, event):
     if not (gate_id and device_type == "GATE"):
         return _error_response(401, "Unauthorized.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check user privileges
         cur.execute("""
             UPDATE gates
@@ -132,8 +132,8 @@ def update_gate_controller_heartbeat(conn, event):
         row = cur.fetchone()
         if not row:
             return _error_response(404, "Gate not found.")
-        
-        log(conn, "GATE_CONTROLLER_HEARTBEAT", f"Controller at gate '{gate_id}' [{row[0]}] is alive", None, None, row[1])
+
+        log(conn, "GATE_CONTROLLER_HEARTBEAT", f"Controller at gate '{gate_id}' [{row['name']}] is alive", None, None, row["estate_id"])
         
         conn.commit()
 
@@ -151,7 +151,7 @@ def delete_gate(conn, body, event):
     if not gate_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -160,7 +160,7 @@ def delete_gate(conn, body, event):
 
         if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to manage gates")
-        
+
         cur.execute("""
             DELETE FROM gates WHERE id = %s RETURNING name, estate_id
         """, (gate_id,))
@@ -168,8 +168,8 @@ def delete_gate(conn, body, event):
         result = cur.fetchone()
         if not result:
             return _error_response(404, "Gate not found.")
-        
-        log(conn, "GATE_DELETION", f"Gate '{gate_id}' [{result[0]}] updated", user_id, None, result[1])
+
+        log(conn, "GATE_DELETION", f"Gate '{gate_id}' [{result['name']}] updated", user_id, None, result["estate_id"])
 
         conn.commit()
 
@@ -712,7 +712,7 @@ def activate_gate(conn, body, event):
     if not gate_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -732,10 +732,10 @@ def activate_gate(conn, body, event):
         result = cur.fetchone()
         if not result:
             return _error_response(404, "Gate not found.")
-        
-        log(conn, "GATE_ACTIVATION", 
-            f"Gate '{gate_id}' [{result[1]}] activated", 
-            user_id, None, result[0])
+
+        log(conn, "GATE_ACTIVATION",
+            f"Gate '{gate_id}' [{result['name']}] activated",
+            user_id, None, result["estate_id"])
 
         conn.commit()
 
@@ -756,7 +756,7 @@ def deactivate_gate(conn, body, event):
     if not gate_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -776,10 +776,10 @@ def deactivate_gate(conn, body, event):
         result = cur.fetchone()
         if not result:
             return _error_response(404, "Gate not found.")
-        
-        log(conn, "GATE_DEACTIVATION", 
-            f"Gate '{gate_id}' [{result[1]}] deactivated", 
-            user_id, None, result[0])
+
+        log(conn, "GATE_DEACTIVATION",
+            f"Gate '{gate_id}' [{result['name']}] deactivated",
+            user_id, None, result["estate_id"])
 
         conn.commit()
 

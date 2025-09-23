@@ -19,13 +19,13 @@ def create_privilege(conn, body, event):
     if not name:
         return _error_response(400, "Missing 'name'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             INSERT INTO privileges (name)
             VALUES (%s)
             RETURNING id
         """, (name.upper(),))
-        privilege_id = cur.fetchone()[0]
+        privilege_id = cur.fetchone()["id"]
 
         log(conn, "PRIVILEGE_CREATION", f"Privilege '{privilege_id}' [{name}] created", user_id, None, None)
 
@@ -50,7 +50,7 @@ def update_privilege(conn, body, event):
     if not privilege_id or not name:
         return _error_response(400, "Missing 'id' or 'name'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             UPDATE privileges
             SET name = %s, date_updated = CURRENT_TIMESTAMP
@@ -81,7 +81,7 @@ def delete_privilege(conn, body, event):
     if not privilege_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             DELETE FROM privileges WHERE id = %s RETURNING name
         """, (privilege_id,))
@@ -90,8 +90,8 @@ def delete_privilege(conn, body, event):
 
         if not result:
             return _error_response(404, "Privilege not found.")
-        
-        log(conn, "PRIVILEGE_DELETION", f"Privilege '{privilege_id}' [{result[0]}] deletion", user_id, None, None)
+
+        log(conn, "PRIVILEGE_DELETION", f"Privilege '{privilege_id}' [{result['name']}] deletion", user_id, None, None)
 
         conn.commit()
 

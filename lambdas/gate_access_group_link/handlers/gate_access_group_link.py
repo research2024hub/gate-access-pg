@@ -23,7 +23,7 @@ def create_access_group_link(conn, body, event):
     if not gate_id or not access_group_id:
         return _error_response(400, "Missing 'gate_id' or 'access_group_id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Verify gate and access group exist and are on the same estate
         cur.execute("""
             SELECT 
@@ -111,7 +111,7 @@ def update_access_group_link(conn, body, event):
     if not gate_id or not access_group_id:
         return _error_response(400, "Missing 'gate_id' or 'access_group_id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Verify the existing link and estates
         cur.execute("""
             SELECT 
@@ -180,7 +180,7 @@ def remove_access_group_link(conn, body, event):
     if not gate_id or not access_group_id:
         return _error_response(400, "Missing 'gate_id' or 'access_group_id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 

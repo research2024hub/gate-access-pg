@@ -30,14 +30,14 @@ def change_user_type(conn, body, event):
     if not user_id:
         return _error_response(400, "No user id in request body.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             UPDATE users SET is_admin = %s
             WHERE id = %s RETURNING id
         """, (body_is_admin, user_id))
         if not cur.fetchone():
             return _error_response(404, "User not found.")
-        
+
         log(conn, "USER_TYPE_CHANGE", f"User '{user_id}' type changed", user_id, None, None)
 
         conn.commit()
@@ -76,7 +76,7 @@ def deactivate_user(conn, body, event):
 
     # Step 3: Try DB update
     try:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             print("[DEBUG] Executing update query...")
             cur.execute("""
                 UPDATE users SET is_active = false, date_updated = CURRENT_TIMESTAMP
@@ -132,14 +132,14 @@ def activate_user(conn, body, event):
     if not user_id:
         return _error_response(400, "No user id in request body.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             UPDATE users SET is_active = true, date_updated = CURRENT_TIMESTAMP
             WHERE id = %s RETURNING id
         """, (user_id,))
         if not cur.fetchone():
             return _error_response(404, "User not found or already active.")
-        
+
         log(conn, "USER_ACTIVATED", f"User '{user_id}' activated", actor_user_id, None, None)
 
         conn.commit()
@@ -164,13 +164,13 @@ def delete_user(conn, body, event):
     if not user_id:
         return _error_response(400, "No user id in request body.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            DELETE FROM users 
-            WHERE id = %s 
+            DELETE FROM users
+            WHERE id = %s
             RETURNING id
         """, (user_id,))
-        
+
         deleted = cur.fetchone()
         if not deleted:
             return _error_response(404, "User not found.")

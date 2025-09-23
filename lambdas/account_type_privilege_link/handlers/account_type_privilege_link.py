@@ -23,7 +23,7 @@ def create_privilege_link(conn, body, event):
     if not account_type_id or not privilege_id:
         return _error_response(400, "Missing 'account_type_id' or 'privilege_id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Verify account_type_id exists
         cur.execute("SELECT id FROM account_types WHERE id = %s", (account_type_id,))
         if not cur.fetchone():
@@ -73,7 +73,7 @@ def remove_privilege_link(conn, body, event):
     if not account_type_id or not privilege_id:
         return _error_response(400, "Missing 'account_type_id' or 'privilege_id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             DELETE FROM account_type_privilege_links
             WHERE account_type_id = %s AND privilege_id = %s

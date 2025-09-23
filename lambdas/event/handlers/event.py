@@ -114,7 +114,7 @@ def create_event(conn, body, event):
     if not all([creator_id, name, max_num_of_attendees, start_time, end_time]):
         return _error_response(400, "Missing required fields.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
                     SELECT EXISTS (
                         SELECT 1 FROM account_holders ah
@@ -132,7 +132,7 @@ def create_event(conn, body, event):
                     EXISTS (SELECT 1 FROM account_holders ah WHERE ah.user_id = %s AND ah.is_active = TRUE AND ah.id = %s) as same_person
                     """, (user_id, creator_id, user_id, creator_id))
         result = cur.fetchone()
-        if not (result[0] or result[1] or is_admin):
+        if not (result["has_privileges"] or result["same_person"] or is_admin):
             return _error_response(403, "You do not have privileges to create an event for this account")
 
         # Insert new event
@@ -142,7 +142,7 @@ def create_event(conn, body, event):
             RETURNING id
         """, (creator_id, name, max_num_of_attendees, start_time, end_time))
         
-        event_id = cur.fetchone()[0]
+        event_id = cur.fetchone()["id"]
 
         # Generate invite link
         invite_response = generate_event_invite_link(
@@ -162,7 +162,7 @@ def create_event(conn, body, event):
         
         result = cur.fetchone()
 
-        log(conn, "EVENT_CREATION", f"Event '{event_id}' [{name}] created", user_id, creator_id, result[0])
+        log(conn, "EVENT_CREATION", f"Event '{event_id}' [{name}] created", user_id, creator_id, result["estate_id"])
         
         conn.commit()
 

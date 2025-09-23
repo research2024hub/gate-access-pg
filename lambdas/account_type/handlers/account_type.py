@@ -19,14 +19,14 @@ def create_account_type(conn, body, event):
     if not name:
         return _error_response(400, "Missing 'name'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             INSERT INTO account_types (name)
             VALUES (%s)
             RETURNING id
         """, (name,))
 
-        account_type_id = cur.fetchone()[0]
+        account_type_id = cur.fetchone()["id"]
 
         log(conn, "ACCOUNT_TYPE_CREATED", f"Account type '{name}' created", user_id, None, None)
 
@@ -52,7 +52,7 @@ def update_account_type(conn, body, event):
     if not account_type_id or not name:
         return _error_response(400, "Missing 'id' or 'name'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             UPDATE account_types
             SET name = %s, date_updated = CURRENT_TIMESTAMP
@@ -84,7 +84,7 @@ def delete_account_type(conn, body, event):
     if not account_type_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             DELETE FROM account_types WHERE id = %s RETURNING name
         """, (account_type_id,))
@@ -92,8 +92,8 @@ def delete_account_type(conn, body, event):
         result = cur.fetchone()
         if not result:
             return _error_response(404, "Account Type not found.")
-        
-        log(conn, "ACCOUNT_TYPE_DELETED", f"Account type '{result[0]}' created", user_id, None, None)
+
+        log(conn, "ACCOUNT_TYPE_DELETED", f"Account type '{result['name']}' created", user_id, None, None)
 
         conn.commit()
 

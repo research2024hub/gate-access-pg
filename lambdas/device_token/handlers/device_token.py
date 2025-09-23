@@ -94,23 +94,23 @@ def generate_tablet_token(conn, body, event):
 
         if not privileges.can_manage_devices():
             return _error_response(403, "Not authorized to generate a tablet token for this estate.")
-            
-            cur.execute("""
-                SELECT estate_id, name FROM gates g
-                WHERE g.id = %s
-            """, (gate_id,))
 
-            result = cur.fetchone()
-            
-            log(conn, "TABLET_TOKEN_GENERATION", f"Token created for tablet at gate '{gate_id}' [{result['name']}]", user_id, None, result["estate_id"])
+        cur.execute("""
+            SELECT estate_id, name FROM gates g
+            WHERE g.id = %s
+        """, (gate_id,))
 
-            conn.commit()
-    
+        result = cur.fetchone()
+
+        log(conn, "TABLET_TOKEN_GENERATION", f"Token created for tablet at gate '{gate_id}' [{result['name']}]", user_id, None, result["estate_id"])
+
+        conn.commit()
+
     token_payload = {
         "gate_id": gate_id,
         "type": "TABLET"
     }
-    
+
     token = jwt.encode(token_payload, JWT_SECRET, algorithm="HS256")
-    
+
     return _success_response(200, {"tablet_token": token})

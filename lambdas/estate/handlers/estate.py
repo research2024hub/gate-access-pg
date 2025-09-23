@@ -20,13 +20,13 @@ def create_estate(conn, body, event):
     if not name or not location_coordinates:
         return _error_response(400, "Missing 'name' or 'location_coordinates'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             INSERT INTO estates (name, location_coordinates)
             VALUES (%s, %s)
             RETURNING id
         """, (name, location_coordinates))
-        estate_id = cur.fetchone()[0]
+        estate_id = cur.fetchone()["id"]
 
         # A TRIGGER AUTOMATICALLY ADDS A DEFAULT ACCESS GROUP FOR THE ESTATE, CALLED 'REGULAR'
 
@@ -52,7 +52,7 @@ def update_estate(conn, body, event):
     if not estate_id or not (name or location_coordinates):
         return _error_response(400, "Missing 'id' or update fields ('name' or 'location_coordinates').")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
 
@@ -95,7 +95,7 @@ def delete_estate(conn, body, event):
     if not estate_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor() as cur:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             DELETE FROM estates WHERE id = %s RETURNING name
         """, (estate_id,))
@@ -103,8 +103,8 @@ def delete_estate(conn, body, event):
         result = cur.fetchone()
         if not result:
             return _error_response(404, "Estate not found.")
-        
-        log(conn, "ESTATE_DELETION", f"Estate '{estate_id}' [{result[0]}] updated", user_id, None, estate_id)
+
+        log(conn, "ESTATE_DELETION", f"Estate '{estate_id}' [{result['name']}] updated", user_id, None, estate_id)
 
         conn.commit()
 
