@@ -142,7 +142,7 @@ def register_user(conn, body):
 
     hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     otp = str(random.randint(100000, 999999))
-
+    print(f"otp:{otp}")
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("SELECT 1 FROM users WHERE email = %s LIMIT 1;", (email,))
         if cur.fetchone():
@@ -302,10 +302,11 @@ def login_user(conn, body):
             """, (user_id,))
 
             accounts = cur.fetchall()
+            name = accounts["name"]
             print(f"[DEBUG] Retrieved {len(accounts)} account(s).")
 
             print("[DEBUG] Logging user login...")
-            log(conn, "USER_LOGIN", f"User '{user_id}' [{email}] logged in", user_id, None, None)
+            log(conn, "USER_LOGIN", f"User '{name}' [{email}] logged in", user_id, None, None)
 
         conn.commit()
         print("[DEBUG] Login flow completed successfully. Returning response.")

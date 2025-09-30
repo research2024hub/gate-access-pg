@@ -1,7 +1,7 @@
 import boto3
 import base64
 from datetime import datetime
-from utils import _error_response, _success_response, log, notify_user
+from utils import _error_response, _success_response, log, notify_user, generate_presigned_url
 from middleware import verify_token
 from psycopg2.extras import RealDictCursor
 
@@ -157,14 +157,14 @@ def match_guest_face(conn, body, event):
             cur.execute("""
                 DELETE FROM faces
                 WHERE id = %s
-                RETURNING id
+                RETURNING id, name
             """, (face_id_to_delete,))
 
             row = cur.fetchone()
             if not row:
                 # Means the face was not actually in DB or was already deleted
                 return _error_response(404, "Face not found in DB.")
-            
+            guest_name = row["name"]
             cur.execute("""
                 SELECT estate_id, name FROM gates g
                 WHERE g.id = %s
@@ -180,9 +180,9 @@ def match_guest_face(conn, body, event):
 
             g = cur.fetchone()
 
-            notify_user(g["user_id"], "Guest Arrival", f"{g['name']} has exited")
+            notify_user(g["user_id"],"Guest Exit", f"{g['name']} has exited")
             
-            log(conn, "FACE_MATCH", f"Face matched. Guest exited at gate '{gate_id}' [{gate_data['name']}]", None, None, gate_data["estate_id"])
+            log(conn, "FACE_MATCH", f"Guest {guest_name} exited at gate '[{gate_data['name']}]", None, None, gate_data["estate_id"])
             
             conn.commit()
 
@@ -224,7 +224,7 @@ def save_guest_face(conn, body, event):
         object_name = f'gate-app-faces/{face_id}.jpg'
         metadata = {'name': guest_name}
         upload_image_to_s3(image_bytes, object_name, metadata)
-        
+        image_url =  generate_presigned_url(object_name, bucket_name)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -274,8 +274,12 @@ def save_guest_face(conn, body, event):
             """, (guest_id,))
 
             g = cur.fetchone()
+            message = {
+            "body": f"{g['name']} has arrived",
+            "image_url": image_url
+        }
 
-            notify_user(g["user_id"], "Guest Arrival", f"{g['name']} has arrived")
+            notify_user(g["user_id"],"Guest Arrival", message)
 
             log(conn, "FACE_SAVED", f"Face saved. Guest entered at gate '{gate_id}' [{gate_data['name']}]", None, None, gate_data["estate_id"])      
 

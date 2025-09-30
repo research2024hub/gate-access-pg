@@ -5,10 +5,12 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import messaging
 from psycopg2.extras import RealDictCursor
+import boto3
 
 Collection_Id='gate_app_collection_id'
 cred = credentials.Certificate("/opt/python/gate-access-dev-firebase-adminsdk-jk7hy-ebbdd45791.json")
 firebase_admin.initialize_app(cred)
+s3 = boto3.client('s3', region_name='eu-west-1')
 
 def _error_response(status_code, message):
     return {
@@ -86,6 +88,13 @@ def notify_user(user_id, title, message):
     except Exception as e:
         print("There is an error notifying the resident ", e)
         return False
+    
+def generate_presigned_url(filename,bucket_name):
+    return s3.generate_presigned_url(
+        'get_object',
+        Params={'Bucket': bucket_name, 'Key': "lp-images/" + filename},
+        #ExpiresIn=3600  # URL valid for 1 hour
+    )
     
 def log(conn, type, message, actor_user_id=None, target_account_holder_id=None, estate_id=None):
     """
