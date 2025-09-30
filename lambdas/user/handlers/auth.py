@@ -302,7 +302,7 @@ def login_user(conn, body):
             """, (user_id,))
 
             accounts = cur.fetchall()
-            name = accounts["name"]
+            name = accounts[0]["name"]
             print(f"[DEBUG] Retrieved {len(accounts)} account(s).")
 
             print("[DEBUG] Logging user login...")
