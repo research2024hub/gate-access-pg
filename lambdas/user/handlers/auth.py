@@ -302,11 +302,12 @@ def login_user(conn, body):
             """, (user_id,))
 
             accounts = cur.fetchall()
-            name = accounts[0]["name"]
+            # if accounts:
+            #     name = accounts[0]["name"]
             print(f"[DEBUG] Retrieved {len(accounts)} account(s).")
 
             print("[DEBUG] Logging user login...")
-            log(conn, "USER_LOGIN", f"User '{name}' [{email}] logged in", user_id, None, None)
+            # log(conn, "USER_LOGIN", f"User '{name}' [{email}] logged in", user_id, None, None)
 
         conn.commit()
         print("[DEBUG] Login flow completed successfully. Returning response.")
