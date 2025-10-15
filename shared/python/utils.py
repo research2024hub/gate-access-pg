@@ -6,6 +6,8 @@ from firebase_admin import credentials
 from firebase_admin import messaging
 from psycopg2.extras import RealDictCursor
 import boto3
+import smtplib
+from email.mime.text import MIMEText
 
 Collection_Id='gate_app_collection_id'
 cred = credentials.Certificate("/opt/python/gate-access-dev-firebase-adminsdk-jk7hy-ebbdd45791.json")
@@ -113,7 +115,19 @@ def log(conn, type, message, actor_user_id=None, target_account_holder_id=None, 
 
     return _success_response(201, {"log": process_db_results([new_log])})
 
+def send_email_gmail(to_email, subject, message):
+    gmail_user = 'vdowana@itconsortiumgh.com'  # e.g. "yourname@gmail.com"
+    gmail_app_password = 'srarajzbzddysmyc'  # the 16-char app password
 
+    msg = MIMEText(message)
+    msg['Subject'] = subject
+    msg['From'] = gmail_user
+    msg['To'] = to_email
+
+    server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+    server.login(gmail_user, gmail_app_password)
+    server.send_message(msg)
+    server.quit()
 class PrivilegeContext:
     """
     A helper class that encapsulates user privilege information for a specific account holder.
