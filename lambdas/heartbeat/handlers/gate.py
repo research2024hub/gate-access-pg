@@ -7,8 +7,8 @@ import boto3
 import smtplib
 from email.mime.text import MIMEText
 # ses_client = boto3.client('ses')
-SENDER_EMAIL =  "itcresearch340@gmail.com" 
-RECIPIENT_EMAILS = 'vdowana@itconsortiumgh.com'
+SENDER_EMAIL =   'vdowana@itconsortiumgh.com'
+RECIPIENT_EMAILS = "itcresearch340@gmail.com"
 THRESHOLD_SECONDS = 600  # Adjust based on your requirements
 
 def send_email_gmail(subject,message):
