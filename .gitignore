@@ -3,7 +3,7 @@
 
 local.yaml
 prod.yaml
-
+.repomap*
 ### Linux ###
 *~
 

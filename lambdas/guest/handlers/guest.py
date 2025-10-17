@@ -54,7 +54,7 @@ def create_guest_regular(conn, body, event):
             if not privileges.is_valid:
                 return _error_response(400, "No estate found for this account holder.")
 
-            if not privileges.can_manage_guests():
+            if not privileges.can_create_guests():
                 return _error_response(403, "You do not have privileges to create a guest for this account.")
 
             estate_id = privileges.estate_id
@@ -185,7 +185,7 @@ def create_associate(conn, body, event):
             if not privileges.is_valid:
                 return _error_response(400, "No estate found for this account holder.")
 
-            if not privileges.can_manage_guests():
+            if not privileges.can_create_guests():
                 return _error_response(403, "You do not have privileges to create an associate for this account.")
 
             estate_id = privileges.estate_id
@@ -587,14 +587,9 @@ def update_guest(conn, body, event):
             if not privileges.is_valid:
                 return _error_response(400, "No estate found for this account holder.")
 
-            if not privileges.can_manage_guests():
-                # Verify the guest belongs to the account holder
-                cur.execute("""SELECT g.personal_info_id FROM guests g
-                            JOIN account_holders ah ON ah.id = g.creator_id
-                            WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE""", (guest_id, user_id))
-                row = cur.fetchone()
-                if not row:
-                    return _error_response(403, "You do not have privileges to update this guest.")
+            # Allow if user has manage_guests (estate-wide) or owns this guest (create_guests + is_same_person)
+            if not privileges.can_manage_or_own_guests():
+                return _error_response(403, "You do not have privileges to update this guest.")
 
             # Handle vehicle operations using the same logic as create_guest_regular
             estate_name = privileges.estate_name
@@ -800,17 +795,9 @@ def delete_guest(conn, body, event):
         if not privileges.is_valid:
             return _error_response(400, "No estate found for this account holder.")
 
-        if not privileges.can_manage_guests():
-            # Check if user is the creator of the guest
-            cur.execute("""
-                SELECT g.personal_info_id, g.creator_id
-                FROM guests g
-                JOIN account_holders ah ON ah.id = g.creator_id
-                WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE
-            """, (guest_id, user_id))
-            row = cur.fetchone()
-            if not row:
-                return _error_response(403, "You do not have privileges to delete this guest.")
+        # Allow if user has manage_guests (estate-wide) or owns this guest (create_guests + is_same_person)
+        if not privileges.can_manage_or_own_guests():
+            return _error_response(403, "You do not have privileges to delete this guest.")
 
         # Delete personal_info (guests table has ON DELETE CASCADE)
         cur.execute("""
@@ -869,19 +856,9 @@ def get_guest_details(conn, event):
         if not privileges.is_valid:
             return _error_response(400, "No estate found for this account holder.")
 
-        if not privileges.can_manage_guests():
-            # Verify the guest belongs to the user
-            cur.execute("""
-                        SELECT EXISTS (
-                            SELECT 1 FROM guests g
-                            JOIN account_holders ah ON ah.id = g.creator_id
-                            WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE
-                        ) AS exists_flag
-                        """, (guest_id, user_id))
-
-            row = cur.fetchone()
-            if not row:
-                return _error_response(403, "You do not have privileges to view this guest.")
+        # Allow if user has manage_guests (estate-wide) or create_guests (ownership-based)
+        if not privileges.can_manage_or_own_guests():
+            return _error_response(403, "You do not have privileges to view this guest.")
             
         cur.execute("""
             SELECT g.id AS guest_id, g.personal_info_id, es.name AS estate_name, at.name AS account_type_name, ag.name AS access_group_name, pi.name AS guest_name, pi.contact, pi.expiry, pi.estate_id, g.other_info
@@ -933,16 +910,9 @@ def get_account_holder_guests(conn, event):
         if not privileges.is_valid:
             return _error_response(400, "No estate found for this account holder.")
 
-        if not privileges.can_manage_guests():
-            # Check if this user is the same account holder
-            cur.execute("""
-                SELECT EXISTS(
-                    SELECT 1 FROM account_holders
-                    WHERE user_id = %s AND id = %s AND is_active = TRUE
-                ) AS exists_flag
-            """, (user_id, account_holder_id))
-            if not cur.fetchone()["exists_flag"]:
-                return _error_response(403, "You do not have privileges to view this guest list.")
+        # Allow if user has manage_guests (estate-wide) or owns these guests (create_guests + is_same_person)
+        if not privileges.can_manage_or_own_guests():
+            return _error_response(403, "You do not have privileges to view this guest list.")
 
         # Count total guests
         cur.execute("SELECT COUNT(*) FROM guests WHERE creator_id = %s", (account_holder_id,))
