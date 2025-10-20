@@ -157,8 +157,12 @@ class PrivilegeContext:
     def _load_privileges(self, cur):
         """Load all privilege and estate information in a single query."""
         cur.execute("""
-            WITH target_estate AS (
-                SELECT pi.estate_id, es.name as estate_name
+            WITH target_account_holder AS (
+                SELECT
+                    ah.id,
+                    ah.user_id,
+                    pi.estate_id,
+                    es.name as estate_name
                 FROM account_holders ah
                 JOIN personal_info pi ON ah.personal_info_id = pi.id
                 JOIN estates es ON es.id = pi.estate_id
@@ -167,14 +171,15 @@ class PrivilegeContext:
             user_privileges AS (
                 SELECT
                     ah.id as user_account_holder_id,
-                    ah.user_id = %s as is_same_person,
                     bool_or(pv.name = 'MANAGE_ALL') as can_manage_all,
                     bool_or(pv.name = 'MANAGE_GUESTS') as can_manage_guests,
+                    bool_or(pv.name = 'CREATE_GUESTS') as can_create_guests,
                     bool_or(pv.name = 'MANAGE_VEHICLES') as can_manage_vehicles,
                     bool_or(pv.name = 'CREATE_VEHICLES') as can_create_vehicles,
                     bool_or(pv.name = 'MANAGE_GATES') as can_manage_gates,
                     bool_or(pv.name = 'MANAGE_ACCOUNTS') as can_manage_accounts,
                     bool_or(pv.name = 'MANAGE_EVENTS') as can_manage_events,
+                    bool_or(pv.name = 'CREATE_EVENTS') as can_create_events,
                     bool_or(pv.name = 'MANAGE_ACCESS') as can_manage_access,
                     bool_or(pv.name = 'MANAGE_DEVICES') as can_manage_devices,
                     bool_or(pv.name = 'VIEW_LOGS') as can_view_logs
@@ -185,25 +190,27 @@ class PrivilegeContext:
                 LEFT JOIN privileges pv ON atpl.privilege_id = pv.id
                 WHERE ah.user_id = %s
                   AND ah.is_active = TRUE
-                  AND pi.estate_id = (SELECT estate_id FROM target_estate)
-                GROUP BY ah.id, ah.user_id
+                  AND pi.estate_id = (SELECT estate_id FROM target_account_holder)
+                GROUP BY ah.id
             )
             SELECT
-                te.estate_id,
-                te.estate_name,
-                COALESCE(up.is_same_person, FALSE) as is_same_person,
+                tah.estate_id,
+                tah.estate_name,
+                tah.user_id = %s as is_same_person,
                 COALESCE(up.can_manage_all, FALSE) as can_manage_all,
                 COALESCE(up.can_manage_guests, FALSE) as can_manage_guests,
                 COALESCE(up.can_manage_vehicles, FALSE) as can_manage_vehicles,
+                COALESCE(up.can_create_guests, FALSE) as can_create_guests,
                 COALESCE(up.can_create_vehicles, FALSE) as can_create_vehicles,
                 COALESCE(up.can_manage_gates, FALSE) as can_manage_gates,
                 COALESCE(up.can_manage_accounts, FALSE) as can_manage_accounts,
                 COALESCE(up.can_manage_events, FALSE) as can_manage_events,
+                COALESCE(up.can_create_events, FALSE) as can_create_events,
                 COALESCE(up.can_manage_access, FALSE) as can_manage_access,
                 COALESCE(up.can_manage_devices, FALSE) as can_manage_devices,
                 COALESCE(up.can_view_logs, FALSE) as can_view_logs,
-                EXISTS(SELECT 1 FROM target_estate) as account_holder_exists
-            FROM target_estate te
+                EXISTS(SELECT 1 FROM target_account_holder) as account_holder_exists
+            FROM target_account_holder tah
             LEFT JOIN user_privileges up ON TRUE
         """, (self.account_holder_id, self.user_id, self.user_id))
 
@@ -218,11 +225,13 @@ class PrivilegeContext:
                 "is_same_person": result["is_same_person"],
                 "can_manage_all": result["can_manage_all"],
                 "can_manage_guests": result["can_manage_guests"],
+                "can_create_guests": result["can_create_guests"],
                 "can_manage_vehicles": result["can_manage_vehicles"],
                 "can_create_vehicles": result["can_create_vehicles"],
                 "can_manage_gates": result["can_manage_gates"],
                 "can_manage_accounts": result["can_manage_accounts"],
                 "can_manage_events": result["can_manage_events"],
+                "can_create_events": result["can_create_events"],
                 "can_manage_access": result["can_manage_access"],
                 "can_manage_devices": result["can_manage_devices"],
                 "can_view_logs": result["can_view_logs"]
@@ -257,17 +266,36 @@ class PrivilegeContext:
         return self._privileges["can_manage_all"]
 
     def can_manage_guests(self):
-        """Check if user can manage guests."""
+        """Check if user can manage any guest in the estate."""
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+        return (self._privileges["can_manage_all"] or
+                self._privileges["can_manage_guests"])
+
+    def can_create_guests(self):
+        """Check if user can CREATE guests."""
         if self.is_admin:
             return True
         if not self._privileges:
             return False
         return (self._privileges["can_manage_all"] or
                 self._privileges["can_manage_guests"] or
-                self._privileges["is_same_person"])
+                self._privileges["can_create_guests"])
+
+    def can_manage_or_own_guests(self):
+        """Check if user can RUD guests (manage any OR own their own)."""
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+        return (self._privileges["can_manage_all"] or
+                self._privileges["can_manage_guests"] or
+                (self._privileges["can_create_guests"] and self._privileges["is_same_person"]))
 
     def can_manage_vehicles(self):
-        """Check if user can manage vehicles."""
+        """Check if user can manage any vehicle in the estate."""
         if self.is_admin:
             return True
         if not self._privileges:
@@ -276,7 +304,7 @@ class PrivilegeContext:
                 self._privileges["can_manage_vehicles"])
 
     def can_create_vehicles(self):
-        """Check if user can create vehicles (for guests or themselves)."""
+        """Check if user can CREATE vehicles."""
         if self.is_admin:
             return True
         if not self._privileges:
@@ -284,6 +312,16 @@ class PrivilegeContext:
         return (self._privileges["can_manage_all"] or
                 self._privileges["can_manage_vehicles"] or
                 self._privileges["can_create_vehicles"])
+
+    def can_manage_or_own_vehicles(self):
+        """Check if user can RUD vehicles (manage any OR own their own)."""
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+        return (self._privileges["can_manage_all"] or
+                self._privileges["can_manage_vehicles"] or
+                (self._privileges["can_create_vehicles"] and self._privileges["is_same_person"]))
 
     def can_manage_gates(self):
         """Check if user can manage gates."""
@@ -304,13 +342,33 @@ class PrivilegeContext:
                 self._privileges["can_manage_accounts"])
 
     def can_manage_events(self):
-        """Check if user can manage events."""
+        """Check if user can manage any event in the estate."""
         if self.is_admin:
             return True
         if not self._privileges:
             return False
         return (self._privileges["can_manage_all"] or
                 self._privileges["can_manage_events"])
+
+    def can_create_events(self):
+        """Check if user can CREATE events."""
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+        return (self._privileges["can_manage_all"] or
+                self._privileges["can_manage_events"] or
+                self._privileges["can_create_events"])
+
+    def can_manage_or_own_events(self):
+        """Check if user can RUD events (manage any OR own their own)."""
+        if self.is_admin:
+            return True
+        if not self._privileges:
+            return False
+        return (self._privileges["can_manage_all"] or
+                self._privileges["can_manage_events"] or
+                (self._privileges["can_create_events"] and self._privileges["is_same_person"]))
 
     def can_manage_access_groups(self):
         """Check if user can manage access groups."""

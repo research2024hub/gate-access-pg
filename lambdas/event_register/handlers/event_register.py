@@ -1,7 +1,7 @@
 import json
 from psycopg2.extras import RealDictCursor
 import random
-from utils import _error_response, _success_response, process_db_results, log
+from utils import _error_response, _success_response, process_db_results, log, get_user_privileges
 from middleware import verify_token
 from datetime import datetime
 import jwt
@@ -159,39 +159,28 @@ def register_guest_for_event(conn, body, event):
         if not event_data:
             return _error_response(404, "Event not found.")
 
-        # 2) Privilege check
+        # 2) Privilege check using helper
+        # Get event creator to establish privilege context
         cur.execute("""
-            SELECT
-                EXISTS (
-                    SELECT 1
-                    FROM account_holders ah
-                    JOIN personal_info pi ON ah.personal_info_id = pi.id
-                    JOIN account_types act ON pi.account_type_id = act.id
-                    JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                    JOIN privileges pv ON atpl.privilege_id = pv.id
-                    WHERE ah.user_id = %s
-                      AND pi.estate_id = (
-                          SELECT pi.estate_id
-                          FROM events e
-                          JOIN account_holders ah ON e.creator_id = ah.id
-                          JOIN personal_info pi ON ah.personal_info_id = pi.id
-                          WHERE e.id = %s
-                      )
-                      AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
-                ) AS has_privileges,
-                EXISTS (
-                    SELECT 1
-                    FROM events e
-                    JOIN account_holders ah ON e.creator_id = ah.id
-                    WHERE ah.user_id = %s
-                      AND e.id = %s
-                      AND ah.id = %s
-                ) AS is_owner
-        """, (user_id, event_id, user_id, event_id, account_holder_id))
-        
-        priv_check = cur.fetchone()
+            SELECT e.creator_id
+            FROM events e
+            WHERE e.id = %s
+        """, (event_id,))
 
-        if not (priv_check["has_privileges"] or priv_check["is_owner"] or is_admin):
+        event_creator_result = cur.fetchone()
+        if not event_creator_result:
+            return _error_response(404, "Event not found.")
+
+        creator_id = event_creator_result["creator_id"]
+
+        # Check privileges using helper
+        privileges = get_user_privileges(cur, user_id, creator_id, is_admin)
+
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
+
+        # Allow if user has manage_events (estate-wide) or owns this event (create_events + is_same_person)
+        if not privileges.can_manage_or_own_events():
             return _error_response(403, "You do not have privileges to register guests for this event")
 
         # 3) Generate a unique 6-digit OTP
@@ -315,31 +304,17 @@ def list_event_guests(conn, event):
         event_data = cur.fetchone()
         if not event_data:
             return _error_response(404, "Event not found.")
-    
-        cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM account_holders ah
-                JOIN personal_info pi ON ah.personal_info_id = pi.id
-                JOIN account_types act ON pi.account_type_id = act.id
-                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE ah.user_id = %s AND pi.estate_id = ( 
-                    SELECT pi.estate_id 
-                    FROM events e
-                    JOIN account_holders ah ON e.creator_id = ah.id
-                    JOIN personal_info pi ON ah.personal_info_id = pi.id
-                    WHERE e.id = %s
-                ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
-            ) AS has_privileges,
-            EXISTS (
-                SELECT 1 FROM events e 
-                JOIN account_holders ah ON e.creator_id = ah.id
-                WHERE ah.user_id = %s AND e.id = %s
-            ) AS is_owner
-        """, (user_id, event_id, user_id, event_id))
-        
-        result = cur.fetchone()
-        if not (result["has_privileges"] or result["is_owner"] or is_admin):
+
+        creator_id = event_data["creator_id"]
+
+        # Check privileges using helper
+        privileges = get_user_privileges(cur, user_id, creator_id, is_admin)
+
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
+
+        # Allow if user has manage_events (estate-wide) or owns this event (create_events + is_same_person)
+        if not privileges.can_manage_or_own_events():
             return _error_response(403, "You do not have privileges to retrieve this event's guests")
 
         # Get total number of guests
@@ -399,32 +374,17 @@ def remove_guest_from_event(conn, body, event):
         event_data = cur.fetchone()
         if not event_data:
             return _error_response(404, "Event not found.")
-    
-        cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM account_holders ah
-                        JOIN personal_info pi ON ah.personal_info_id = pi.id
-                        JOIN account_types act ON pi.account_type_id = act.id
-                        JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                        JOIN privileges pv ON atpl.privilege_id = pv.id
-                        WHERE ah.user_id = %s AND pi.estate_id = ( 
-                            SELECT pi.estate_id 
-                            FROM events e
-                            JOIN account_holders ah ON e.creator_id = ah.id
-                            JOIN personal_info pi ON ah.personal_info_id = pi.id
-                            WHERE e.id = %s
-                    ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
-                    ) AS has_privileges,
-                    EXISTS (
-                        SELECT 1 FROM events e 
-                        JOIN account_holders ah ON e.creator_id = ah.id
-                        WHERE ah.user_id = %s AND e.id = %s
-                    ) AS is_owner
-                    """, (user_id, event_id, user_id, event_id))
-        
-        result = cur.fetchone()
 
-        if not (result["has_privileges"] or result["is_owner"] or is_admin):
+        creator_id = event_data["creator_id"]
+
+        # Check privileges using helper
+        privileges = get_user_privileges(cur, user_id, creator_id, is_admin)
+
+        if not privileges.is_valid:
+            return _error_response(400, "No estate found for this account holder.")
+
+        # Allow if user has manage_events (estate-wide) or owns this event (create_events + is_same_person)
+        if not privileges.can_manage_or_own_events():
             return _error_response(403, "You do not have privileges to remove this event's guests")
 
         # Delete personal_info (which cascades deletion for guest & event_registers)
