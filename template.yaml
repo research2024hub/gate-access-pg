@@ -432,6 +432,26 @@ Resources:
           Properties:
             Path: /account/activate
             Method: POST
+        CreateSubUserAccountApi:
+          Type: Api
+          Properties:
+            Path: /account/create_sub_user
+            Method: POST
+        SelectSubUserPrivilegeApi:
+          Type: Api
+          Properties:
+            Path: /account/select_sub_user_privilege
+            Method: POST
+        CreateSubUserPrivilegeApi:
+          Type: Api
+          Properties:
+            Path: /account/create_personal_info_privilege
+            Method: POST
+        VerifySubUserApi:
+          Type: Api
+          Properties:
+            Path: /account/verify_sub_user
+            Method: POST     
         GenerateAccountOTPApi:
           Type: Api
           Properties:

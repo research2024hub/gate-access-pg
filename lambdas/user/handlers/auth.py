@@ -291,7 +291,7 @@ def login_user(conn, body):
 
             print("[DEBUG] Fetching account data for user...")
             cur.execute("""
-                SELECT ah.id AS account_holder_id, pi.id AS personal_info_id, ah.user_id, pi.estate_id, pi.name, pi.expiry, pi.contact, es.name AS estate_name, at.name AS account_type_name, ag.name AS access_group_name,
+                SELECT ah.id AS account_holder_id, pi.id AS personal_info_id, ah.user_id, pi.estate_id, pi.name, pi.expiry, pi.contact, ah.owner_account_holder_id, es.name AS estate_name, at.name AS account_type_name, ag.name AS access_group_name,
                        ah.house_address, pi.account_type_id, ah.is_active
                 FROM account_holders ah
                 JOIN personal_info pi ON ah.personal_info_id = pi.id

@@ -284,255 +284,190 @@ def signupAdmin(conn, body):
         conn.rollback()
         return _error_response(500, f"An error occurred: {e}")
 
-# def create_sub_account(conn, body, event):
-#     """
-#     Creates a **sub-account** for an existing *account holder* (the parent).
+def create_sub_account(conn, body, event):
+    # ------------------------------------------------------------------
+    # 1.  Validate input
+    # ------------------------------------------------------------------
+    parent_account_holder_id = body.get("parent_account_holder_id")
+    child_email            = body.get("email")
 
-#     Behaviour:
-#     • The caller must be either the parent account holder themself **or** have
-#       MANAGE_ACCOUNTS / MANAGE_ALL privileges in the parent estate (admins are
-#       always allowed).
-#     • The new sub-account is created in the *same* estate and inherits the
-#       parent account holder's house_address (flat / unit number etc.).
-#     • A record is inserted into the optional `sub_accounts` link table if it
-#       exists.  If that table is not present the function will silently ignore
-#       the insert – this keeps the handler forward-compatible with DB
-#       migrations.
+    if not parent_account_holder_id:
+        return _error_response(400, "Missing 'parent_account_holder_id'.")
+    otp = str(random.randint(100000, 999999))
+    # Personal-info fields are required (same rule as signup)
+    required_fields = ["name", "id_type", "id_num", "contact"]
+    missing = [f for f in required_fields if not body.get(f)]
+    if missing:
+        return _error_response(400, f"Missing required fields: {', '.join(missing)}.")
 
-#     Expected `body` keys
-#     --------------------
-#     parent_account_holder_id : int   – id of the existing account holder
-#     user_id                 : int   – *user* the sub-account belongs to
-#     name / id_type / id_num / contact : same fields required by signup()
-#     account_type_id         : int   – optional, falls back to USER_B
-#     access_group_id         : int   – optional, falls back to REGULAR
-#     """
+    # Token verification (so we know *who* is making the request)
+    payload, error = verify_token(event)
+    if error:
+        return error
 
-#     # ------------------------------------------------------------------
-#     # 1.  Validate input
-#     # ------------------------------------------------------------------
-#     parent_account_holder_id = body.get("parent_account_holder_id")
-#     # child_user_id            = body.get("user_id")
-#     child_email            = body.get("email")
+    caller_user_id = payload.get("user_id")
+    is_admin       = payload.get("is_admin", False)
 
-#     if not parent_account_holder_id:
-#         return _error_response(400, "Missing 'parent_account_holder_id'.")
-#     # Auto-generate a brief user_id (initials + 4-digit random) if not provided
-#     # if not child_user_id:
-#     initials = ''.join(w[0].lower() for w in body.get("name", "").split())[:3] or 'u'
-#     child_user_id = f"{initials}{random.randint(1000, 9999)}"
-#     otp = str(random.randint(100000, 999999))
-#     # Personal-info fields are required (same rule as signup)
-#     required_fields = ["name", "id_type", "id_num", "contact"]
-#     missing = [f for f in required_fields if not body.get(f)]
-#     if missing:
-#         return _error_response(400, f"Missing required fields: {', '.join(missing)}.")
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # ------------------------------------------------------------------
+            # 2.  Fetch parent account information & privileges check
+            # ------------------------------------------------------------------
+            cur.execute("""
+                SELECT ah.id               AS account_holder_id,
+                       ah.user_id         AS parent_user_id,
+                       ah.house_address,
+                       pi.estate_id
+                FROM   account_holders ah
+                JOIN   personal_info  pi ON pi.id = ah.personal_info_id
+                WHERE  ah.id = %s
+            """, (parent_account_holder_id,))
 
-#     # Token verification (so we know *who* is making the request)
-#     payload, error = verify_token(event)
-#     if error:
-#         return error
+            parent = cur.fetchone()
+            if not parent:
+                return _error_response(404, "Parent account holder not found.")
 
-#     caller_user_id = payload.get("user_id")
-#     is_admin       = payload.get("is_admin", False)
+            estate_id    = parent["estate_id"]
+            house_address = parent["house_address"]
+            parent_user_id = parent["parent_user_id"]
 
-#     try:
-#         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-#             # ------------------------------------------------------------------
-#             # 2.  Fetch parent account information & privileges check
-#             # ------------------------------------------------------------------
-#             cur.execute("""
-#                 SELECT ah.id               AS account_holder_id,
-#                        ah.user_id         AS parent_user_id,
-#                        ah.house_address,
-#                        pi.estate_id
-#                 FROM   account_holders ah
-#                 JOIN   personal_info  pi ON pi.id = ah.personal_info_id
-#                 WHERE  ah.id = %s
-#             """, (parent_account_holder_id,))
-
-#             parent = cur.fetchone()
-#             if not parent:
-#                 return _error_response(404, "Parent account holder not found.")
-
-#             estate_id    = parent["estate_id"]
-#             house_address = parent["house_address"]
-#             parent_user_id = parent["parent_user_id"]
-
-#             # Privilege check – caller must be owner, estate manager or admin
-#             is_owner = (caller_user_id == parent_user_id)
-#             has_priv  = False
-#             if not (is_owner or is_admin):
-#                 privs = get_user_privileges_for_estate(cur, caller_user_id, estate_id, is_admin=False)
-#                 has_priv = privs and privs.can_manage_accounts()
-#             if not (is_owner or has_priv or is_admin):
-#                 return _error_response(403, "You do not have privileges to create sub-accounts for this parent.")
-            
-               
-#             # ------------------------------------------------------------------
-#             # 3.  Prepare defaults – account type & access group (same logic as signup)
-#             # ------------------------------------------------------------------
-#             # account_type_id  = body.get("account_type_id")
-#             # access_group_id  = body.get("access_group_id")
-
-#             # if not account_type_id:
-#             cur.execute("SELECT id FROM account_types WHERE name = 'SUB_USER'")
-#             row = cur.fetchone()
-#             if not row:
-#                 return _error_response(500, "Default account type 'SUB_USER' not found.")
-#             account_type_id = row["id"]
-
-#             # if not access_group_id:
-#             cur.execute("SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'", (estate_id,))
-#             row = cur.fetchone()
-#             if not row:
-#                 return _error_response(500, "Default access group 'REGULAR' not found.")
-#             access_group_id = row["id"]
-
-#             # Prevent duplicate child for same user in this estate
-#             cur.execute("""
-#                 SELECT 1
-#                 FROM   account_holders ah
-#                 JOIN   personal_info pi ON pi.id = ah.personal_info_id
-#                 WHERE  ah.user_id = %s
-#                 AND    pi.estate_id = %s
-#             """, (child_user_id, estate_id))
-#             if cur.fetchone():
-#                 return _error_response(409, "User already has an account in this estate.")
-#             #Assign priviledges to user later(call the function)
-            
-#             cur.execute("""
-#                 INSERT INTO pending_sub_user(email,otp,otp_expiry,estate_id, name, id_type, id_num, contact, account_type_id, access_group_id)
-#                 VALUES (%s,%s, NOW() + INTERVAL '10 minutes',%s,%s,%s,%s,%s,%s,%s)
-#                 RETURNING id
-#             """, (
-#                 child_email,
-#                 otp,
-#                 estate_id,
-#                 body.get("name"),
-#                 body.get("id_type"),
-#                 body.get("id_num"),
-#                 body.get("contact"),
-#                 account_type_id,
-#                 access_group_id
-#             ))
-#             subject = 'ACCESS ACCOUNT'
-#             message = (
-#                 "You have been added as a member of house in house_address .\n"
-#                 f"{otp}.\n\n"
-#                 "Note that you need to download the app through "" on playstore and "" on appstore."
-#             )
-#             send_email_gmail(child_email, subject, message)
-            
-#             # ------------------------------------------------------------------
-#             # 4.  Insert personal_info & account_holder for the child
-#             # ------------------------------------------------------------------
-#             # cur.execute("""
-#             #     INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, account_type_id, access_group_id)
-#             #     VALUES (%s, %s, %s, %s, %s, %s, %s)
-#             #     RETURNING id
-#             # """, (
-#             #     estate_id,
-#             #     body.get("name"),
-#             #     body.get("id_type"),
-#             #     body.get("id_num"),
-#             #     body.get("contact"),
-#             #     account_type_id,
-#             #     access_group_id
-#             # ))
-#             # personal_info_id = cur.fetchone()["id"]
-
-#             # cur.execute("""
-#             #     INSERT INTO account_holders (user_id, personal_info_id, house_address)
-#             #     VALUES (%s, %s, %s)
-#             #     RETURNING id
-#             # """, (child_user_id, personal_info_id, house_address))
-#             # sub_account_holder_id = cur.fetchone()["id"]
-
-#             # # ------------------------------------------------------------------
-#             # # 5.  Store link in sub_accounts table if present
-#             # # ------------------------------------------------------------------
-#             # try:
-#             #     cur.execute("""
-#             #         INSERT INTO sub_accounts (parent_account_holder_id, sub_account_holder_id)
-#             #         VALUES (%s, %s)
-#             #     """, (parent_account_holder_id, sub_account_holder_id))
-#             # except psycopg2.errors.UndefinedTable:
-#             #     # Table not yet migrated – ignore
-#             #     conn.rollback()  # clear error state
-#             #     pass
-
-#             # ------------------------------------------------------------------
-#             # 6.  Logging & commit
-#             # ------------------------------------------------------------------
-#             log(conn, "SUB_ACCOUNT_CREATION", f"Sub-account created for parent {parent_account_holder_id}", caller_user_id, sub_account_holder_id, estate_id)
-#             conn.commit()
-
-#         return _success_response(201, {
-#             "message": "Sub-account created successfully.",
-#              "email" : child_email
-#             # "sub_account": {
-#             #     "parent_account_holder_id": parent_account_holder_id,
-#             #     "sub_account_holder_id": sub_account_holder_id,
-#             #     "personal_info_id": personal_info_id,
-#             #     "user_id": child_user_id,
-#             #     "estate_id": estate_id,
-#             #     "house_address": house_address
-#             # }
-#         })
-
-#     except Exception as e:
-#         conn.rollback()
-#         return _error_response(500, f"An error occurred: {e}")
-
-# def verify_otp(conn, body):
-#     token = body.get("token")
-#     input_otp = body.get("otp")
-
-#     if not token or not input_otp:
-#         return _error_response(400, "Missing token or OTP.")
-
-#     email = decode_token(token)
-#     if not email:
-#         return _error_response(400, "Invalid token.")
-
-#     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-#         cur.execute("""
-#             SELECT * FROM pending_sub_user WHERE email = %s
-#         """, (email,))
-#         row = cur.fetchone()
-
-#         if not row:
-#             return _error_response(404, "No pending registration found for this email.")
-#         if row["otp"] != input_otp:
-#             return _error_response(401, "Invalid OTP.")
-#         if row["otp_expiry"] < datetime.utcnow():
-#             return _error_response(401, "OTP expired.")
+            # Privilege check – caller must be owner, estate manager or admin
+            is_owner = (caller_user_id == parent_user_id)
+            has_priv  = False
+            if not (is_owner or is_admin):
+                privs = get_user_privileges_for_estate(cur, caller_user_id, estate_id, is_admin=False)
+                has_priv = privs and privs.can_manage_sub_users()  
+            if not (is_owner or has_priv or is_admin):
+                return _error_response(403, "You do not have privileges to create sub-accounts for this parent.")
         
-#          # ------------------------------------------------------------------
-#             # 4.  Insert personal_info & account_holder for the child
-#             # ------------------------------------------------------------------
-#         cur.execute("""
-#             INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, account_type_id, access_group_id)
-#             VALUES (%s, %s, %s, %s, %s, %s, %s)
-#             RETURNING id
-#         """, (
-#             row["estate_id"],
-#             row["name"],
-#             row["id_type"],
-#             row["id_num"],
-#             row["contact"],
-#            row["account_type_id"],
-#            row["access_group_id"]
-#         ))
-#         personal_info_id = cur.fetchone()["id"]
-#         # Clean up
-#         cur.execute("DELETE FROM pending_users WHERE email = %s", (email,))
-#         log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
+            # ------------------------------------------------------------------
+            # 3.  Prepare defaults – account type & access group (same logic as signup)
+            # ------------------------------------------------------------------
+            # account_type_id  = body.get("account_type_id")
+            # access_group_id  = body.get("access_group_id")
 
-#         conn.commit()
+            # if not account_type_id:
+            cur.execute("SELECT id FROM account_types WHERE name = 'SUB_USER'")
+            row = cur.fetchone()
+            if not row:
+                return _error_response(500, "Default account type 'SUB_USER' not found.")
+            account_type_id = row["id"]
 
-#     return _success_response(201, {"message": "Account verified and created successfully.", "user_id": user_id})
+            # if not access_group_id:
+            cur.execute("SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'", (estate_id,))
+            row = cur.fetchone()
+            if not row:
+                return _error_response(500, "Default access group 'REGULAR' not found.")
+            access_group_id = row["id"]
+
+            # Prevent duplicate child for same user in this estate
+            cur.execute("""
+                SELECT 1
+                FROM   account_holders ah
+                JOIN   personal_info pi ON pi.id = ah.personal_info_id
+                WHERE  ah.contact = %s
+                AND    pi.estate_id = %s
+            """, (required_fields['contact'], estate_id))
+            if cur.fetchone():
+                return _error_response(409, "User already has an account in this estate.")
+            #Assign priviledges to user later(call the function)
+            
+            # ------------------------------------------------------------------
+            # 4.  Insert personal_info & account_holder for the child
+            # ------------------------------------------------------------------
+            try:
+                cur.execute("""
+                    INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, account_type_id, access_group_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (
+                    estate_id,
+                    body.get("name"),
+                    body.get("id_type"),
+                    body.get("id_num"),
+                    body.get("contact"),
+                    account_type_id,
+                    access_group_id
+                ))
+                personal_info_id = cur.fetchone()["id"]
+
+                cur.execute("""
+                    INSERT INTO account_holders (owner_account_holder_id,personal_info_id, house_address, otp, otp_generated_at)
+                    VALUES (%s, %s, %s, %s ,NOW())
+                    RETURNING id
+                """, (parent_account_holder_id,personal_info_id, house_address,otp))
+                sub_account_holder_id = cur.fetchone()["id"]
+            except psycopg2.errors.UndefinedTable:
+                # Table not yet migrated – ignore
+                conn.rollback()  # clear error state
+                pass
+            
+            subject = 'ACCESS ACCOUNT'
+            message = (
+                "You have been added as a member of house in house_address .\n"
+                f"{otp}.\n\n"
+                "Note that you need to download the app through "" on playstore and "" on appstore and sign-up."
+            )
+            send_email_gmail(child_email, subject, message)
+
+            # ------------------------------------------------------------------
+            # 6.  Logging & commit
+            # ------------------------------------------------------------------
+            log(conn, "SUB_ACCOUNT_CREATION", f"Sub-account created for parent {parent_account_holder_id}", caller_user_id, sub_account_holder_id, estate_id)
+            conn.commit()
+
+        return _success_response(201, {
+            "message": "Sub-account created successfully.",
+            "sub_account": {
+                  #"parent_account_holder_id": parent_account_holder_id,
+                  "email" : child_email,
+                  "sub_account_holder_id": sub_account_holder_id
+            #     "personal_info_id": personal_info_id,
+            #     "user_id": child_user_id,
+            #     "estate_id": estate_id,
+            #     "house_address": house_address
+            }
+        })
+
+    except Exception as e:
+        conn.rollback()
+        return _error_response(500, f"An error occurred: {e}")
+
+def verify_otp(conn, body, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+    
+    user_id = payload.get("user_id")
+    input_otp = body.get("otp")
+    personal_info_id =body.get("personal_info_id")
+    name = body.get("name")
+    if not input_otp or not personal_info_id:
+        return _error_response(400, "Missing OTP or personal_info_id.")
+   
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""
+            SELECT otp FROM account_holders WHERE personal_info_id = %s
+        """, (personal_info_id,))
+        row = cur.fetchone()
+
+        if not row:
+            return _error_response(404, "No Otp found for this user.")
+        if row["otp"] != input_otp:
+            return _error_response(401, "Invalid OTP.")
+        if row["otp_generated_at"] < datetime.utcnow():
+            return _error_response(401, "OTP expired.")
+        
+        cur.execute(""""
+        UPDATE account_holders
+        SET user_id = %s, is_active = TRUE
+        WHERE personal_info_id = %s""",(user_id, personal_info_id,))
+    
+        log(conn, "SUB_USER_REGISTRATION", f"Household Member '{name}' registered", user_id, None, None)
+
+        conn.commit()
+
+    return _success_response(201, {"message": "Account verified and created successfully.", "user_id": user_id})
 
 
 def change_account_type(conn, body, event):
@@ -980,3 +915,144 @@ def verify_account_otp(conn, body, event):
         conn.commit()
 
     return _success_response(200, {"message": "OTP verified successfully."})
+
+# ===============================================================
+#  PERSONAL-INFO  PRIVILEGE LINK  (attach privilege to a person)
+# ===============================================================
+
+def create_personal_info_privilege_link(conn, body, event):
+    """
+    Attach an existing *privilege* to a specific *personal_info* record.
+
+    The caller must be either:
+        • an estate admin (`is_admin` flag)
+        • or have MANAGE_ACCOUNTS (or MANAGE_ALL) in that estate.
+
+    Request JSON body must contain:
+        personal_info_id (int)
+        privilege_id     (int)
+    """
+    # 1.  Authentication / basic validation
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    actor_user_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+
+    personal_info_id = body.get("personal_info_id")
+    privilege_id = body.get("privilege_id")
+
+    if not personal_info_id or not privilege_id:
+        return _error_response(400, "Missing 'personal_info_id' or 'privilege_id'.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # 2. Ensure personal_info exists (and get estate)
+        cur.execute("SELECT estate_id FROM personal_info WHERE id = %s", (personal_info_id,))
+        row = cur.fetchone()
+        if not row:
+            return _error_response(404, "Personal info not found.")
+        estate_id = row["estate_id"]
+
+        # 3. Privilege gate (skip if global admin)
+        if not is_admin:
+            priv_ctx = get_user_privileges_for_estate(cur, actor_user_id, estate_id, is_admin=False)
+            if not (priv_ctx and priv_ctx.can_manage_accounts()):
+                return _error_response(403, "You do not have privileges to link privileges in this estate.")
+
+        # 4. Verify privilege exists
+        cur.execute("SELECT id FROM privileges WHERE id = %s", (privilege_id,))
+        if not cur.fetchone():
+            return _error_response(404, "Privilege not found.")
+
+        # 5. Insert link idempotently
+        cur.execute("""
+            INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)
+            VALUES (%s, %s)
+            ON CONFLICT (personal_info_id, privilege_id) DO NOTHING
+            RETURNING personal_info_id, privilege_id
+        """, (personal_info_id, privilege_id))
+
+        if not cur.fetchone():
+            return _error_response(409, "Privilege already linked to this personal info.")
+
+        # 6. Audit log & commit
+        log(
+            conn,
+            "PERSONAL_INFO_PRIVILEGE_LINK",
+            f"Linked privilege '{privilege_id}' to personal_info '{personal_info_id}'",
+            actor_user_id,
+            None,
+            estate_id,
+        )
+
+        conn.commit()
+
+    return _success_response(201, {"message": "Privilege linked successfully."})
+
+def assign_selected_privileges_to_personal_info(conn, body, event):                                                       
+    """                                                                                                                   
+    Grant *multiple* privileges (subset chosen in UI) to one person.                                                      
+                                                                                                                        
+    Body:                                                                                                                 
+        personal_info_id : int                                                                                            
+        privilege_ids    : list[int]                                                                                      
+    """                                                                                                                   
+    payload, error = verify_token(event)                                                                                  
+    if error:                                                                                                             
+        return error                                                                                                      
+                                                                                                                           
+    actor_id   = payload.get("user_id")                                                                                   
+    is_admin   = payload.get("is_admin", False)                                                                           
+    personal_info_id = body.get("personal_info_id")                                                                       
+    privilege_ids    = body.get("privilege_ids") or []                                                                    
+                                                                                                                           
+    if not personal_info_id or not privilege_ids:                                                                         
+        return _error_response(400, "personal_info_id & privilege_ids required")                                          
+                                                                                                                           
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:                                                               
+         # 1.  Resolve estate & security-check -------------                                                               
+        cur.execute("SELECT estate_id FROM personal_info WHERE id=%s",                                                    
+                     (personal_info_id,))                                                                                  
+        row = cur.fetchone()                                                                                              
+        if not row:                                                                                                       
+            return _error_response(404, "Personal info not found")                                                        
+                                                                                                                           
+        estate_id = row["estate_id"]                                                                                      
+        if not is_admin:                                                                                                  
+            pc = get_user_privileges_for_estate(cur, actor_id, estate_id)                                                 
+        if not (pc and pc.can_manage_sub_users()):                                                                     
+            return _error_response(403, "Insufficient privileges")                                                    
+                                                                                                                        
+         # 2.  Optional – ensure *each* privilege really exists                                                            
+        cur.execute(                                                                                                      
+             "SELECT id FROM privileges WHERE id = ANY(%s)", (privilege_ids,))                                             
+        found = {r["id"] for r in cur.fetchall()}                                                                         
+        missing = set(privilege_ids) - found                                                                              
+        if missing:                                                                                                       
+            return _error_response(                                                                                       
+                404, f"Unknown privilege ids: {sorted(missing)}")                                                         
+                                                                                                                           
+         # 3.  Bulk insert (idempotent) ---------------------                                                              
+        cur.executemany(                                                                                                  
+             """                                                                                                           
+             INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)                                    
+             VALUES (%s, %s)                                                                                               
+             ON CONFLICT (personal_info_id, privilege_id) DO NOTHING                                                       
+             """,                                                                                                          
+             [(personal_info_id, pid) for pid in privilege_ids],                                                           
+         )                                                                                                                 
+                                                                                                                           
+        log(conn,                                                                                                         
+            "PERSONAL_INFO_PRIVILEGE_BULK_LINK",                                                                          
+            f"Assigned privileges {privilege_ids} to personal_info {personal_info_id}",                                   
+            actor_id, None, estate_id)                                                                                    
+                                                                                                                        
+        conn.commit()                                                                                                     
+                                                                                                                        
+    return _success_response(201, {                                                                                       
+        "message": "Privileges assigned",                                                                                 
+        "personal_info_id": personal_info_id,                                                                             
+        "privilege_ids": privilege_ids                                                                                    
+    })                                                                                                                    
+                                            

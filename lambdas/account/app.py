@@ -3,7 +3,8 @@ import psycopg2
 from handlers.account import (
     signup, signupAdmin,
     change_account_type, deactivate_account, activate_account, delete_account, 
-    get_estate_accounts, generate_account_otp, verify_account_otp
+    get_estate_accounts, generate_account_otp, verify_account_otp,create_sub_account,verify_otp,create_personal_info_privilege_link,
+    assign_selected_privileges_to_personal_info
     # confirm_signup
 )
 
@@ -42,6 +43,14 @@ def lambda_handler(event, context):
                 return deactivate_account(conn, body, event)
             elif path == "/account/activate":
                 return activate_account(conn, body, event)
+            elif path == "/account/create_sub_user":
+                return create_sub_account(conn, body, event)
+            elif path == "/account/select_sub_user_privilege":
+                return assign_selected_privileges_to_personal_info(conn, body, event)
+            elif path == "/account/create_user_privilege":
+                return create_personal_info_privilege_link(conn, body, event)
+            elif path == "/account/verify_sub_user":
+                return verify_otp(conn, body, event)
             elif path == "/account/otp/generate":
                 return generate_account_otp(conn, body, event)
             elif path == "/account/otp/verify":

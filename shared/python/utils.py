@@ -338,6 +338,16 @@ class PrivilegeContext:
             return False
         return (self._privileges["can_manage_all"] or
                 self._privileges["can_view_logs"])
+        
+    def can_manage_sub_users(self):                                                                                                                                       
+        if self.is_admin:                                                                                                                                                 
+            return True                                                                                                                                                   
+        if not self._privileges:                                                                                                                                          
+            return False                                                                                                                                                  
+        return (self._privileges["can_manage_all"] or                                                                                                                     
+                self._privileges["can_manage_sub_users"])                                                                                                                 
+                                                        
+        
 
     def can_manage_vehicle_for_person(self, cur, personal_info_id):
         """
@@ -407,7 +417,7 @@ class PrivilegeContext:
         """, (self.user_id, event_id))
         result = cur.fetchone()
         return result["is_creator"]
-
+    
 
 def get_user_privileges(cur, user_id, account_holder_id, is_admin=False):
     """
