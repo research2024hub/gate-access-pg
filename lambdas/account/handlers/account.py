@@ -368,7 +368,7 @@ def create_sub_account(conn, body, event):
                 SELECT 1
                 FROM   account_holders ah
                 JOIN   personal_info pi ON pi.id = ah.personal_info_id
-                WHERE  ah.contact = %s
+                WHERE  pi.contact = %s
                 AND    pi.estate_id = %s
             """, (contact, estate_id))
             if cur.fetchone():
