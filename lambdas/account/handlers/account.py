@@ -299,7 +299,10 @@ def create_sub_account(conn, body, event):
     missing = [f for f in required_fields if not body.get(f)]
     if missing:
         return _error_response(400, f"Missing required fields: {', '.join(missing)}.")
-
+    name = body.get("name")
+    id_type = body.get("id_type")
+    id_num = body.get("id_num"),
+    contact = body.get("contact")
     # Token verification (so we know *who* is making the request)
     payload, error = verify_token(event)
     if error:
@@ -367,7 +370,7 @@ def create_sub_account(conn, body, event):
                 JOIN   personal_info pi ON pi.id = ah.personal_info_id
                 WHERE  ah.contact = %s
                 AND    pi.estate_id = %s
-            """, (required_fields['contact'], estate_id))
+            """, (contact, estate_id))
             if cur.fetchone():
                 return _error_response(409, "User already has an account in this estate.")
             #Assign priviledges to user later(call the function)
@@ -382,10 +385,10 @@ def create_sub_account(conn, body, event):
                     RETURNING id
                 """, (
                     estate_id,
-                    body.get("name"),
-                    body.get("id_type"),
-                    body.get("id_num"),
-                    body.get("contact"),
+                    name,
+                    id_type,
+                    id_num,
+                    contact,
                     account_type_id,
                     access_group_id
                 ))
