@@ -9,7 +9,7 @@ from email.mime.text import MIMEText
 # ses_client = boto3.client('ses')
 SENDER_EMAIL =   'vdowana@itconsortiumgh.com'
 RECIPIENT_EMAILS = "itcresearch340@gmail.com"
-THRESHOLD_SECONDS = 600  # Adjust based on your requirements
+THRESHOLD_SECONDS = 900  # Adjust based on your requirements
 
 def send_email_gmail(subject,message):
     # gmail_user = 'vdowana@itconsortiumgh.com'  # e.g. "yourname@gmail.com"
