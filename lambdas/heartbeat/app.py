@@ -1,8 +1,6 @@
 import json
 import psycopg2
-from handlers.gate import (
-    update_gate_controller_heartbeat,monitor_heartbeat
-)
+from handlers.gate import (monitor_heartbeat)
 import os
 from utils import _error_response
 
