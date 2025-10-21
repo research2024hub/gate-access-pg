@@ -395,7 +395,7 @@ def create_sub_account(conn, body, event):
                 personal_info_id = cur.fetchone()["id"]
 
                 cur.execute("""
-                    INSERT INTO account_holders (owner_account_holder_id,personal_info_id, house_address, otp, otp_generated_at)
+                    INSERT INTO pending_account_holders (owner_account_holder_id,personal_info_id, house_address, otp, otp_generated_at)
                     VALUES (%s, %s, %s, %s ,NOW())
                     RETURNING id
                 """, (parent_account_holder_id,personal_info_id, house_address,otp))
@@ -450,8 +450,10 @@ def verify_otp(conn, body, event):
    
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            SELECT otp FROM account_holders WHERE personal_info_id = %s
-        """, (personal_info_id,))
+            SELECT otp FROM pending_account_holders WHERE personal_info_id = %s
+            RETURNING id""", 
+            (personal_info_id,))
+            
         row = cur.fetchone()
 
         if not row:
@@ -460,11 +462,22 @@ def verify_otp(conn, body, event):
             return _error_response(401, "Invalid OTP.")
         if row["otp_generated_at"] < datetime.utcnow():
             return _error_response(401, "OTP expired.")
+        pending_holder_id = row["id"] 
+        # cur.execute(""""
+        # UPDATE account_holders
+        # SET user_id = %s, is_active = TRUE
+        # WHERE personal_info_id = %s""",(user_id, personal_info_id,))
         
-        cur.execute(""""
-        UPDATE account_holders
-        SET user_id = %s, is_active = TRUE
-        WHERE personal_info_id = %s""",(user_id, personal_info_id,))
+       # Assuming 'user_id_value' is the Python variable holding the user ID
+# And assuming you want to copy specific columns from pending_account_holders
+
+        cur.execute("""
+            INSERT INTO account_holders (personal_info_id, house_address,  otp,  otp_generated_at, owner_account_holder_id,  user_id, is_active ) 
+            SELECT pah.personal_info_id, pah.house_address, pah.otp, pah.otp_generated_at, pah.owner_account_holder_id, %s, TRUE       
+            FROM pending_account_holders pah 
+            WHERE pah.id = %s  (You'd need another parameter for this)
+            RETURNING id;
+        """, (user_id,pending_holder_id)) # Pass the user_id value as a parameter tuple
     
         log(conn, "SUB_USER_REGISTRATION", f"Household Member '{name}' registered", user_id, None, None)
 
