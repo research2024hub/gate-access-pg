@@ -173,12 +173,13 @@ Resources:
         - x86_64
       Layers:
         - !Ref MiddlewareLayer
-      Events:
-        HeartbeatSchedule:
-          Type: Schedule
-          Properties:
-            Schedule: rate(6 minutes)
-            Description: "Run every 6 minutes to monitor device heartbeat"
+      # Events:
+      #   HeartbeatSchedule:
+      #     # Type: Schedule
+      #     Properties:
+      #       # Path: /heartbeat/
+      #       # Schedule: rate(6 minutes)
+      #       Description: "Run every 6 minutes to monitor device heartbeat"
         
       Environment:
         Variables:
@@ -966,10 +967,10 @@ Outputs:
     Description: Implicit IAM Role created for Log function
     Value: !GetAtt LogFunctionRole.Arn
 
-  # GateHeartbeatFunctionArn:
-  #   Description: Gate Heartbeat Lambda Function ARN
-  #   Value: !GetAtt GateHeartbeatFunction.Arn
+  GateHeartbeatFunctionArn:
+    Description: Gate Heartbeat Lambda Function ARN
+    Value: !GetAtt GateHeartbeatFunction.Arn
 
-  # GateHeartbeatFunctionIamRole:
-  #   Description: Implicit IAM Role created for Gate Heartbeat function
-  #   Value: !GetAtt GateHeartbeatFunctionRole.Arn
+  GateHeartbeatFunctionIamRole:
+    Description: Implicit IAM Role created for Gate Heartbeat function
+    Value: !GetAtt GateHeartbeatFunctionRole.Arn
