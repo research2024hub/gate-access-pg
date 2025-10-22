@@ -416,7 +416,7 @@ def create_sub_account(conn, body, event):
             # ------------------------------------------------------------------
             # 6.  Logging & commit
             # ------------------------------------------------------------------
-            log(conn, "SUB_ACCOUNT_CREATION", f"Sub-account created for parent {parent_account_holder_id}", caller_user_id, pending_holder_id, estate_id)
+            log(conn, "SUB_ACCOUNT_CREATION", f"Sub-account created for parent {parent_account_holder_id}", caller_user_id, parent_account_holder_id, estate_id)
             conn.commit()
 
         return _success_response(201, {
