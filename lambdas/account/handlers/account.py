@@ -424,8 +424,8 @@ def create_sub_account(conn, body, event):
             "sub_account": {
                   #"parent_account_holder_id": parent_account_holder_id,
                   "email" : child_email,
-                  "pending_holder_id": pending_holder_id
-            #     "personal_info_id": personal_info_id,
+                  "pending_holder_id": pending_holder_id,
+                  "personal_info_id": personal_info_id
             #     "user_id": child_user_id,
             #     "estate_id": estate_id,
             #     "house_address": house_address
@@ -974,7 +974,7 @@ def create_personal_info_privilege_link(conn, body, event):
 
         # 5. Insert link idempotently
         cur.execute("""
-            INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)
+            INSERT INTO personal_info_privilege_links (personal_info_id, privileges_id)
             VALUES (%s, %s)
             ON CONFLICT (personal_info_id, privilege_id) DO NOTHING
             RETURNING personal_info_id, privilege_id
