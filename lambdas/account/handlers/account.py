@@ -939,17 +939,6 @@ def verify_account_otp(conn, body, event):
 # ===============================================================
 
 def create_personal_info_privilege_link(conn, body, event):
-    """
-    Attach an existing *privilege* to a specific *personal_info* record.
-
-    The caller must be either:
-        • an estate admin (`is_admin` flag)
-        • or have MANAGE_ACCOUNTS (or MANAGE_ALL) in that estate.
-
-    Request JSON body must contain:
-        personal_info_id (int)
-        privilege_id     (int)
-    """
     # 1.  Authentication / basic validation
     payload, error = verify_token(event)
     if error:
@@ -959,7 +948,7 @@ def create_personal_info_privilege_link(conn, body, event):
     is_admin = payload.get("is_admin", False)
 
     personal_info_id = body.get("personal_info_id")
-    privilege_id = body.get("privilege_id")
+    privilege_id = body.get("privileges_id")
 
     if not personal_info_id or not privilege_id:
         return _error_response(400, "Missing 'personal_info_id' or 'privilege_id'.")
@@ -1040,7 +1029,7 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
         if not is_admin:                                                                                                  
             pc = get_user_privileges_for_estate(cur, actor_id, estate_id)                                                 
         if not (pc and pc.can_manage_sub_users()):                                                                     
-            return _error_response(403, "Insufficient privileges")                                                    
+            return _error_response(403, "user cannot manage sub_user")                                                    
                                                                                                                         
          # 2.  Optional – ensure *each* privilege really exists                                                            
         cur.execute(                                                                                                      
@@ -1054,9 +1043,9 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
          # 3.  Bulk insert (idempotent) ---------------------                                                              
         cur.executemany(                                                                                                  
              """                                                                                                           
-             INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)                                    
+             INSERT INTO personal_info_privilege_links (personal_info_id, privileges_id)                                    
              VALUES (%s, %s)                                                                                               
-             ON CONFLICT (personal_info_id, privilege_id) DO NOTHING                                                       
+             ON CONFLICT (personal_info_id, privileges_id) DO NOTHING                                                       
              """,                                                                                                          
              [(personal_info_id, pid) for pid in privilege_ids],                                                           
          )                                                                                                                 
