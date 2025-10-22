@@ -301,7 +301,7 @@ def create_sub_account(conn, body, event):
         return _error_response(400, f"Missing required fields: {', '.join(missing)}.")
     name = body.get("name")
     id_type = body.get("id_type")
-    id_num = body.get("id_num"),
+    id_num = body.get("id_num")
     contact = body.get("contact")
     # Token verification (so we know *who* is making the request)
     payload, error = verify_token(event)
@@ -400,10 +400,10 @@ def create_sub_account(conn, body, event):
                     RETURNING id
                 """, (parent_account_holder_id,personal_info_id, house_address,otp))
                 pending_holder_id = cur.fetchone()["id"]
-            except psycopg2.errors.UndefinedTable:
+            except psycopg2.errors.UndefinedTable as e:
                 # Table not yet migrated – ignore
                 conn.rollback()  # clear error state
-                pass
+                return _error_response(500, f"Database configuration error: {e}")
             
             subject = 'ACCESS ACCOUNT'
             message = (
