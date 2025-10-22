@@ -396,10 +396,10 @@ def create_sub_account(conn, body, event):
 
                 cur.execute("""
                     INSERT INTO pending_account_holders (owner_account_holder_id,personal_info_id, house_address, otp, otp_generated_at)
-                    VALUES (%s, %s, %s, %s ,NOW())
+                    VALUES (%s, %s, %s, %s, NOW())
                     RETURNING id
                 """, (parent_account_holder_id,personal_info_id, house_address,otp))
-                sub_account_holder_id = cur.fetchone()["id"]
+                pending_holder_id = cur.fetchone()["id"]
             except psycopg2.errors.UndefinedTable:
                 # Table not yet migrated – ignore
                 conn.rollback()  # clear error state
@@ -424,7 +424,7 @@ def create_sub_account(conn, body, event):
             "sub_account": {
                   #"parent_account_holder_id": parent_account_holder_id,
                   "email" : child_email,
-                  "sub_account_holder_id": sub_account_holder_id
+                  "pending_holder_id": pending_holder_id
             #     "personal_info_id": personal_info_id,
             #     "user_id": child_user_id,
             #     "estate_id": estate_id,
@@ -472,12 +472,14 @@ def verify_otp(conn, body, event):
 # And assuming you want to copy specific columns from pending_account_holders
 
         cur.execute("""
-            INSERT INTO account_holders (personal_info_id, house_address,  otp,  otp_generated_at, owner_account_holder_id,  user_id, is_active ) 
-            SELECT pah.personal_info_id, pah.house_address, pah.otp, pah.otp_generated_at, pah.owner_account_holder_id, %s, TRUE       
+            INSERT INTO account_holders (personal_info_id, house_address, owner_account_holder_id,  user_id, is_active ) 
+            SELECT pah.personal_info_id, pah.house_address, pah.owner_account_holder_id, %s, true       
             FROM pending_account_holders pah 
-            WHERE pah.id = %s  (You'd need another parameter for this)
+            WHERE pah.id = %s 
             RETURNING id;
         """, (user_id,pending_holder_id)) # Pass the user_id value as a parameter tuple
+        cur.execute("""
+        DELETE FROM pending_account_holders WHERE pending_holder_id = %s; """,(pending_holder_id,))
     
         log(conn, "SUB_USER_REGISTRATION", f"Household Member '{name}' registered", user_id, None, None)
 
