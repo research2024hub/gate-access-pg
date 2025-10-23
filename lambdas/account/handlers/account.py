@@ -450,7 +450,7 @@ def verify_otp(conn, body, event):
    
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            SELECT otid, otp, otp_generated_at FROM pending_account_holders WHERE personal_info_id = %s
+            SELECT id, otp, otp_generated_at FROM pending_account_holders WHERE personal_info_id = %s
             """, 
             (personal_info_id,))
             
