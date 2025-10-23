@@ -41,7 +41,7 @@ def monitor_heartbeat(conn):
             if last_heartbeat:
                 # Convert PostgreSQL datetime to epoch seconds
                 time_diff = current_time - int(last_heartbeat.timestamp())
-
+                print(f"Time difference is{time_diff}")
                 if time_diff > THRESHOLD_SECONDS:
                     try:
                         subject = "Device Heartbeat Alert"
