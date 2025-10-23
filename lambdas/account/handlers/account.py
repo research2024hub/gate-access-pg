@@ -476,7 +476,7 @@ def verify_otp(conn, body, event):
             SELECT pah.personal_info_id, pah.house_address, pah.owner_account_holder_id, %s, true       
             FROM pending_account_holders pah 
             WHERE pah.id = %s 
-            RETURNING id;
+            RETURNING id
         """, (user_id,pending_holder_id)) # Pass the user_id value as a parameter tuple
         cur.execute("""
         DELETE FROM pending_account_holders WHERE pending_holder_id = %s; """,(pending_holder_id,))
