@@ -1044,7 +1044,7 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
          # 3.  Bulk insert (idempotent) ---------------------                                                              
         cur.executemany(                                                                                                  
              """                                                                                                           
-             INSERT INTO personal_info_privilege_links (personal_info_id, privileges_id)                                    
+             INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)                                    
              VALUES (%s, %s)                                                                                               
              ON CONFLICT (personal_info_id, privileges_id) DO NOTHING                                                       
              """,                                                                                                          
