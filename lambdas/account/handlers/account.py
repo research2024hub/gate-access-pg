@@ -948,7 +948,7 @@ def create_personal_info_privilege_link(conn, body, event):
     is_admin = payload.get("is_admin", False)
 
     personal_info_id = body.get("personal_info_id")
-    privilege_id = body.get("privileges_id")
+    privilege_id = body.get("privilege_ids")
 
     if not personal_info_id or not privilege_id:
         return _error_response(400, "Missing 'personal_info_id' or 'privilege_id'.")
@@ -974,7 +974,7 @@ def create_personal_info_privilege_link(conn, body, event):
 
         # 5. Insert link idempotently
         cur.execute("""
-            INSERT INTO personal_info_privilege_links (personal_info_id, privileges_id)
+            INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)
             VALUES (%s, %s)
             ON CONFLICT (personal_info_id, privilege_id) DO NOTHING
             RETURNING personal_info_id, privilege_id
@@ -1046,7 +1046,7 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
              """                                                                                                           
              INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)                                    
              VALUES (%s, %s)                                                                                               
-             ON CONFLICT (personal_info_id, privileges_id) DO NOTHING                                                       
+             ON CONFLICT (personal_info_id, privilege_id) DO NOTHING                                                       
              """,                                                                                                          
              [(personal_info_id, pid) for pid in privilege_ids],                                                           
          )                                                                                                                 
