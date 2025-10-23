@@ -1028,7 +1028,7 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
         estate_id = row["estate_id"]                                                                                      
         if not is_admin:                                                                                                  
             pc = get_user_privileges_for_personal_info(cur, actor_id, personal_info_id, is_admin=False)                                                 
-        if not (pc and pc.can_manage_sub_users()):                                                                     
+        if not (pc and pc.can_create_sub_users()):                                                                     
             return _error_response(403, "user cannot manage sub_user")                                                    
                                                                                                                         
          # 2.  Optional – ensure *each* privilege really exists                                                            
