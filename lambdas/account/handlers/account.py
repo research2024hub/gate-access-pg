@@ -396,7 +396,7 @@ def create_sub_account(conn, body, event):
 
                 cur.execute("""
                     INSERT INTO pending_account_holders (owner_account_holder_id,personal_info_id, house_address, otp, otp_generated_at)
-                    VALUES (%s, %s, %s, %s, NOW())
+                    VALUES (%s, %s, %s, %s,  NOW() + INTERVAL '30 minutes'())
                     RETURNING id
                 """, (parent_account_holder_id,personal_info_id, house_address,otp))
                 pending_holder_id = cur.fetchone()["id"]
@@ -407,8 +407,8 @@ def create_sub_account(conn, body, event):
             
             subject = 'ACCESS ACCOUNT'
             message = (
-                "You have been added as a member of house in house_address .\n"
-                f"{otp}.\n\n"
+                "You have been added as a member of house in house_address.\n"
+                f"Activate this account using this one time password: {otp}.\n OTP expires in 30 minutes.\n"
                 "Note that you need to download the app through "" on playstore and "" on appstore and sign-up."
             )
             send_email_gmail(child_email, subject, message)
@@ -450,8 +450,8 @@ def verify_otp(conn, body, event):
    
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            SELECT otp FROM pending_account_holders WHERE personal_info_id = %s
-            RETURNING id""", 
+            SELECT otid, otp, otp_generated_at FROM pending_account_holders WHERE personal_info_id = %s
+            """, 
             (personal_info_id,))
             
         row = cur.fetchone()
