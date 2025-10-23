@@ -182,7 +182,9 @@ class PrivilegeContext:
                     bool_or(pv.name = 'CREATE_EVENTS') as can_create_events,
                     bool_or(pv.name = 'MANAGE_ACCESS') as can_manage_access,
                     bool_or(pv.name = 'MANAGE_DEVICES') as can_manage_devices,
-                    bool_or(pv.name = 'VIEW_LOGS') as can_view_logs
+                    bool_or(pv.name = 'VIEW_LOGS') as can_view_logs,
+                    bool_or(pv.name = 'MANAGE_SUB_USERS') as can_manage_sub_users,
+                    bool_or(pv.name = 'CREATE_SUB_USERS') as can_create_sub_users
                 FROM account_holders ah
                 JOIN personal_info pi ON ah.personal_info_id = pi.id
                 LEFT JOIN account_types act ON pi.account_type_id = act.id
@@ -209,6 +211,8 @@ class PrivilegeContext:
                 COALESCE(up.can_manage_access, FALSE) as can_manage_access,
                 COALESCE(up.can_manage_devices, FALSE) as can_manage_devices,
                 COALESCE(up.can_view_logs, FALSE) as can_view_logs,
+                COALESCE(up.can_manage_sub_users, FALSE) as can_manage_sub_users,
+                COALESCE(up.can_create_sub_users, FALSE) as can_create_sub_users,
                 EXISTS(SELECT 1 FROM target_account_holder) as account_holder_exists
             FROM target_account_holder tah
             LEFT JOIN user_privileges up ON TRUE
@@ -234,7 +238,9 @@ class PrivilegeContext:
                 "can_create_events": result["can_create_events"],
                 "can_manage_access": result["can_manage_access"],
                 "can_manage_devices": result["can_manage_devices"],
-                "can_view_logs": result["can_view_logs"]
+                "can_view_logs": result["can_view_logs"],
+                "can_manage_sub_users": result["can_manage_sub_users"],
+                "can_create_sub_users": result["can_create_sub_users"]
             }
         else:
             self._estate_info = None
@@ -403,7 +409,8 @@ class PrivilegeContext:
         if not self._privileges:                                                                                                                                          
             return False                                                                                                                                                  
         return (self._privileges["can_manage_all"] or                                                                                                                     
-                self._privileges["can_manage_sub_users"] or self._privileges["can_create_sub_users"])                                                                                                                 
+                self._privileges["can_manage_sub_users"] or self._privileges["can_create_sub_users"] 
+                and self._privileges["is_same_person"])                                                                                                                 
                                                         
         
 

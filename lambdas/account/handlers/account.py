@@ -338,7 +338,7 @@ def create_sub_account(conn, body, event):
             is_owner = (caller_user_id == parent_user_id)
             has_priv  = False
             if not (is_owner or is_admin):
-                privs = get_user_privileges_for_estate(cur, caller_user_id, estate_id, is_admin=False)
+                privs =get_user_privileges_for_account_holder(cur, parent_user_id, parent_account_holder_id, is_admin = False)
                 has_priv = privs and privs.can_manage_sub_users()  
             if not (is_owner or has_priv or is_admin):
                 return _error_response(403, "You do not have privileges to create sub-accounts for this parent.")
@@ -1012,7 +1012,8 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
     actor_id   = payload.get("user_id")                                                                                   
     is_admin   = payload.get("is_admin", False)                                                                           
     personal_info_id = body.get("personal_info_id")                                                                       
-    privilege_ids    = body.get("privilege_ids") or []                                                                    
+    privilege_ids    = body.get("privilege_ids") or []  
+    parent_account_holder_id = body.get("parent_account_holder_id")                                                                  
                                                                                                                            
     if not personal_info_id or not privilege_ids:                                                                         
         return _error_response(400, "personal_info_id & privilege_ids required")                                          
@@ -1027,8 +1028,8 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
                                                                                                                            
         estate_id = row["estate_id"]                                                                                      
         if not is_admin:                                                                                                  
-            pc = get_user_privileges_for_personal_info(cur, actor_id, personal_info_id, is_admin=False)                                                 
-        if not (pc and pc.can_create_sub_users()):                                                                     
+            pc = get_user_privileges_for_account_holder(cur, actor_id, parent_account_holder_id, is_admin=False)                                                 
+        if not (pc and pc.can_manage_sub_users()):                                                                     
             return _error_response(403, "user cannot manage sub_user")                                                    
                                                                                                                         
          # 2.  Optional – ensure *each* privilege really exists                                                            
