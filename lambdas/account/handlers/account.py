@@ -396,7 +396,7 @@ def create_sub_account(conn, body, event):
 
                 cur.execute("""
                     INSERT INTO pending_account_holders (owner_account_holder_id,personal_info_id, house_address, otp, otp_generated_at)
-                    VALUES (%s, %s, %s, %s,  NOW() + INTERVAL '30 minutes'())
+                    VALUES (%s, %s, %s, %s,  NOW() + INTERVAL '30 minutes')
                     RETURNING id
                 """, (parent_account_holder_id,personal_info_id, house_address,otp))
                 pending_holder_id = cur.fetchone()["id"]
