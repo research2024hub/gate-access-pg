@@ -44,16 +44,18 @@ def lambda_handler(event, context):
                 return deactivate_account(conn, body, event)
             elif path == "/account/activate":
                 return activate_account(conn, body, event)
-            elif path == "/account/create_sub_user":
+            elif path == "/account/sub_user/create":
                 return create_sub_account(conn, body, event)
-            elif path == "/account/select_sub_user_privilege":
+            elif path == "/account/sub_user/select_privilege":
                 return assign_selected_privileges_to_personal_info(conn, body, event)
-            elif path == "/account/create_user_privilege":
+            elif path == "/account/sub_user/create_privilege":
                 return create_personal_info_privilege_link(conn, body, event)
-            elif path == "/account/verify_sub_user":
+            elif path == "/account/sub_user/verify":
                 return verify_otp(conn, body, event)
-            elif path == "/account/sub_user_otp":
+            elif path == "/account/sub_user/otp":
                 return send_sub_user_otp(conn, body, event)
+            elif path == "/account/update":
+                return update_account(conn, body, event)
             
             elif path == "/account/otp/generate":
                 return generate_account_otp(conn, body, event)
