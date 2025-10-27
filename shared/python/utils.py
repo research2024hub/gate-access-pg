@@ -409,8 +409,8 @@ class PrivilegeContext:
         if not self._privileges:                                                                                                                                          
             return False                                                                                                                                                  
         return (self._privileges["can_manage_all"] or                                                                                                                     
-                self._privileges["can_manage_sub_users"] or self._privileges["can_create_sub_users"] 
-                and self._privileges["is_same_person"])                                                                                                                 
+                self._privileges["can_manage_sub_users"] or 
+                (self._privileges["can_create_sub_users"] and self._privileges["is_same_person"]))                                                                                                                
                                                         
         
 
