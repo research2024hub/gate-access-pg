@@ -5,6 +5,7 @@ from utils import _error_response, _success_response, process_db_results, log, g
 import random
 from datetime import datetime, timedelta
 from middleware import verify_token
+import math
 
 def create_sub_account(conn, body, event):
     parent_account_holder_id = body.get("parent_account_holder_id")
@@ -317,4 +318,76 @@ def send_sub_user_otp(conn, body, event):
         "message": "A new OTP has been sent to your email.",
         
     })
+    
+def get_sub_accounts(conn, event):
+    # 1. AUTHENTICATION: Get the trusted caller ID
+    payload, error = verify_token(event)
+    if error:
+        return error
+    
+    caller_user_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+    if not caller_user_id:
+        return _error_response(401, "Invalid token or user ID.")
+    path_params = event.get("pathParameters", {})
+    estate_id = path_params.get("estate_id")
+    user_id = path_params.get("user_id")
+    if not is_admin and str(caller_user_id) != user_id:
+        return _error_response(403, "You do not have permission...")
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        limit = int(query_params.get("page_size", 20))
+        if page < 1 or limit < 1 or limit > 100:
+            raise ValueError
+    except (ValueError, TypeError):
+        return _error_response(400, "Invalid 'page' or 'limit'. Must be numbers.")
+    offset = (page - 1) * limit
+    sub_accounts = []
+    total_items = 0
+    # 2. EXECUTION: Run the query
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        try:
+        # This query finds all sub-accounts (ah_sub) whose owner (ah_owner)
+        # has a user_id matching the caller.
+            cur.execute("""
+                SELECT 
+                    ah_sub.id, 
+                    ah_sub.user_id, 
+                    ah_sub.owner_account_holder_id, 
+                    ah_sub.house_address,
+                    p.name,
+                    p.contact,
+                    p.id_type,
+                    p.id_num,
+                    p.id AS personal_info_id
+                FROM 
+                    account_holders ah_sub -- This is the sub-account
+                JOIN 
+                    account_holders ah_owner ON ah_sub.owner_account_holder_id = ah_owner.id -- This is the owner
+                JOIN 
+                    personal_info p ON ah_sub.personal_info_id = p.id
+                WHERE 
+                    ah_owner.user_id = %s AND p.estate_id = %s -- Match the owner's user_id to the caller
+                -- You might want to add an ORDER BY clause:
+                ORDER BY p.name ASC  LIMIT %s OFFSET %s
+            """,(user_id, estate_id,limit, offset))
+            sub_accounts = cur.fetchall()
+            
+        except (Exception, psycopg2.DatabaseError) as e:
+            conn.rollback()
+            print(f"Database error while fetching sub-accounts: {e}") # For your logs
+            return _error_response(500, "An error occurred while fetching sub-accounts.")
+    total_pages = 1
+    if total_items > 0:
+        total_pages = math.ceil(total_items / limit)
+    
+    pagination_data = {
+        "total_items": total_items,
+        "total_pages": total_pages,
+        "current_page": page,
+        "items_per_page": limit
+    }
+    # 3. RESPONSE: Return the list (it will be an empty list [] if none are found)
+    return _success_response(200, {"sub_accounts": sub_accounts,"pagination": pagination_data})
 

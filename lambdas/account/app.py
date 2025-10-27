@@ -7,7 +7,7 @@ from handlers.account import (
     assign_selected_privileges_to_personal_info,send_sub_user_otp
     # confirm_signup
 )
-from handlers.subaccount import (update_account)
+from handlers.subaccount import (update_account,get_sub_accounts)
 
 import os
 from utils import _error_response
@@ -29,6 +29,8 @@ def lambda_handler(event, context):
         if http_method == "GET":
             if path.startswith("/account/estate/"):
                 return get_estate_accounts(conn, event)
+            elif path.startswith("/account/sub_user/getsub/"):
+                return  get_sub_accounts(conn, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
         elif http_method == "POST":
