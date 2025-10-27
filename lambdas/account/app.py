@@ -4,9 +4,10 @@ from handlers.account import (
     signup, signupAdmin,
     change_account_type, deactivate_account, activate_account, delete_account, 
     get_estate_accounts, generate_account_otp, verify_account_otp,create_sub_account,verify_otp,create_personal_info_privilege_link,
-    assign_selected_privileges_to_personal_info
+    assign_selected_privileges_to_personal_info,send_sub_user_otp
     # confirm_signup
 )
+from handlers.subaccount import (update_account)
 
 import os
 from utils import _error_response
@@ -51,6 +52,9 @@ def lambda_handler(event, context):
                 return create_personal_info_privilege_link(conn, body, event)
             elif path == "/account/verify_sub_user":
                 return verify_otp(conn, body, event)
+            elif path == "/account/sub_user_otp":
+                return send_sub_user_otp(conn, body, event)
+            
             elif path == "/account/otp/generate":
                 return generate_account_otp(conn, body, event)
             elif path == "/account/otp/verify":

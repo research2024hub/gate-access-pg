@@ -453,6 +453,11 @@ Resources:
           Properties:
             Path: /account/verify_sub_user
             Method: POST     
+        ResendSubUserOTPApi:
+          Type: Api
+          Properties:
+            Path: /account/sub_user_otp
+            Method: POST     
         GenerateAccountOTPApi:
           Type: Api
           Properties:

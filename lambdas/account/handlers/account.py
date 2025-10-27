@@ -1063,4 +1063,26 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
         "personal_info_id": personal_info_id,                                                                             
         "privilege_ids": privilege_ids                                                                                    
     })                                                                                                                    
-                                            
+                  
+def send_sub_user_otp(conn, body, event):
+    payload, error = verify_token(event)                                                                                  
+    if error:                                                                                                             
+        return error                                                                                                      
+                                                                                                                            
+    pending_holder_id = body.get("pending_holder_id")
+    email = body.get("email")
+    otp = str(random.randint(100000, 999999))
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""
+            UPDATE pending_account_holder SET otp= %s, otp_generated_at = NOW() + INTERVAL '30 minutes'
+            WHERE pending_holder_id = %s
+        """, (otp, pending_holder_id))
+        conn.commit()
+    title = 'Your OTP Code'
+    message =f"Your OTP is: {otp}."
+    send_email_gmail(email, title, message)
+
+    return _success_response(200, {
+        "message": "A new OTP has been sent to your email.",
+        
+    })
