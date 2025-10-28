@@ -45,24 +45,23 @@ def ingest_system_metrics(conn, body, event):
 
     if gate_id and gate_id != token_gate_id:
         # Device should only send metrics for its own gate_id
-        return _error_response(403, "gate_mismatch", "gate_id in body does not match token")
+        return _error_response(403, "gate_mismatch: gate_id in body does not match token")
 
     gate_id = token_gate_id  # trust token value
     if not timestamp_str or gate_id is None:
         return _error_response(
             400,
-            "missing_fields",
-            "'timestamp' and 'gate_id' are required fields in the request body.",
+            "missing_fields: 'timestamp' and 'gate_id' are required fields in the request body."
         )
 
     # Convert timestamp to datetime (server-side UTC for storage)
     try:
         device_ts = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00")) if timestamp_str else None
     except ValueError:
-        return _error_response(400, "invalid_timestamp", "timestamp must be ISO-8601 ISO 8601 string.")
+        return _error_response(400, "invalid_timestamp: timestamp must be ISO-8601 ISO 8601 string.")
 
     if device_ts is None:
-        return _error_response(400, "missing_timestamp", "'timestamp' field is required")
+        return _error_response(400, "missing_timestamp: 'timestamp' field is required")
 
     # Optional numeric validation
     temperature = body.get("temperature_celsius")
@@ -107,7 +106,7 @@ def ingest_system_metrics(conn, body, event):
     except Exception as exc:
         print("Failed to save system metrics: %s", exc)
         conn.rollback()
-        return _error_response(500, "db_error", "Could not store metrics.")
+        return _error_response(500, "db_error: Could not store metrics.")
     _METRICS_DATA.append({
         "data_received_at": datetime.now(timezone.utc),
         "metrics": body,
@@ -134,11 +133,11 @@ def get_latest_system_metrics(conn, event):
     query_params = event.get("queryStringParameters") or {}
     gate_id = query_params.get("gate_id") or payload.get("gate_id")
     if not gate_id:
-        return _error_response(400, "missing_gate_id", "gate_id is required")
+        return _error_response(400, "missing_gate_id: gate_id is required")
     try:
         gate_id_int = int(gate_id)
     except ValueError:
-        return _error_response(400, "invalid_gate_id", "gate_id must be integer")
+        return _error_response(400, "invalid_gate_id: gate_id must be integer")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
@@ -153,7 +152,7 @@ def get_latest_system_metrics(conn, event):
         )
         row = cur.fetchone()
         if not row:
-            return _error_response(404, "not_found", "No metrics found for this gate")
+            return _error_response(404, "not_found: No metrics found for this gate")
 
     running_services = json.loads(row["running_services"]) if row.get("running_services") else []
     row["number_running_services"] = len(running_services)
@@ -179,12 +178,12 @@ def get_temperature_trend(conn, event):
     start_date = query.get("start_date")
     end_date   = query.get("end_date")
     if not (start_date and end_date):
-        return _error_response(400, "missing_params", "start_date and end_date are required")
+        return _error_response(400, "missing_params: start_date and end_date are required")
     try:
         start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
         end_dt   = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
     except ValueError:
-        return _error_response(400, "invalid_date", "Dates must be ISO8601")
+        return _error_response(400, "invalid_date: Dates must be ISO8601")
 
     gate_id = query.get("gate_id")
     granularity = (query.get("granularity") or "auto").lower()
@@ -237,13 +236,13 @@ def get_camera_downtime(conn, event):
     start_date_str = query.get("start_date")
     end_date_str = query.get("end_date")
     if not (start_date_str and end_date_str):
-        return _error_response(400, "missing_params", "start_date and end_date are required query parameters")
+        return _error_response(400, "missing_params: start_date and end_date are required query parameters")
 
     try:
         start_dt = datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
         end_dt = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
     except ValueError as exc:
-        return _error_response(400, "invalid_date", "Dates must be ISO-8601", str(exc))
+        return _error_response(400,f'invalid_date: Dates must be ISO-8601 {str(exc)}')
 
     gate_id = query.get("gate_id")
 
