@@ -3,11 +3,11 @@ import psycopg2
 from handlers.account import (
     signup, signupAdmin,
     change_account_type, deactivate_account, activate_account, delete_account, 
-    get_estate_accounts, generate_account_otp, verify_account_otp,create_sub_account,verify_otp,create_personal_info_privilege_link,
-    assign_selected_privileges_to_personal_info,send_sub_user_otp
+    get_estate_accounts, generate_account_otp, verify_account_otp,update_account       #,create_sub_account,verify_otp,create_personal_info_privilege_link,
+   
     # confirm_signup
 )
-from handlers.subaccount import (update_account,get_sub_accounts)
+from handlers.subaccount import (get_sub_accounts, assign_selected_privileges_to_personal_info,send_sub_user_otp,create_sub_account,verify_otp,create_personal_info_privilege_link)
 
 import os
 from utils import _error_response
@@ -24,6 +24,7 @@ def lambda_handler(event, context):
         body = json.loads(raw_body) if raw_body else {}
 
         path = event.get("path", "")
+        print(path)
         http_method = event.get("httpMethod", "").upper()
 
         if http_method == "GET":
