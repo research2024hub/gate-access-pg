@@ -1136,7 +1136,7 @@ def update_account(conn, body, event):
             RETURNING 
                 ah_sub.id AS matched_account_holder_id,
                 ah_sub.user_id AS matched_user_id,
-                ah_sub.estate_id; 
+                p.estate_id; 
         """, (
             name, id_type, id_num, contact,  # For COALESCE
             account_holder_id_to_edit,       # For ah_sub.id = %s

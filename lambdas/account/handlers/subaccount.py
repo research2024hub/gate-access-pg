@@ -306,7 +306,7 @@ def send_sub_user_otp(conn, body, event):
     otp = str(random.randint(100000, 999999))
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            UPDATE pending_account_holder SET otp= %s, otp_generated_at = NOW() + INTERVAL '30 minutes'
+            UPDATE pending_account_holders SET otp= %s, otp_generated_at = NOW() + INTERVAL '30 minutes'
             WHERE pending_holder_id = %s
         """, (otp, pending_holder_id))
         conn.commit()
