@@ -63,8 +63,22 @@ def ingest_system_metrics(conn, body, event):
     if device_ts is None:
         return _error_response(400, "missing_timestamp: 'timestamp' field is required")
 
-    # Optional numeric validation
-    temperature = body.get("temperature_celsius")
+    # ---------------------------------------------------------------------
+    # Validate presence of all metrics that are NOT NULL in the DB schema
+    # ---------------------------------------------------------------------
+    required_numeric_fields = [
+        "temperature_celsius",
+        "total_cameras",
+        "online_cameras",
+        "storage_used_gb",
+        "storage_total_gb",
+    ]
+    missing_fields = [f for f in required_numeric_fields if body.get(f) is None]
+    if missing_fields:
+        return _error_response(
+            400,
+            f"missing_fields: {', '.join(missing_fields)} must be provided and non\u2011null.",
+        )
 
     # ---------------------------------------------------------------------
     # 3.  Persist into DB (table: system_metrics).  If the table is missing
@@ -95,10 +109,10 @@ def ingest_system_metrics(conn, body, event):
                     body.get("temperature_celsius"),
                     body.get("total_cameras"),
                     body.get("online_cameras"),
-                    json.dumps(body.get("running_services")),
+                    json.dumps(body.get("running_services") or {}),
                     body.get("storage_used_gb"),
                     body.get("storage_total_gb"),
-                    json.dumps(body.get("offline_camera_ids")),
+                    json.dumps(body.get("offline_camera_ids") or []),
                 ),
             )
             metric_id = cur.fetchone()["id"]
