@@ -17,6 +17,12 @@ from handlers.gate import (
     person_arrives_with_vehicle_callback
 )
 import os
+from handlers.dashboard_handlers import (
+    ingest_system_metrics,
+    get_latest_system_metrics,
+    get_temperature_trend,
+    get_camera_downtime,
+)
 from utils import _error_response
 
 def lambda_handler(event, context):
@@ -44,6 +50,8 @@ def lambda_handler(event, context):
                 return activate_gate(conn, body, event)
             elif path == "/gate/deactivate":
                 return deactivate_gate(conn, body, event)
+            elif path == "/system/metrics":
+                return ingest_system_metrics(conn, body, event)
             elif path.startswith("/gate/vehicle_arrival/callback"):
                 return person_arrives_with_vehicle_callback(conn, body, event)
             else:
@@ -66,6 +74,12 @@ def lambda_handler(event, context):
                 return get_vehicles_by_gate_no_time_check(conn, event)
             elif path.startswith("/gate/timed_vehicles/") and path.count("/") == 3:
                 return get_vehicles_by_gate_with_time_check(conn, event)
+            elif path == "/system/latest_metrics":
+                return get_latest_system_metrics(conn, event)
+            elif path == "/system/temperature":
+                return get_temperature_trend(conn, event)
+            elif path == "/cameras/downtime":
+                return get_camera_downtime(conn, event)
             elif path.startswith("/gate/") and path.count("/") == 2:
                 return get_gate_by_id(conn, event)
             else:

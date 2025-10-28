@@ -269,6 +269,26 @@ Resources:
           Properties:
             Path: /gate/timed_vehicles/{gate_id}
             Method: GET
+        SystemMetricsIngestApi:
+          Type: Api
+          Properties:
+            Path: /system/metrics
+            Method: POST
+        GetLatestSystemMetricsApi:
+          Type: Api
+          Properties:
+            Path: /system/latest_metrics
+            Method: GET
+        GetTemperatureTrendApi:
+          Type: Api
+          Properties:
+            Path: /system/temperature
+            Method: GET
+        GetCameraDowntimeApi:
+          Type: Api
+          Properties:
+            Path: /cameras/downtime
+            Method: GET
       Environment:
         Variables:
           DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"

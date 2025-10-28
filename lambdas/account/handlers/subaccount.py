@@ -162,7 +162,7 @@ def verify_otp(conn, body, event):
             RETURNING id
         """, (user_id,pending_holder_id)) # Pass the user_id value as a parameter tuple
         cur.execute("""
-        DELETE FROM pending_account_holders WHERE pending_holder_id = %s; """,(pending_holder_id,))
+        DELETE FROM pending_account_holders WHERE id = %s; """,(pending_holder_id,))
     
         log(conn, "SUB_USER_REGISTRATION", f"Household Member '{name}' registered", user_id, None, None)
 
@@ -307,7 +307,7 @@ def send_sub_user_otp(conn, body, event):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             UPDATE pending_account_holders SET otp= %s, otp_generated_at = NOW() + INTERVAL '30 minutes'
-            WHERE pending_holder_id = %s
+            WHERE id = %s
         """, (otp, pending_holder_id))
         conn.commit()
     title = 'Your OTP Code'
