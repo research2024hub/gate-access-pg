@@ -189,8 +189,8 @@ class PrivilegeContext:
                 JOIN personal_info pi ON ah.personal_info_id = pi.id
                 LEFT JOIN account_types act ON pi.account_type_id = act.id
                 LEFT JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
-                LEFT JOIN personal_info_privilege_links atpl1 ON act.id = atpl1.personal_info_id
-                LEFT JOIN privileges pv ON atpl.privilege_id = pv.id
+                LEFT JOIN personal_info_privilege_links pipl ON pipl.personal_info_id = pi.id                                                                                                       
+                LEFT JOIN privileges pv ON pv.id IN (atpl.privilege_id, pipl.privilege_id)
                 WHERE ah.user_id = %s
                   AND ah.is_active = TRUE
                   AND pi.estate_id = (SELECT estate_id FROM target_account_holder)
