@@ -301,7 +301,28 @@ def login_user(conn, body):
                 JOIN access_groups ag ON pi.access_group_id = ag.id
                 LEFT JOIN pending_account_holders pah ON pi.id = pah.personal_info_id
                 WHERE ah.user_id = %s
-            """, (user_id,))
+                
+                UNION ALL
+
+                -- Pending account holders that are not yet active for this user
+                SELECT NULL AS account_holder_id, pi.id AS personal_info_id, %s AS user_id, pi.estate_id, pi.name, pi.expiry, pi.contact,
+                       pah.owner_account_holder_id, es.name AS estate_name, at.name AS account_type_name, ag.name AS access_group_name,
+                       NULL AS house_address, pi.account_type_id, FALSE AS is_active, pah.id AS pending_account_holder_id,
+                       pah.owner_account_holder_id, pah.is_pending
+                FROM pending_account_holders pah
+                JOIN personal_info pi ON pi.id = pah.personal_info_id
+                JOIN estates es ON pi.estate_id = es.id
+                JOIN account_types at ON pi.account_type_id = at.id
+                JOIN access_groups ag ON pi.access_group_id = ag.id
+                WHERE pah.owner_account_holder_id IN (
+                    SELECT id FROM account_holders WHERE user_id = %s
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM account_holders ah2 
+                    WHERE ah2.personal_info_id = pi.id
+                      AND ah2.user_id = %s
+                )
+            """, (user_id, user_id, user_id, user_id))
 
             accounts = cur.fetchall()
             # if accounts:
