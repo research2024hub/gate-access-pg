@@ -89,10 +89,10 @@ def create_sub_account(conn, body, event):
                 personal_info_id = cur.fetchone()["id"]
 
                 cur.execute("""
-                    INSERT INTO pending_account_holders (child_email,owner_account_holder_id,personal_info_id, house_address, otp, otp_generated_at)
-                    VALUES (%s, %s, %s, %s,  NOW() + INTERVAL '30 minutes')
+                    INSERT INTO pending_account_holders (email, owner_account_holder_id, personal_info_id, house_address, otp, otp_generated_at)
+                    VALUES (%s, %s, %s, %s, %s,  NOW() + INTERVAL '30 minutes')
                     RETURNING id
-                """, (parent_account_holder_id,personal_info_id, house_address,otp))
+                """, (child_email, parent_account_holder_id,personal_info_id, house_address,otp))
                 pending_holder_id = cur.fetchone()["id"]
             except psycopg2.errors.UndefinedTable as e:
                 # Table not yet migrated – ignore
