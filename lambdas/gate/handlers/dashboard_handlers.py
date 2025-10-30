@@ -182,9 +182,20 @@ def get_latest_system_metrics(conn, event):
     row["running_services"] = running_services
     row["number_running_services"] = len(running_services)
     row["total_number_services"] = row.get("total_cameras")
+    # Recursively convert any datetime objects (including nested ones) to ISO-8601 strings
+    def _convert_dt(obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, list):
+            return [_convert_dt(v) for v in obj]
+        if isinstance(obj, dict):
+            return {k: _convert_dt(v) for k, v in obj.items()}
+        return obj
+
+    row = _convert_dt(row)
 
     return _success_response(200, {
-        "data_received_at": row["received_at"].isoformat(),
+        "data_received_at": row["received_at"] if isinstance(row["received_at"], str) else row["received_at"].isoformat(),
         "metrics": row,
     })
 
