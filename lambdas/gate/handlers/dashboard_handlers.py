@@ -282,6 +282,11 @@ def get_camera_downtime(conn, event):
     try:
         start_dt = datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
         end_dt = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
+        # Ensure both are timezone-aware (UTC) to avoid naive/aware comparison errors
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
     except ValueError as exc:
         return _error_response(400,f'invalid_date: Dates must be ISO-8601 {str(exc)}')
 
@@ -313,6 +318,9 @@ def get_camera_downtime(conn, event):
         # DB might return datetime already; if it's a string convert to datetime for comparison
         if isinstance(rec_ts, str):
             rec_ts = datetime.fromisoformat(rec_ts.replace("Z", "+00:00"))
+        # Make sure the timestamp is timezone-aware (UTC)
+        if rec_ts.tzinfo is None:
+            rec_ts = rec_ts.replace(tzinfo=timezone.utc)
 
         if not (start_dt <= rec_ts <= end_dt):
             continue
