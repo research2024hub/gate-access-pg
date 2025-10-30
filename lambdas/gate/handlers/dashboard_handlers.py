@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone, timedelta
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from psycopg2.extras import RealDictCursor
@@ -186,6 +187,9 @@ def get_latest_system_metrics(conn, event):
     def _convert_dt(obj):
         if isinstance(obj, datetime):
             return obj.isoformat()
+        if isinstance(obj, Decimal):
+            # Convert decimals to plain floats for JSON serialisation
+            return float(obj)
         if isinstance(obj, list):
             return [_convert_dt(v) for v in obj]
         if isinstance(obj, dict):
@@ -252,7 +256,8 @@ def get_temperature_trend(conn, event):
     trend = []
     for key, vals in sorted(buckets.items()):
         ts_iso = key.isoformat() if isinstance(key, datetime) else datetime(key.year, key.month, key.day, tzinfo=timezone.utc).isoformat()
-        trend.append({"timestamp": ts_iso, "temperature_celsius": sum(vals)/len(vals)})
+        avg_temp = sum(vals)/len(vals)
+        trend.append({"timestamp": ts_iso, "temperature_celsius": float(avg_temp)})
 
     return _success_response(200, {"trend_data": trend})
 
