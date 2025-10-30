@@ -168,7 +168,18 @@ def get_latest_system_metrics(conn, event):
         if not row:
             return _error_response(404, "not_found: No metrics found for this gate")
 
-    running_services = json.loads(row["running_services"]) if row.get("running_services") else []
+    # Parse `running_services`, which may already be a decoded Python object
+    rs_raw = row.get("running_services")
+    if rs_raw in (None, ""):
+        running_services = []
+    elif isinstance(rs_raw, (list, dict)):
+        running_services = rs_raw
+    else:
+        try:
+            running_services = json.loads(rs_raw)
+        except Exception:
+            running_services = []  # Fallback if JSON cannot be parsed
+    row["running_services"] = running_services
     row["number_running_services"] = len(running_services)
     row["total_number_services"] = row.get("total_cameras")
 
