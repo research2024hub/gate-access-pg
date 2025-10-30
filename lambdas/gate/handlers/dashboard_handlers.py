@@ -285,9 +285,15 @@ def get_camera_downtime(conn, event):
     except ValueError as exc:
         return _error_response(400,f'invalid_date: Dates must be ISO-8601 {str(exc)}')
 
-    gate_id = query.get("gate_id")
-
-    sql = "SELECT device_timestamp, offline_camera_ids FROM system_metrics WHERE device_timestamp BETWEEN %s AND %s"
+    gate_id = query.get("gate_id")                                  
+    if not gate_id:                                                  
+        return _error_response(400, "missing_gate_id: gate_id is required")      
+    try:                                                             
+        gate_id_int = int(gate_id)                                   
+    except ValueError:                                               
+        return _error_response(400, "invalid_gate_id: gate_id must be integer")                                                        
+             
+    sql = "SELECT device_timestamp, offline_camera_ids, gate_id FROM system_metrics WHERE device_timestamp BETWEEN %s AND %s"
     params = [start_dt, end_dt]
     if gate_id:
         sql += " AND gate_id = %s"
@@ -301,15 +307,30 @@ def get_camera_downtime(conn, event):
     downtime_events: List[Dict[str, Any]] = []
     ongoing: Dict[str, datetime] = {}
 
+    # Iterate over each DB row and infer downtime periods
     for rec in records:
-        rec_ts = datetime.fromisoformat(rec["metrics"]["timestamp"].replace("Z", "+00:00"))
+        rec_ts = rec["device_timestamp"]
+        # DB might return datetime already; if it's a string convert to datetime for comparison
+        if isinstance(rec_ts, str):
+            rec_ts = datetime.fromisoformat(rec_ts.replace("Z", "+00:00"))
+
         if not (start_dt <= rec_ts <= end_dt):
             continue
 
-        if gate_id and str(rec["metrics"].get("gate_id")) != gate_id:
+        if gate_id and str(rec.get("gate_id")) != str(gate_id):
             continue
 
-        offline_cameras = set(rec["metrics"].get("offline_camera_ids") or [])
+        # Parse offline_camera_ids which could be JSON text or list
+        oci_raw = rec.get("offline_camera_ids")
+        if oci_raw in (None, ""):
+            offline_cameras = set()
+        elif isinstance(oci_raw, list):
+            offline_cameras = set(oci_raw)
+        else:
+            try:
+                offline_cameras = set(json.loads(oci_raw))
+            except Exception:
+                offline_cameras = set()
 
         # Detect newly offline cameras.
         for cam in offline_cameras:
