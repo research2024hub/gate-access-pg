@@ -7,7 +7,8 @@ from handlers.account import (
    
     # confirm_signup
 )
-from handlers.subaccount import (get_sub_accounts, assign_selected_privileges_to_personal_info,send_sub_user_otp,create_sub_account,verify_otp,create_personal_info_privilege_link)
+from handlers.subaccount import (get_sub_accounts, assign_selected_privileges_to_personal_info,send_sub_user_otp,create_sub_account,verify_otp,create_personal_info_privilege_link,
+                                 delete_sub_account, update_sub_account_privileges)
 
 import os
 from utils import _error_response
@@ -57,6 +58,8 @@ def lambda_handler(event, context):
                 return verify_otp(conn, body, event)
             elif path == "/account/sub_user/otp":
                 return send_sub_user_otp(conn, body, event)
+            elif path == "/account/sub_user/update_priv":
+                return update_sub_account_privileges(conn, body, event)
             elif path == "/account/update":
                 return update_account(conn, body, event)
             
@@ -69,6 +72,8 @@ def lambda_handler(event, context):
         elif http_method == "DELETE":
             if path == "/account/delete":
                 return delete_account(conn, body, event)
+            elif path == "/account/sub_user/delete":
+                return delete_sub_account(conn, body, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
         # elif http_method == "GET":

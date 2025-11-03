@@ -483,6 +483,11 @@ Resources:
           Properties:
             Path: /account/sub_user/otp
             Method: POST     
+        UpdataSubuserPrivilegesApi:
+          Type: Api
+          Properties:
+            Path: /account/sub_user/update_priv
+            Method: POST     
         GenerateAccountOTPApi:
           Type: Api
           Properties:
@@ -497,6 +502,11 @@ Resources:
           Type: Api
           Properties:
             Path: /account/delete
+            Method: DELETE
+        DeleteSubAccountApi:
+          Type: Api
+          Properties:
+            Path: /account/sub_user/delete
             Method: DELETE
         GetEstateAccountsApi:
           Type: Api

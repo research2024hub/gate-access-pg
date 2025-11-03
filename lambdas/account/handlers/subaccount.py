@@ -319,6 +319,149 @@ def send_sub_user_otp(conn, body, event):
         
     })
     
+def update_sub_account_privileges(conn, body, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    actor_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+
+    personal_info_id          = body.get("personal_info_id")
+    privilege_ids             = body.get("privilege_ids") or []
+    parent_account_holder_id  = body.get("parent_account_holder_id")
+
+    if not personal_info_id or privilege_ids is None:
+        return _error_response(400, "personal_info_id & privilege_ids required")
+
+    # Ensure list contains unique ints
+    try:
+        privilege_ids = list({int(pid) for pid in privilege_ids})
+    except (TypeError, ValueError):
+        return _error_response(400, "privilege_ids must be a list of ints")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Resolve estate for later privilege checks / logging
+        cur.execute("SELECT estate_id FROM personal_info WHERE id=%s", (personal_info_id,))
+        row = cur.fetchone()
+        if not row:
+            return _error_response(404, "Personal info not found")
+        estate_id = row["estate_id"]
+
+        # ----- Security gate -------------------------------------------------
+        if not is_admin:
+            pc = get_user_privileges_for_account_holder(cur, actor_id, parent_account_holder_id, is_admin=False)
+            if not (pc and pc.can_manage_sub_users()):
+                return _error_response(403, "User cannot manage sub_user privileges")
+
+        # Verify each privilege exists (fail fast if any unknown)
+        cur.execute("SELECT id FROM privileges WHERE id = ANY(%s)", (privilege_ids,))
+        found_ids = {r["id"] for r in cur.fetchall()}
+        missing = set(privilege_ids) - found_ids
+        if missing:
+            return _error_response(404, f"Unknown privilege ids: {sorted(missing)}")
+
+        # Current set on record
+        cur.execute("""
+            SELECT privilege_id FROM personal_info_privilege_links
+            WHERE personal_info_id = %s
+        """, (personal_info_id,))
+        current = {r["privilege_id"] for r in cur.fetchall()}
+
+        to_insert = set(privilege_ids) - current
+
+        # Bulk insert remaining
+        if to_insert:
+            cur.executemany(
+                """
+                INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)
+                VALUES (%s, %s)
+                ON CONFLICT (personal_info_id, privilege_id) DO NOTHING
+                """,
+                [(personal_info_id, pid) for pid in to_insert],
+            )
+
+        log(
+            conn,
+            "PERSONAL_INFO_PRIVILEGE_UPDATE",
+            f"Added privileges {sorted(privilege_ids)} to personal_info {personal_info_id}",
+            actor_id,
+            None,
+            estate_id,
+        )
+        conn.commit()
+
+    return _success_response(
+        200,
+        {
+            "message": "Privileges updated",
+            "personal_info_id": personal_info_id,
+            "privilege_ids": privilege_ids,
+        },
+    )
+
+def delete_sub_account(conn, body, event):
+    """
+    Permanently (or soft-) delete a sub-account.
+
+    Expected body:
+        sub_account_holder_id : int – The account_holders.id of the sub-user
+    """
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    actor_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+
+    sub_account_holder_id = body.get("sub_account_holder_id")
+    if not sub_account_holder_id:
+        return _error_response(400, "sub_account_holder_id required")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Fetch owner relationship & estate for security checks & logging
+        cur.execute(
+            """
+            SELECT ah_sub.personal_info_id, ah_sub.owner_account_holder_id, ah_owner.user_id AS owner_user_id,
+                   ah_sub.house_address, pi.estate_id
+            FROM   account_holders ah_sub
+            JOIN   account_holders ah_owner ON ah_sub.owner_account_holder_id = ah_owner.id
+            JOIN   personal_info pi        ON ah_sub.personal_info_id        = pi.id
+            WHERE  ah_sub.id = %s
+            """,
+            (sub_account_holder_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return _error_response(404, "Sub-account not found")
+
+        estate_id               = row["estate_id"]
+        owner_user_id           = row["owner_user_id"]
+        personal_info_id        = row["personal_info_id"]
+
+        if not is_admin and actor_id != owner_user_id:
+            priv = get_user_privileges_for_account_holder(cur, actor_id, row["owner_account_holder_id"], is_admin=False)
+            if not (priv and priv.can_manage_sub_users()):
+                return _error_response(403, "You do not have permission to delete this sub-account")
+
+        cur.execute(                                                                                                                                                    
+            "DELETE FROM account_holders WHERE id = %s", (sub_account_holder_id,),)                               
+        # Optionally, also revoke all privileges (cleanup)
+        cur.execute(
+            "DELETE FROM personal_info_privilege_links WHERE personal_info_id = %s",(personal_info_id,),)
+        
+        log(
+            conn,
+            "SUB_ACCOUNT_DELETE",
+            f"Sub-account {sub_account_holder_id} deactivated by user {actor_id}",
+            actor_id,
+            sub_account_holder_id,
+            estate_id,
+        )
+        conn.commit()
+
+    return _success_response(200, {"message": "Sub-account deleted (deactivated)"})
+
 def get_sub_accounts(conn, event):
     # 1. AUTHENTICATION: Get the trusted caller ID
     payload, error = verify_token(event)
@@ -360,13 +503,16 @@ def get_sub_accounts(conn, event):
                     p.contact,
                     p.id_type,
                     p.id_num,
-                    p.id AS personal_info_id
+                    p.id AS personal_info_id,
+                    u.email
                 FROM 
                     account_holders ah_sub -- This is the sub-account
                 JOIN 
                     account_holders ah_owner ON ah_sub.owner_account_holder_id = ah_owner.id -- This is the owner
                 JOIN 
                     personal_info p ON ah_sub.personal_info_id = p.id
+                JOIN 
+                    users u ON ah_sub.user_id = u.id
                 WHERE 
                     ah_owner.user_id = %s AND p.estate_id = %s -- Match the owner's user_id to the caller
                 -- You might want to add an ORDER BY clause:

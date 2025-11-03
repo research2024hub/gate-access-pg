@@ -4,13 +4,24 @@ import os
 import json
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
-from utils import _error_response, _success_response, process_db_results, log
-from middleware import verify_token
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log
+from middleware import verify_token, cors_wrap, CORS_HEADERS
 import random
 import smtplib
 from email.mime.text import MIMEText
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key") 
+JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")
+
+# ------------------------------------------------------------------
+# CORS response helpers (wrapping shared utils responses)
+# ------------------------------------------------------------------
+
+def _success_response(status_code: int, body: dict):
+    return cors_wrap(_base_success_response(status_code, body))
+
+
+def _error_response(status_code: int, message: str):
+    return cors_wrap(_base_error_response(status_code, message)) 
 import random
 
 def generate_otp():

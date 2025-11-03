@@ -7,8 +7,34 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, log  # project-level helpers
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, log  # project-level helpers
 from middleware import verify_token
+
+# ---------------------------------------------------------------------------
+# CORS helper & patched response wrappers
+# ---------------------------------------------------------------------------
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",  # TODO: restrict to specific domain if needed
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,DELETE",
+    "Access-Control-Max-Age": "86400",  # 24h
+}
+
+def _cors_wrap(resp: dict) -> dict:
+    """Inject CORS headers into a Lambda proxy response dict."""
+    hdrs = resp.get("headers", {}) or {}
+    hdrs.update(CORS_HEADERS)
+    resp["headers"] = hdrs
+    return resp
+
+# Override the project-level helpers so that *every* successful or error
+# response produced inside this module automatically includes CORS headers.
+
+def _success_response(status_code: int, body: dict):
+    return _cors_wrap(_base_success_response(status_code, body))
+
+def _error_response(status_code: int, message: str):
+    return _cors_wrap(_base_error_response(status_code, message))
 
 # logger = logging.getLogger(__name__)
 # logger.setLevel(logging.INFO)
@@ -370,11 +396,11 @@ def get_camera_downtime(conn, event):
         )
 
     response_body = {"downtime_history": downtime_events}
-    return {
+    return _cors_wrap({
         "statusCode": 200,
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps(response_body),
-    }
+    })
 
 
 # ----------------------------------------------------------------------------

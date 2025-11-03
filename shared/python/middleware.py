@@ -2,6 +2,9 @@ import jwt
 import os
 from utils import _error_response
 
+# ---------------------------------------------------------------------------
+# JWT verification helper (existing code)
+# ---------------------------------------------------------------------------
 JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")
 
 def verify_token(event):
@@ -23,3 +26,20 @@ def verify_token(event):
         return None, _error_response(401, "Token has expired.")
     except jwt.InvalidTokenError:
         return None, _error_response(401, "Invalid token.")
+
+# ---------------------------------------------------------------------------
+# CORS utilities – can be imported by any Lambda handler
+# ---------------------------------------------------------------------------
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",  # TODO: tighten in production
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,DELETE",
+    "Access-Control-Max-Age": "86400",  # 24 hours
+}
+
+def cors_wrap(resp: dict) -> dict:
+    """Inject standard CORS headers into a Lambda proxy response dict."""
+    hdrs = resp.get("headers", {}) or {}
+    hdrs.update(CORS_HEADERS)
+    resp["headers"] = hdrs
+    return resp
