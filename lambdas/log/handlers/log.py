@@ -1,8 +1,15 @@
 import json
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results
-from middleware import verify_token
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results
+from middleware import verify_token, cors_wrap
 from datetime import datetime
+
+def _success_response(status_code: int, body: dict):
+    return cors_wrap(_base_success_response(status_code, body))
+
+
+def _error_response(status_code: int, message: str):
+    return cors_wrap(_base_error_response(status_code, message)) 
 
 def get_logs_by_estate(conn, event):
     """

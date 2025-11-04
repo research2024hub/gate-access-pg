@@ -21,7 +21,7 @@ from handlers.dashboard_handlers import (
     ingest_system_metrics,
     get_latest_system_metrics,
     get_temperature_trend,
-    get_camera_downtime,
+    get_camera_downtime,get_storage_trend
 )
 from utils import _error_response
 
@@ -80,6 +80,8 @@ def lambda_handler(event, context):
                 return get_temperature_trend(conn, event)
             elif path == "/cameras/downtime":
                 return get_camera_downtime(conn, event)
+            elif path == "/system/storage":
+                return get_storage_trend(conn, event)
             elif path.startswith("/gate/") and path.count("/") == 2:
                 return get_gate_by_id(conn, event)
             else:

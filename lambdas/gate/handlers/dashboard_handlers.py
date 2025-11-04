@@ -8,33 +8,33 @@ from typing import Any, Dict, List, Optional
 
 from psycopg2.extras import RealDictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, log  # project-level helpers
-from middleware import verify_token
+from middleware import verify_token, cors_wrap
 
 # ---------------------------------------------------------------------------
 # CORS helper & patched response wrappers
 # ---------------------------------------------------------------------------
-CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",  # TODO: restrict to specific domain if needed
-    "Access-Control-Allow-Headers": "Content-Type,Authorization",
-    "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,DELETE",
-    "Access-Control-Max-Age": "86400",  # 24h
-}
+# CORS_HEADERS = {
+#     "Access-Control-Allow-Origin": "*",  # TODO: restrict to specific domain if needed
+#     "Access-Control-Allow-Headers": "Content-Type,Authorization",
+#     "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,DELETE",
+#     "Access-Control-Max-Age": "86400",  # 24h
+# }
 
-def _cors_wrap(resp: dict) -> dict:
-    """Inject CORS headers into a Lambda proxy response dict."""
-    hdrs = resp.get("headers", {}) or {}
-    hdrs.update(CORS_HEADERS)
-    resp["headers"] = hdrs
-    return resp
+# def _cors_wrap(resp: dict) -> dict:
+#     """Inject CORS headers into a Lambda proxy response dict."""
+#     hdrs = resp.get("headers", {}) or {}
+#     hdrs.update(CORS_HEADERS)
+#     resp["headers"] = hdrs
+#     return resp
 
 # Override the project-level helpers so that *every* successful or error
 # response produced inside this module automatically includes CORS headers.
 
 def _success_response(status_code: int, body: dict):
-    return _cors_wrap(_base_success_response(status_code, body))
+    return cors_wrap(_base_success_response(status_code, body))
 
 def _error_response(status_code: int, message: str):
-    return _cors_wrap(_base_error_response(status_code, message))
+    return cors_wrap(_base_error_response(status_code, message))
 
 # logger = logging.getLogger(__name__)
 # logger.setLevel(logging.INFO)
@@ -289,7 +289,88 @@ def get_temperature_trend(conn, event):
 
 
 # ----------------------------------------------------------------------------
-# 4.4 GET /cameras/downtime – get_camera_downtime
+# 4.4 GET /system/metrics/storage/trend – get_storage_trend
+# ----------------------------------------------------------------------------
+
+def get_storage_trend(conn, event):
+    """Returns historical storage usage data within the requested window.
+
+    Required query params: start_date, end_date (ISO-8601).
+    Optional: gate_id, granularity (hourly|daily|raw).
+    """
+    query = event.get("queryStringParameters") or {}
+    start_date = query.get("start_date")
+    end_date = query.get("end_date")
+    if not (start_date and end_date):
+        return _error_response(400, "missing_params: start_date and end_date are required")
+
+    try:
+        start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+    except ValueError:
+        return _error_response(400, "invalid_date: Dates must be ISO8601")
+
+    gate_id = query.get("gate_id")
+    granularity = (query.get("granularity") or "auto").lower()
+
+    sql = (
+        "SELECT device_timestamp, storage_used_gb, storage_total_gb "
+        "FROM system_metrics WHERE device_timestamp BETWEEN %s AND %s"
+    )
+    params = [start_dt, end_dt]
+    if gate_id:
+        sql += " AND gate_id = %s"
+        params.append(gate_id)
+    sql += " ORDER BY device_timestamp ASC"
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+
+    if not rows:
+        return _success_response(200, {"trend_data": []})
+
+    buckets: Dict[Any, List[Dict[str, Decimal]]] = {}
+
+    def bucket_key(ts: datetime):
+        if granularity == "hourly":
+            return ts.replace(minute=0, second=0, microsecond=0)
+        elif granularity == "daily":
+            return ts.date()
+        return ts
+
+    for r in rows:
+        buckets.setdefault(bucket_key(r["device_timestamp"]), []).append(
+            {
+                "used": r["storage_used_gb"],
+                "total": r["storage_total_gb"],
+            }
+        )
+
+    trend = []
+    for key, vals in sorted(buckets.items()):
+        ts_iso = (
+            key.isoformat()
+            if isinstance(key, datetime)
+            else datetime(key.year, key.month, key.day, tzinfo=timezone.utc).isoformat()
+        )
+        avg_used = sum(v["used"] for v in vals) / len(vals)
+        avg_total = sum(v["total"] for v in vals) / len(vals)
+        used_pct = (avg_used / avg_total * 100) if avg_total else None
+        trend.append(
+            {
+                "timestamp": ts_iso,
+                "storage_used_gb": float(avg_used),
+                "storage_total_gb": float(avg_total),
+                "storage_used_pct": float(used_pct) if used_pct is not None else None,
+            }
+        )
+
+    return _success_response(200, {"trend_data": trend})
+
+
+# ----------------------------------------------------------------------------
+# 4.5 GET /cameras/downtime – get_camera_downtime
 # ----------------------------------------------------------------------------
 
 def get_camera_downtime(conn, event):
@@ -406,12 +487,13 @@ def get_camera_downtime(conn, event):
 # ----------------------------------------------------------------------------
 # Convenience: mapping of routes to handlers (optional for frameworks)
 # ----------------------------------------------------------------------------
-ROUTE_TABLE = {
-    "POST /system/metrics": ingest_system_metrics,
-    "GET /system/metrics/latest": get_latest_system_metrics,
-    "GET /system/metrics/temperature/trend": get_temperature_trend,
-    "GET /cameras/downtime": get_camera_downtime,
-}
+# ROUTE_TABLE = {
+#     "POST /system/metrics": ingest_system_metrics,
+#     "GET /system/metrics/latest": get_latest_system_metrics,
+#     "GET /system/metrics/temperature/trend": get_temperature_trend,
+#     "GET /system/metrics/storage/trend": get_storage_trend,
+#     "GET /cameras/downtime": get_camera_downtime,
+# }
 
 """You can use ROUTE_TABLE to dispatch based on the HTTP method + path when
 wiring up in a minimal custom Lambda handler or another framework."""
