@@ -477,8 +477,7 @@ def get_camera_downtime(conn, event):
         )
 
     response_body = {"downtime_history": downtime_events}
-    return _cors_wrap({
-        "statusCode": 200,
+    return _success_response(200, {
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps(response_body),
     })
