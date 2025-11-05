@@ -478,7 +478,7 @@ def get_camera_downtime(conn, event):
 
     response_body = {"downtime_history": downtime_events}
     return _success_response(200, {
-        "body": json.dumps(response_body)
+        "body": response_body
     })
 
 #  "headers": {"Content-Type": "application/json"},
