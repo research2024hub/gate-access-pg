@@ -478,11 +478,10 @@ def get_camera_downtime(conn, event):
 
     response_body = {"downtime_history": downtime_events}
     return _success_response(200, {
-        "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(response_body),
+        "body": json.dumps(response_body)
     })
 
-
+#  "headers": {"Content-Type": "application/json"},
 # ----------------------------------------------------------------------------
 # Convenience: mapping of routes to handlers (optional for frameworks)
 # ----------------------------------------------------------------------------
