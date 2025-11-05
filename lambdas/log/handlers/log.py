@@ -28,10 +28,16 @@ def get_logs_by_estate(conn, event):
     query_params = event.get("queryStringParameters") or {}
     start_date = query_params.get("start_date")
     end_date = query_params.get("end_date")
-    start = datetime.fromisoformat(start_date)
-    end = datetime.fromisoformat(end_date)
+
     if not estate_id:
         return _error_response(400, "Missing 'estate_id'.")
+    if not (start_date and end_date):
+        return _error_response(400, "Missing 'start_date' or 'end_date' query parameter.")
+    try:
+        start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+        end = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+    except ValueError:
+        return _error_response(400, "Invalid 'start_date' or 'end_date'. Use ISO-8601 format.")
 
     query_params = event.get("queryStringParameters") or {}
     try:

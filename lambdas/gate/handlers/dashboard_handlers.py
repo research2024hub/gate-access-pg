@@ -415,7 +415,7 @@ def get_camera_downtime(conn, event):
         records = cur.fetchall()
 
     downtime_events: List[Dict[str, Any]] = []
-    ongoing: Dict[str, datetime] = {}
+    # ongoing: Dict[str, datetime] = {}
 
     for rec in records:
         rec_ts = rec["device_timestamp"]
@@ -425,37 +425,41 @@ def get_camera_downtime(conn, event):
             rec_ts = rec_ts.replace(tzinfo=timezone.utc)
 
         oci_raw = rec.get("offline_camera_ids")
-        if oci_raw in (None, ""):
-            offline_cameras = set()
-        elif isinstance(oci_raw, list):
-            offline_cameras = set(oci_raw)
-        else:
-            try:
-                offline_cameras = set(json.loads(oci_raw))
-            except Exception:
-                offline_cameras = set()
-
-        newly_offline = offline_cameras - ongoing.keys()
-        for cam in newly_offline:
-            ongoing[cam] = rec_ts
-
-        came_offline = [cam for cam in list(ongoing) if cam not in offline_cameras]
-        for cam in came_offline:
-            start_time = ongoing.pop(cam)
-            downtime_events.append({
-                "camera_id": cam,
-                "start_time": start_time.isoformat().replace("+00:00", "Z"),
-                "end_time": rec_ts.isoformat().replace("+00:00", "Z"),
-                "duration_minutes": int((rec_ts - start_time).total_seconds() / 60),
-            })
-
-    for cam, start_time in ongoing.items():
         downtime_events.append({
-            "camera_id": cam,
-            "start_time": start_time.isoformat().replace("+00:00", "Z"),
-            "end_time": None,
-            "duration_minutes": None,
+            "camera_id": oci_raw,
+            "start_time": rec_ts,
         })
+        # if oci_raw in (None, ""):
+        #     offline_cameras = set()
+        # elif isinstance(oci_raw, list):
+        #     offline_cameras = set(oci_raw)
+        # else:
+        #     try:
+        #         offline_cameras = set(json.loads(oci_raw))
+        #     except Exception:
+        #         offline_cameras = set()
+
+        # newly_offline = offline_cameras - ongoing.keys()
+        # for cam in newly_offline:
+        #     ongoing[cam] = rec_ts
+
+        # came_offline = [cam for cam in list(ongoing) if cam not in offline_cameras]
+        # for cam in came_offline:
+        #     start_time = ongoing.pop(cam)
+        #     downtime_events.append({
+        #         "camera_id": cam,
+        #         "start_time": start_time.isoformat().replace("+00:00", "Z"),
+        #         "end_time": rec_ts.isoformat().replace("+00:00", "Z"),
+        #         "duration_minutes": int((rec_ts - start_time).total_seconds() / 60),
+        #     })
+
+    # for cam, start_time in records:
+    #     downtime_events.append({
+    #         "camera_id": cam,
+    #         "start_time": start_time.isoformat().replace("+00:00", "Z"),
+    #         "end_time": None,
+    #         "duration_minutes": None,
+    #     })
 
     return _success_response(200, {"downtime_history": downtime_events})
 
