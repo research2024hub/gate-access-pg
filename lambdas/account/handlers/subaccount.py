@@ -443,13 +443,6 @@ def delete_sub_account(conn, body, event):
             priv = get_user_privileges_for_account_holder(cur, actor_id, row["owner_account_holder_id"], is_admin=False)
             if not (priv and priv.can_manage_sub_users()):
                 return _error_response(403, "You do not have permission to delete this sub-account")
-
-        cur.execute(                                                                                                                                                    
-            "DELETE FROM account_holders WHERE id = %s", (sub_account_holder_id,),)                               
-        # Optionally, also revoke all privileges (cleanup)
-        cur.execute(
-            "DELETE FROM personal_info_privilege_links WHERE personal_info_id = %s",(personal_info_id,),)
-        
         log(
             conn,
             "SUB_ACCOUNT_DELETE",
@@ -458,6 +451,14 @@ def delete_sub_account(conn, body, event):
             sub_account_holder_id,
             estate_id,
         )
+        
+        cur.execute(                                                                                                                                                    
+            "DELETE FROM account_holders WHERE id = %s", (sub_account_holder_id,),)                               
+        # Optionally, also revoke all privileges (cleanup)
+        cur.execute(
+            "DELETE FROM personal_info_privilege_links WHERE personal_info_id = %s",(personal_info_id,),)
+        
+       
         conn.commit()
 
     return _success_response(200, {"message": "Sub-account deleted (deactivated)"})

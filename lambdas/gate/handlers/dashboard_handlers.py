@@ -414,7 +414,10 @@ def get_camera_downtime(conn, event):
         cur.execute(sql, (gate_id_int, start_dt, end_dt))
         records = cur.fetchall()
 
-    downtime_events: List[Dict[str, Any]] = []
+    # --------------------------------------------
+    # Build list of {camera_id, timestamp} pairs
+    # --------------------------------------------
+    downtime_events: List[Dict[str, str]] = []
     # ongoing: Dict[str, datetime] = {}
 
     for rec in records:
@@ -423,11 +426,11 @@ def get_camera_downtime(conn, event):
             rec_ts = datetime.fromisoformat(rec_ts.replace("Z", "+00:00"))
         if rec_ts.tzinfo is None:
             rec_ts = rec_ts.replace(tzinfo=timezone.utc)
-
+        str_time = rec_ts.isoformat().replace("+00:00", "Z")
         oci_raw = rec.get("offline_camera_ids")
         downtime_events.append({
             "camera_id": oci_raw,
-            "start_time": rec_ts,
+            "start_time": str_time
         })
         # if oci_raw in (None, ""):
         #     offline_cameras = set()
@@ -453,15 +456,8 @@ def get_camera_downtime(conn, event):
         #         "duration_minutes": int((rec_ts - start_time).total_seconds() / 60),
         #     })
 
-    # for cam, start_time in records:
-    #     downtime_events.append({
-    #         "camera_id": cam,
-    #         "start_time": start_time.isoformat().replace("+00:00", "Z"),
-    #         "end_time": None,
-    #         "duration_minutes": None,
-    #     })
 
-    return _success_response(200, {"downtime_history": downtime_events})
+    return _success_response(200, {"offline_events": downtime_events})
 
 # ----------------------------------------------------------------------------
 # Convenience: mapping of routes to handlers (optional for frameworks)
