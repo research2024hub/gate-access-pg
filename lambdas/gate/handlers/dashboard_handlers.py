@@ -374,68 +374,56 @@ def get_storage_trend(conn, event):
 # ----------------------------------------------------------------------------
 
 def get_camera_downtime(conn, event):
-    """Returns list of camera downtime periods between start_date & end_date.
+    """Return camera downtime history between *start_date* and *end_date*.
 
-    This naïve implementation infers downtime when a camera ID appears in
-    `offline_camera_ids` for consecutive records. Production logic should be
-    replaced with a more robust algorithm and permanent storage.
+    Required query parameters (ISO-8601 strings):
+        • gate_id   – integer
+        • start_date
+        • end_date
+
+    The endpoint analyses the *offline_camera_ids* column to infer periods
+    when each camera was offline inside the requested interval.
     """
     query = event.get("queryStringParameters") or {}
+    gate_id = query.get("gate_id")
     start_date_str = query.get("start_date")
     end_date_str = query.get("end_date")
-    if not (start_date_str and end_date_str):
-        return _error_response(400, "missing_params: start_date and end_date are required query parameters")
+
+    if not (gate_id and start_date_str and end_date_str):
+        return _error_response(400, "missing_params: gate_id, start_date and end_date are required")
 
     try:
+        gate_id_int = int(gate_id)
         start_dt = datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
         end_dt = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
-        # Ensure both are timezone-aware (UTC) to avoid naive/aware comparison errors
         if start_dt.tzinfo is None:
             start_dt = start_dt.replace(tzinfo=timezone.utc)
         if end_dt.tzinfo is None:
             end_dt = end_dt.replace(tzinfo=timezone.utc)
     except ValueError as exc:
-        return _error_response(400,f'invalid_date: Dates must be ISO-8601 {str(exc)}')
+        return _error_response(400, f"invalid_param: {exc}")
 
-    gate_id = query.get("gate_id")                                  
-    if not gate_id:                                                  
-        return _error_response(400, "missing_gate_id: gate_id is required")      
-    try:                                                             
-        gate_id_int = int(gate_id)                                   
-    except ValueError:                                               
-        return _error_response(400, "invalid_gate_id: gate_id must be integer")                                                        
-             
-    sql = "SELECT device_timestamp, offline_camera_ids, gate_id FROM system_metrics WHERE device_timestamp BETWEEN %s AND %s"
-    params = [start_dt, end_dt]
-    if gate_id:
-        sql += " AND gate_id = %s"
-        params.append(gate_id)
-    sql += " ORDER BY device_timestamp ASC"
+    sql = (
+        "SELECT device_timestamp, offline_camera_ids "
+        "FROM system_metrics "
+        "WHERE gate_id = %s AND device_timestamp BETWEEN %s AND %s "
+        "ORDER BY device_timestamp ASC"
+    )
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(sql, params)
+        cur.execute(sql, (gate_id_int, start_dt, end_dt))
         records = cur.fetchall()
 
     downtime_events: List[Dict[str, Any]] = []
     ongoing: Dict[str, datetime] = {}
 
-    # Iterate over each DB row and infer downtime periods
     for rec in records:
         rec_ts = rec["device_timestamp"]
-        # DB might return datetime already; if it's a string convert to datetime for comparison
         if isinstance(rec_ts, str):
             rec_ts = datetime.fromisoformat(rec_ts.replace("Z", "+00:00"))
-        # Make sure the timestamp is timezone-aware (UTC)
         if rec_ts.tzinfo is None:
             rec_ts = rec_ts.replace(tzinfo=timezone.utc)
 
-        if not (start_dt <= rec_ts <= end_dt):
-            continue
-
-        if gate_id and str(rec.get("gate_id")) != str(gate_id):
-            continue
-
-        # Parse offline_camera_ids which could be JSON text or list
         oci_raw = rec.get("offline_camera_ids")
         if oci_raw in (None, ""):
             offline_cameras = set()
@@ -447,41 +435,30 @@ def get_camera_downtime(conn, event):
             except Exception:
                 offline_cameras = set()
 
-        # Detect newly offline cameras.
-        for cam in offline_cameras:
-            if cam not in ongoing:
-                ongoing[cam] = rec_ts  # start downtime
+        newly_offline = offline_cameras - ongoing.keys()
+        for cam in newly_offline:
+            ongoing[cam] = rec_ts
 
-        # Detect cameras that came back online.
-        cams_now_online = [cam for cam in list(ongoing) if cam not in offline_cameras]
-        for cam in cams_now_online:
+        came_offline = [cam for cam in list(ongoing) if cam not in offline_cameras]
+        for cam in came_offline:
             start_time = ongoing.pop(cam)
-            downtime_events.append(
-                {
-                    "camera_id": cam,
-                    "start_time": start_time.isoformat().replace("+00:00", "Z"),
-                    "end_time": rec_ts.isoformat().replace("+00:00", "Z"),
-                    "duration_minutes": int((rec_ts - start_time).total_seconds() / 60),
-                }
-            )
-
-    # Any cameras still offline at end_date -> open downtime events.
-    for cam, start_time in ongoing.items():
-        downtime_events.append(
-            {
+            downtime_events.append({
                 "camera_id": cam,
                 "start_time": start_time.isoformat().replace("+00:00", "Z"),
-                "end_time": None,
-                "duration_minutes": None,
-            }
-        )
+                "end_time": rec_ts.isoformat().replace("+00:00", "Z"),
+                "duration_minutes": int((rec_ts - start_time).total_seconds() / 60),
+            })
 
-    response_body = {"downtime_history": downtime_events}
-    return _success_response(200, {
-        "body": response_body
-    })
+    for cam, start_time in ongoing.items():
+        downtime_events.append({
+            "camera_id": cam,
+            "start_time": start_time.isoformat().replace("+00:00", "Z"),
+            "end_time": None,
+            "duration_minutes": None,
+        })
 
-#  "headers": {"Content-Type": "application/json"},
+    return _success_response(200, {"downtime_history": downtime_events})
+
 # ----------------------------------------------------------------------------
 # Convenience: mapping of routes to handlers (optional for frameworks)
 # ----------------------------------------------------------------------------
