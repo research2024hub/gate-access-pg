@@ -561,7 +561,10 @@ def person_arrives_with_vehicle_callback(conn, body, event):
             )
             if not cur.fetchone():
                 return _error_response(400, "Guest could not be updated.")
-
+            # cur.execute("""
+            #     INSERT INTO AccessLog (license_plate_number, event, timestamp))
+            #     VALUES (%s, %s, NOW()
+            #     RETURNING id"""),(license_plate_number,status)
             log(conn, log_action, log_message, person_data["creator_user_id"], person_data["creator_id"], person_data["estate_id"])
 
         else:
@@ -572,9 +575,15 @@ def person_arrives_with_vehicle_callback(conn, body, event):
             else:  # status == "exit"
                 log_action = "ACCOUNT_HOLDER_VEHICLE_EXIT"
                 log_message = f"Account holder '{person_data['account_holder_id']}' [{person_data['name']}] exited with vehicle license plate '{license_plate_number}'"
-
+            # cur.execute("""
+            #     INSERT INTO AccessLog (license_plate_number, event, timestamp))
+            #     VALUES (%s, %s, NOW()
+            #     RETURNING id"""),(license_plate_number,status)
             log(conn, log_action, log_message, person_data['user_id'], person_data["account_holder_id"], person_data["estate_id"])
-
+        cur.execute("""
+                INSERT INTO accessLog (license_plate_number, event, gate_id, timestamp))
+                VALUES (%s, %s, %s, NOW()
+                RETURNING id"""),(license_plate_number,status,gate_id)
         conn.commit()
 
     action_message = "Gate opened for vehicle entry" if status == "entry" else "Gate opened for vehicle exit"

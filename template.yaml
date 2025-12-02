@@ -294,6 +294,11 @@ Resources:
           Properties:
             Path: /system/storage
             Method: GET
+        GetAccessDataApi:
+          Type: Api
+          Properties:
+            Path: /system/access
+            Method: GET
       Environment:
         Variables:
           DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"

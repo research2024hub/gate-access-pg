@@ -470,5 +470,57 @@ def get_camera_downtime(conn, event):
 #     "GET /cameras/downtime": get_camera_downtime,
 # }
 
+def get_gate_usage(conn, event):
+    query = event.get("queryStringParameters") or {}
+    gate_id = query.get("gate_id")
+    start_date_str = query.get("start_date")
+    end_date_str = query.get("end_date")
+
+    if not (gate_id and start_date_str and end_date_str):
+        return _error_response(400, "missing_params: gate_id, start_date and end_date are required")
+
+    try:
+        gate_id_int = int(gate_id)
+        start_dt = datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        return _error_response(400, f"invalid_param: {exc}")
+
+    sql = ("""
+       SELECT
+        license_plate_number, event, COUNT(*) AS event_count,
+        ARRAY_AGG(timestamp ORDER BY timestamp) AS timestamps
+        FROM accessLog
+        WHERE gate_id = %s AND timestamp BETWEEN %s AND %s 
+        GROUP BY license_plate_number, event
+        ORDER BY license_plate_number, event; """
+    )
+    count_sql = (""" SELECT event, COUNT(*) AS total
+        FROM accessLog
+        WHERE gate_id = %s AND timestamp BETWEEN %s AND %s 
+        GROUP BY event """)
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(sql, (gate_id_int, start_dt, end_dt))
+        records = cur.fetchall()
+        cur.execute(count_sql, (gate_id_int, start_dt, end_dt))
+        num = cur.fetchall()
+        
+    totals = {row['event']: row['total'] for row in num}
+    if 'entry' not in totals:
+            totals['entry'] = 0
+    if 'exit' not in totals:
+        totals['exit'] = 0
+    response_data = {
+        "events": records,
+        "totals": totals
+    }
+    return _success_response(200, {"gate_events": response_data})
+
+
 """You can use ROUTE_TABLE to dispatch based on the HTTP method + path when
 wiring up in a minimal custom Lambda handler or another framework."""
