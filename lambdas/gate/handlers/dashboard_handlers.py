@@ -494,13 +494,13 @@ def get_gate_usage(conn, event):
        SELECT
         license_plate_number, event, COUNT(*) AS event_count,
         ARRAY_AGG(timestamp ORDER BY timestamp) AS timestamps
-        FROM accessLog
+        FROM accesslog
         WHERE gate_id = %s AND timestamp BETWEEN %s AND %s 
         GROUP BY license_plate_number, event
         ORDER BY license_plate_number, event; """
     )
     count_sql = (""" SELECT event, COUNT(*) AS total
-        FROM accessLog
+        FROM accesslog
         WHERE gate_id = %s AND timestamp BETWEEN %s AND %s 
         GROUP BY event """)
 

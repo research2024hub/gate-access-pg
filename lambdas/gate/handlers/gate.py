@@ -581,9 +581,9 @@ def person_arrives_with_vehicle_callback(conn, body, event):
             #     RETURNING id"""),(license_plate_number,status)
             log(conn, log_action, log_message, person_data['user_id'], person_data["account_holder_id"], person_data["estate_id"])
         cur.execute("""
-                INSERT INTO accessLog (license_plate_number, event, gate_id, timestamp))
-                VALUES (%s, %s, %s, NOW()
-                RETURNING id"""),(license_plate_number,status,gate_id)
+                INSERT INTO accesslog (license_plate_number, event, gate_id, timestamp)
+                VALUES (%s, %s, %s, NOW())
+                RETURNING id""",(license_plate_number,status,gate_id))
         conn.commit()
 
     action_message = "Gate opened for vehicle entry" if status == "entry" else "Gate opened for vehicle exit"
