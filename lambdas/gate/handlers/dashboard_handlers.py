@@ -493,7 +493,7 @@ def get_gate_usage(conn, event):
     sql = ("""
        SELECT
         license_plate_number, event, COUNT(*) AS event_count,
-        ARRAY_AGG(timestamp ORDER BY timestamp) AS timestamps
+        ARRAY_AGG(timestamp::TEXT ORDER BY timestamp) AS timestamps
         FROM accesslog
         WHERE gate_id = %s AND timestamp BETWEEN %s AND %s 
         GROUP BY license_plate_number, event
@@ -519,7 +519,7 @@ def get_gate_usage(conn, event):
         "events": records,
         "totals": totals
     }
-    return _success_response(200, {"gate_events": response_data})
+    return _success_response(200, {"gate_events":response_data})
 
 
 """You can use ROUTE_TABLE to dispatch based on the HTTP method + path when
