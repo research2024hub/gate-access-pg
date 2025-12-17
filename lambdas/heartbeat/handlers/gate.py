@@ -13,7 +13,7 @@ THRESHOLD_SECONDS = 900  # Adjust based on your requirements
 
 def send_email_gmail(subject,message):
     # gmail_user = 'vdowana@itconsortiumgh.com'  # e.g. "yourname@gmail.com"
-    gmail_app_password = 'gevhvixoclksbtem'  # the 16-char app password
+    gmail_app_password = 'uoswzwkpolovvpzr'  # the 16-char app password
     # to_email = "jnagai@itconsortiumgh.com"
     msg = MIMEText(message)
     msg['Subject'] = subject
