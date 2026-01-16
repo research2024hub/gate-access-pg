@@ -57,7 +57,7 @@ def create_access_group_link(conn, body, event):
         columns = ["gate_id", "access_group_id"]
         values = [gate_id, access_group_id]
         placeholders = ["%s", "%s"]
-
+        print("db items")
         if opening_time is not None:
             columns.append("opening_time")
             values.append(opening_time)
