@@ -19,6 +19,7 @@ def lambda_handler(event, context):
         body = json.loads(raw_body) if raw_body else {}
 
         path = event.get("path", "")
+        print("path is:",path)
         http_method = event.get("httpMethod", "").upper()
 
         if http_method == "POST":

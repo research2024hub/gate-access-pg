@@ -22,7 +22,7 @@ def create_access_group_link(conn, body, event):
 
     if not gate_id or not access_group_id:
         return _error_response(400, "Missing 'gate_id' or 'access_group_id'.")
-
+    print("moving on")
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Verify gate and access group exist and are on the same estate
         cur.execute("""
@@ -31,7 +31,7 @@ def create_access_group_link(conn, body, event):
                 (SELECT estate_id FROM access_groups WHERE id = %s) AS access_group_estate
         """, (gate_id, access_group_id))
         result = cur.fetchone()
-
+        print("datails",result)
         gate_estate = result[0]
         access_group_estate = result[1]
 
