@@ -22,7 +22,7 @@ def create_access_group_link(conn, body, event):
 
     if not gate_id or not access_group_id:
         return _error_response(400, "Missing 'gate_id' or 'access_group_id'.")
-    print("moving on")
+    # print("moving on")
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Verify gate and access group exist and are on the same estate
         cur.execute("""
@@ -32,8 +32,10 @@ def create_access_group_link(conn, body, event):
         """, (gate_id, access_group_id))
         result = cur.fetchone()
         print("datails",result)
-        gate_estate = result[0]
-        access_group_estate = result[1]
+        gate_estate = result['gate_estate']
+        access_group_estate = result['access_group_estate']
+        print(gate_estate)
+        print(access_group_estate)
 
         if gate_estate is None:
             return _error_response(404, "Gate not found.")
@@ -45,7 +47,7 @@ def create_access_group_link(conn, body, event):
 
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
-        print(privileges)
+        # print(privileges)
 
         if not privileges:
             return _error_response(403, "You do not have an account in the estate for this gate")
@@ -57,7 +59,7 @@ def create_access_group_link(conn, body, event):
         columns = ["gate_id", "access_group_id"]
         values = [gate_id, access_group_id]
         placeholders = ["%s", "%s"]
-        print("db items")
+        # print("db items")
         if opening_time is not None:
             columns.append("opening_time")
             values.append(opening_time)
