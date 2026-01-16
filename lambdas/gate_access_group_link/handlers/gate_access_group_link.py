@@ -45,6 +45,7 @@ def create_access_group_link(conn, body, event):
 
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
+        print(privileges)
 
         if not privileges:
             return _error_response(403, "You do not have an account in the estate for this gate")
@@ -74,6 +75,7 @@ def create_access_group_link(conn, body, event):
             RETURNING gate_id, access_group_id
         """
         cur.execute(sql, values)
+        print("data stored")
 
         if not cur.fetchone():
             return _error_response(409, "Access group already linked to this gate.")
