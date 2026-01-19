@@ -71,5 +71,5 @@ def monitor_heartbeat(conn):
                     except Exception as e:
                             print("error",e)
                             return _error_response(404, "heartbeat monitoring failed.")
-            return _success_response(200, {"message": "successfully monitored devices.", "device": device_id})
+    return _success_response(200, {"message": "successfully monitored devices.", "device": device_id})
                            
