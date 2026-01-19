@@ -33,11 +33,11 @@ def monitor_heartbeat(conn):
         rows = cur.fetchall()
 
         current_time = int(time.time())
-
+        print(current_time)
         for row in rows:
             last_heartbeat = row['last_controller_heartbeat']
             device_id = row['id']
-
+            print(device_id)
             if last_heartbeat:
                 # Convert PostgreSQL datetime to epoch seconds
                 time_diff = current_time - int(last_heartbeat.timestamp())
