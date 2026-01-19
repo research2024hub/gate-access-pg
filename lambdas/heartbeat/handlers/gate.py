@@ -26,7 +26,7 @@ def send_email_gmail(subject,message):
     server.quit()
 
 def monitor_heartbeat(conn):
-
+    print("started")
     # Query all heartbeat records
     with conn.cursor() as cur:
         cur.execute("SELECT id, last_controller_heartbeat FROM gates")
