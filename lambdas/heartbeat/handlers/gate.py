@@ -37,7 +37,7 @@ def monitor_heartbeat(conn):
         for row in rows:
             last_heartbeat = row['last_controller_heartbeat']
             device_id = row['id']
-            print(device_id)
+            print("this is the device id ", device_id)
             print(last_heartbeat)
             if last_heartbeat:
                 # Convert PostgreSQL datetime to epoch seconds
