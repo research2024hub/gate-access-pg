@@ -1,7 +1,7 @@
 import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_personal_info, get_user_privileges_for_account_holder,send_email_gmail
+from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_personal_info, get_user_privileges_for_account_holder,send_gmail
 import random
 from datetime import datetime, timedelta
 from middleware import verify_token

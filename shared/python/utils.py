@@ -115,7 +115,7 @@ def log(conn, type, message, actor_user_id=None, target_account_holder_id=None, 
 
     return _success_response(201, {"log": process_db_results([new_log])})
 
-def send_email_gmail(to_email, subject, message):
+def send_gmail(to_email, subject, message):
     gmail_user = 'itcresearch340@gmail.com'  # e.g. "yourname@gmail.com"
     gmail_app_password = 'lwkpuzjpezobxyny'  # the 16-char app password
 

@@ -1,7 +1,7 @@
 import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_personal_info, get_user_privileges_for_account_holder,send_email_gmail
+from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_personal_info, get_user_privileges_for_account_holder,send_gmail
 import random
 from datetime import datetime, timedelta
 from middleware import verify_token
@@ -105,7 +105,7 @@ def create_sub_account(conn, body, event):
                 f"Activate this account using this one time password: {otp}.\n OTP expires in 30 minutes.\n"
                 "Note that you need to download the app through "" on playstore and "" on appstore and sign-up."
             )
-            send_email_gmail(child_email, subject, message)
+            send_gmail(child_email, subject, message)
             log(conn, "SUB_ACCOUNT_CREATION", f"Sub-account created for parent {parent_account_holder_id}", caller_user_id, parent_account_holder_id, estate_id)
             conn.commit()
 
@@ -312,7 +312,7 @@ def send_sub_user_otp(conn, body, event):
         conn.commit()
     title = 'Your OTP Code'
     message =f"Your OTP is: {otp}."
-    send_email_gmail(email, title, message)
+    send_gmail(email, title, message)
 
     return _success_response(200, {
         "message": "A new OTP has been sent to your email.",
