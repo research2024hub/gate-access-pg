@@ -31,7 +31,7 @@ def monitor_heartbeat(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT id, last_controller_heartbeat FROM gates")
         rows = cur.fetchall()
-
+        print(row)
         current_time = int(time.time())
         print(current_time)
         for row in rows:
