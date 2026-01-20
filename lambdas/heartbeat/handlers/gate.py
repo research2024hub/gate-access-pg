@@ -79,7 +79,7 @@ def monitor_heartbeat(conn):
     print("started")
     try:
         # Query all heartbeat records
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT id, last_controller_heartbeat FROM gates")
             rows = cur.fetchall()
             
