@@ -10,6 +10,7 @@ from email.mime.text import MIMEText
 SENDER_EMAIL =   "itcresearch85@gmail.com"
 RECIPIENT_EMAILS = "itcresearch340@gmail.com"
 THRESHOLD_SECONDS = 900  # Adjust based on your requirements
+ALERT_COOLDOWN = 86400  # 24 hours in seconds
 
 def send_email_gmail(subject,message):
     # gmail_user = 'vdowana@itconsortiumgh.com'  # e.g. "yourname@gmail.com"
@@ -25,106 +26,143 @@ def send_email_gmail(subject,message):
     server.send_message(msg)
     server.quit()
 
+
+# import time
+
 # def monitor_heartbeat(conn):
 #     print("started")
-#     # Query all heartbeat records
-#     with conn.cursor() as cur:
-#         cur.execute("SELECT id, last_controller_heartbeat FROM gates")
-#         rows = cur.fetchall()
-#         print(rows)
-#         current_time = int(time.time())
-#         print(current_time)
-#         for row in rows:
-#             last_heartbeat = row['last_controller_heartbeat']
-#             device_id = row['id']
-#             print("this is the device id ", device_id)
-#             print(last_heartbeat)
-#             if last_heartbeat:
-#                 # Convert PostgreSQL datetime to epoch seconds
-#                 time_diff = current_time - int(last_heartbeat.timestamp())
-#                 print(f"Time difference is{time_diff}")
-#                 if time_diff > THRESHOLD_SECONDS:
-#                     try:
-#                         subject = "Device Heartbeat Alert"
-#                         body = (
-#                             f"Hello,\n\n"
-#                             f"The device with ID `{device_id}` has not sent a heartbeat for the past {time_diff} seconds "
-#                             f"(Last seen at: {last_heartbeat}).\n\n"
-#                             f"Please check the device.\n\n"
-#                             f"Regards,\nSystem Monitor"
-#                         )
+#     try:
+#         # Query all heartbeat records
+#         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#             cur.execute("SELECT id, last_controller_heartbeat FROM gates")
+#             rows = cur.fetchall()
+            
+#             # REMOVED: print(row) -> row is not defined yet
+            
+#             current_time = int(time.time())
+#             print(f"Current time: {current_time}")
 
-#                         # Send email via SES
-#                         # response = ses_client.send_email(
-#                         #     Source=SENDER_EMAIL,
-#                         #     Destination={"ToAddresses": RECIPIENT_EMAILS},
-#                         #     Message={
-#                         #         "Subject": {"Data": subject},
-#                         #         "Body": {
-#                         #             "Text": {"Data": body}
-#                         #         }
-#                         #     }
-#                         # )
-#                         send_email_gmail(subject,body)
-#                         print(f"Email alert sent for device {device_id}")
+#             for row in rows:
+#                 # Ensure your cursor returns a dict, otherwise use row[0] and row[1]
+#                 last_heartbeat = row['last_controller_heartbeat']
+#                 device_id = row['id']
+                
+#                 print("Checking device id:", device_id)
+                
+#                 if last_heartbeat:
+#                     # Convert PostgreSQL datetime to epoch seconds
+#                     time_diff = current_time - int(last_heartbeat.timestamp())
+#                     print(f"Time difference is {time_diff}")
+                    
+#                     if time_diff > THRESHOLD_SECONDS:
+#                         try:
+#                             subject = "Device Heartbeat Alert"
+#                             body = (
+#                                 f"Hello,\n\n"
+#                                 f"The device with ID `{device_id}` has not sent a heartbeat for the past {time_diff} seconds "
+#                                 f"(Last seen at: {last_heartbeat}).\n\n"
+#                                 f"Please check the device.\n\n"
+#                                 f"Regards,\nSystem Monitor"
+#                             )
+                            
+#                             send_email_gmail(subject, body)
+#                             print(f"Email alert sent for device {device_id}")
 
-#                     except Exception as e:
-#                             print("error",e)
-#                             return _error_response(404, "heartbeat monitoring failed.")
-#     return _success_response(200, {"message": "successfully monitored devices.", "device": device_id})
+#                         except Exception as e:
+#                             print(f"Failed to send email for device {device_id}: {e}")
+#                             # CHANGED: Do not return here. Just log and continue to next device.
+#                             continue 
+            
+#         # CHANGED: Dedented this to run AFTER the loop finishes
+#         # FIXED: Added missing '}'
+#         return _success_response(200, {"message": "successfully monitored devices"})
 
-import time
+#     except Exception as e:
+#         # Catch database connectivity errors
+#         print(f"Database error: {e}")
+#         return _error_response(500, "Monitoring execution failed.")
+
+
 
 def monitor_heartbeat(conn):
     print("started")
     try:
-        # Query all heartbeat records
+        # Pass the factory here so 'rows' become dictionaries
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT id, last_controller_heartbeat FROM gates")
+            
+            # Query the necessary columns
+            cur.execute("""
+                SELECT id, last_controller_heartbeat, last_alert_sent_at 
+                FROM gates
+            """)
             rows = cur.fetchall()
             
-            # REMOVED: print(row) -> row is not defined yet
-            
             current_time = int(time.time())
-            print(f"Current time: {current_time}")
 
             for row in rows:
-                # Ensure your cursor returns a dict, otherwise use row[0] and row[1]
-                last_heartbeat = row['last_controller_heartbeat']
+                # NOW you can use column names!
                 device_id = row['id']
+                last_heartbeat = row['last_controller_heartbeat']
+                last_alert = row['last_alert_sent_at']
                 
-                print("Checking device id:", device_id)
-                
-                if last_heartbeat:
-                    # Convert PostgreSQL datetime to epoch seconds
-                    time_diff = current_time - int(last_heartbeat.timestamp())
-                    print(f"Time difference is {time_diff}")
-                    
-                    if time_diff > THRESHOLD_SECONDS:
-                        try:
-                            subject = "Device Heartbeat Alert"
-                            body = (
-                                f"Hello,\n\n"
-                                f"The device with ID `{device_id}` has not sent a heartbeat for the past {time_diff} seconds "
-                                f"(Last seen at: {last_heartbeat}).\n\n"
-                                f"Please check the device.\n\n"
-                                f"Regards,\nSystem Monitor"
-                            )
-                            
-                            send_email_gmail(subject, body)
-                            print(f"Email alert sent for device {device_id}")
+                print(f"Checking device: {device_id}")
 
-                        except Exception as e:
-                            print(f"Failed to send email for device {device_id}: {e}")
-                            # CHANGED: Do not return here. Just log and continue to next device.
-                            continue 
+                if last_heartbeat:
+                    last_seen_seconds = int(last_heartbeat.timestamp())
+                    down_time = current_time - last_seen_seconds
+                    
+                    # 1. Check if device is legally "down"
+                    if down_time > THRESHOLD_SECONDS:
+                        
+                        # 2. Check if we are allowed to email (Smart Alert Logic)
+                        should_alert = False
+                        
+                        if last_alert is None:
+                            # Never alerted before
+                            should_alert = True
+                            print("  Status: First time alert.")
+                        else:
+                            # Alerted before, check if 24 hours passed
+                            last_alert_seconds = int(last_alert.timestamp())
+                            time_since_alert = current_time - last_alert_seconds
+                            
+                            if time_since_alert > ALERT_COOLDOWN:
+                                should_alert = True
+                                print(f"  Status: Cooldown expired ({time_since_alert}s). Resending.")
+                            else:
+                                print(f"  Status: In cooldown. Skipping.")
+
+                        # 3. Execute Alert
+                        if should_alert:
+                            try:
+                                subject = "Device Heartbeat Alert"
+                                body = (
+                                    f"Hello,\n\n"
+                                    f"The device `{device_id}` is down.\n"
+                                    f"Down for: {down_time} seconds.\n"
+                                    f"Last seen: {last_heartbeat}.\n\n"
+                                    f"Regards,\nSystem Monitor"
+                                )
+
+                                send_email_gmail(subject, body)
+                                print(f"  >> Email sent for {device_id}")
+                                
+                                # Update DB to prevent spamming
+                                cur.execute(
+                                    "UPDATE gates SET last_alert_sent_at = NOW() WHERE id = %s", 
+                                    (device_id,)
+                                )
+                                conn.commit() # Save the timestamp!
+
+                            except Exception as e:
+                                print(f"  !! Failed to send email/update DB: {e}")
+                                continue
             
-        # CHANGED: Dedented this to run AFTER the loop finishes
-        # FIXED: Added missing '}'
-        return _success_response(200, {"message": "successfully monitored devices"})
+            # This is now correctly indented outside the loop but inside the 'try'
+            return _success_response(200, {"message": "successfully monitored devices"})
 
     except Exception as e:
-        # Catch database connectivity errors
-        print(f"Database error: {e}")
+        print(f"Critical Monitoring Error: {e}")
         return _error_response(500, "Monitoring execution failed.")
+                           
                            
