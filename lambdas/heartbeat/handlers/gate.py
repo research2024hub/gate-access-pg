@@ -83,6 +83,23 @@ def send_email_gmail(subject,message):
 #         return _error_response(500, "Monitoring execution failed.")
 
 
+def format_downtime(seconds):
+    seconds = int(seconds)
+    intervals = (
+        ('day', 86400),    # 60 * 60 * 24
+        ('hour', 3600),    # 60 * 60
+        ('minute', 60),
+        ('second', 1),
+    )
+
+    result = []
+    for name, count in intervals:
+        value = seconds // count
+        if value:
+            seconds -= value * count
+            result.append(f"{value} {name}{'s' if value > 1 else ''}")
+    
+    return ", ".join(result[:2])  # Return only the two biggest units
 
 def monitor_heartbeat(conn):
     print("started")
@@ -113,7 +130,7 @@ def monitor_heartbeat(conn):
                     
                     # 1. Check if device is legally "down"
                     if down_time > THRESHOLD_SECONDS:
-                        
+                        down_timer = format_downtime(down_time)
                         # 2. Check if we are allowed to email (Smart Alert Logic)
                         should_alert = False
                         
@@ -135,12 +152,14 @@ def monitor_heartbeat(conn):
                         # 3. Execute Alert
                         if should_alert:
                             try:
+                                # Format: YYYY-MM-DD HH:MM:SS.ss
+                                readable_timestamp = last_heartbeat.strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]
                                 subject = "Device Heartbeat Alert"
                                 body = (
                                     f"Hello,\n\n"
-                                    f"The device `{device_id}` is down.\n"
-                                    f"Down for: {down_time} seconds.\n"
-                                    f"Last seen: {last_heartbeat}.\n\n"
+                                    f"The device with ID {device_id} is down.\n"
+                                    f"Down for: {down_timer}\n"
+                                    f"Last seen: {readable_timestamp}.\n\n"
                                     f"Regards,\nSystem Monitor"
                                 )
 
