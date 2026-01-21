@@ -1,6 +1,6 @@
 import json
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results, log
+from utils import _error_response, _success_response, process_db_results, log, send_gmail
 from middleware import verify_token
 import time
 import boto3
@@ -109,9 +109,18 @@ def monitor_heartbeat(conn):
             
             # Query the necessary columns
             cur.execute("""
-                SELECT id, last_controller_heartbeat, last_alert_sent_at 
-                FROM gates
+              SELECT 
+                    g.id, 
+                    g.last_controller_heartbeat, 
+                    g.last_alert_sent_at,
+                    g.name,
+                    u.email
+                FROM gates g
+                LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
+                LEFT JOIN accounts a ON pi.id = a.personal_info_id
+                LEFT JOIN users u ON a.user_id = u.id  
             """)
+            
             rows = cur.fetchall()
             
             current_time = int(time.time())
@@ -121,7 +130,7 @@ def monitor_heartbeat(conn):
                 device_id = row['id']
                 last_heartbeat = row['last_controller_heartbeat']
                 last_alert = row['last_alert_sent_at']
-                
+                email = row['email']
                 print(f"Checking device: {device_id}")
 
                 if last_heartbeat:
@@ -164,6 +173,8 @@ def monitor_heartbeat(conn):
                                 )
 
                                 send_email_gmail(subject, body)
+                                message = "We are currently experiencing technical difficulties with the . Our team is investigating the issue and working on a fix right now. We apologize for the interruption and expect to be back online shortly."
+                                send_gmail(email,subject, message)
                                 print(f"  >> Email sent for {device_id}")
                                 
                                 # Update DB to prevent spamming

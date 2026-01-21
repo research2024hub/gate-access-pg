@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from psycopg2.extras import RealDictCursor
-from utils import _error_response as _base_error_response, _success_response as _base_success_response, log  # project-level helpers
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, log, send_gmail # project-level helpers
 from middleware import verify_token, cors_wrap
 
 # ---------------------------------------------------------------------------
@@ -524,3 +524,33 @@ def get_gate_usage(conn, event):
 
 """You can use ROUTE_TABLE to dispatch based on the HTTP method + path when
 wiring up in a minimal custom Lambda handler or another framework."""
+
+def alert_user(conn, body, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+    is_admin = payload.get("is_admin", False)
+    user_id = payload.get("user_id")
+    if not is_admin:
+        return _error_response(403, "Access denied. Only admins can perform this action.")
+    message = body.get(message)
+    subject = "System Status Update"
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # We fetch the gate info AND the email in one go
+            query = """
+                SELECT 
+                    g.id, 
+                    g.last_controller_heartbeat, 
+                    g.last_alert_sent_at,
+                    u.email
+                FROM gates g
+                LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
+                LEFT JOIN accounts a ON pi.id = a.personal_info_id
+                LEFT JOIN users u ON a.user_id = u.id
+            """
+            cur.execute(query)
+            rows = cur.fetchall()
+            for row in rows:
+                email = row[email]
+                send_gmail(email, subject, email)
+    return _success_response(200, "message successfully sent")
