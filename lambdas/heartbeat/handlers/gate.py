@@ -174,7 +174,8 @@ def monitor_heartbeat(conn):
 
                                 send_email_gmail(subject, body)
                                 message = "We are currently experiencing technical difficulties with the . Our team is investigating the issue and working on a fix right now. We apologize for the interruption and expect to be back online shortly."
-                                send_gmail(email,subject, message)
+                                topic = "Gate Access System Update"
+                                send_gmail(email,topic, message)
                                 print(f"  >> Email sent for {device_id}")
                                 
                                 # Update DB to prevent spamming
