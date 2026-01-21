@@ -117,7 +117,7 @@ def monitor_heartbeat(conn):
                     u.email
                 FROM gates g
                 LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
-                LEFT JOIN accounts a ON pi.id = a.personal_info_id
+                LEFT JOIN account_holders a ON pi.id = a.personal_info_id
                 LEFT JOIN users u ON a.user_id = u.id  
             """)
             
