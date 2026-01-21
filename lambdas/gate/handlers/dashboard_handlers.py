@@ -545,7 +545,7 @@ def alert_user(conn, body, event):
                     u.email
                 FROM gates g
                 LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
-                LEFT JOIN accounts a ON pi.id = a.personal_info_id
+                LEFT JOIN account_holders a ON pi.id = a.personal_info_id
                 LEFT JOIN users u ON a.user_id = u.id
             """
             cur.execute(query)
@@ -554,3 +554,71 @@ def alert_user(conn, body, event):
                 email = row[email]
                 send_gmail(email, subject, email)
     return _success_response(200, "message successfully sent")
+
+import json
+from datetime import datetime, timedelta, timezone
+
+def process_downtime_alerts(conn, gate_id):
+    now = datetime.now(timezone.utc)
+    
+    # 1. Get metrics for the last 15 mins
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""
+            SELECT device_timestamp, offline_camera_ids 
+            FROM system_metrics 
+            WHERE gate_id = %s AND device_timestamp >= %s 
+            ORDER BY device_timestamp ASC
+        """, (gate_id, now - timedelta(minutes=15)))
+        records = cur.fetchall()
+
+    if not records: return
+
+    # 2. Logic: Find cameras down for > 10 mins continuously
+    streak_start = {}
+    candidates = set()
+    
+    for rec in records:
+        # Standardize time
+        ts = rec['device_timestamp']
+        if ts.tzinfo is None: ts = ts.replace(tzinfo=timezone.utc)
+        
+        # Get offline cameras in this record
+        offline = set(json.loads(rec.get('offline_camera_ids') or "[]"))
+
+        # Reset streak if camera comes back online
+        streak_start = {c: t for c, t in streak_start.items() if c in offline}
+        
+        # Start or check streak
+        for cam in offline:
+            if cam not in streak_start:
+                streak_start[cam] = ts
+            elif (ts - streak_start[cam]).total_seconds() >= 600: # 10 mins
+                candidates.add(cam)
+
+    if not candidates: return
+
+    # 3. Optimized DB Check: Search for last sent records for these candidates ONLY
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT camera_id, last_alert FROM alert_history 
+            WHERE gate_id = %s AND camera_id = ANY(%s)
+        """, (gate_id, list(candidates)))
+        
+        # Create a lookup dict: {'cam_01': datetime(...), ...}
+        last_alerts = {row[0]: row[1] for row in cur.fetchall()}
+
+        for cam in candidates:
+            last_sent = last_alerts.get(cam)
+            
+            # Send if never sent OR sent > 30 mins ago
+            if not last_sent or (now - last_sent.replace(tzinfo=timezone.utc)) > timedelta(minutes=30):
+                send_gmail(email,subject,msg) 
+                
+                # Update "Last Record Sent"
+                cur.execute("""
+                    INSERT INTO alert_history (gate_id, camera_id, last_alert) 
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (gate_id, camera_id) DO UPDATE SET last_alert = EXCLUDED.last_alert
+                """, (gate_id, cam, now))
+        
+        conn.commit()
