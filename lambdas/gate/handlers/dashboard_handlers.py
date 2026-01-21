@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from psycopg2.extras import RealDictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, log, send_gmail # project-level helpers
 from middleware import verify_token, cors_wrap
-
+THRESHOLD_SECONDS = 600
 # ---------------------------------------------------------------------------
 # CORS helper & patched response wrappers
 # ---------------------------------------------------------------------------
@@ -564,61 +564,83 @@ def process_downtime_alerts(conn, gate_id):
     # 1. Get metrics for the last 15 mins
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            SELECT device_timestamp, offline_camera_ids 
+            SELECT device_timestamp, offline_camera_ids ,last_alert
             FROM system_metrics 
             WHERE gate_id = %s AND device_timestamp >= %s 
             ORDER BY device_timestamp ASC
         """, (gate_id, now - timedelta(minutes=15)))
-        records = cur.fetchall()
+        rows = cur.fetchall()
 
-    if not records: return
+    # if not rows: return
+        current_time = int(time.time())
+   
+        for row in rows:
+            # NOW you can use column names!
+            timestamp = row['device_timestamp']
+            offline_camera_ids = row['offline_camera_ids']
+            last_alert = row['last_alert']
+            email = row['email']
+            print(f"Checking device: {offline_camera_ids}")
 
-    # 2. Logic: Find cameras down for > 10 mins continuously
-    streak_start = {}
-    candidates = set()
-    
-    for rec in records:
-        # Standardize time
-        ts = rec['device_timestamp']
-        if ts.tzinfo is None: ts = ts.replace(tzinfo=timezone.utc)
-        
-        # Get offline cameras in this record
-        offline = set(json.loads(rec.get('offline_camera_ids') or "[]"))
-
-        # Reset streak if camera comes back online
-        streak_start = {c: t for c, t in streak_start.items() if c in offline}
-        
-        # Start or check streak
-        for cam in offline:
-            if cam not in streak_start:
-                streak_start[cam] = ts
-            elif (ts - streak_start[cam]).total_seconds() >= 600: # 10 mins
-                candidates.add(cam)
-
-    if not candidates: return
-
-    # 3. Optimized DB Check: Search for last sent records for these candidates ONLY
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT camera_id, last_alert FROM alert_history 
-            WHERE gate_id = %s AND camera_id = ANY(%s)
-        """, (gate_id, list(candidates)))
-        
-        # Create a lookup dict: {'cam_01': datetime(...), ...}
-        last_alerts = {row[0]: row[1] for row in cur.fetchall()}
-
-        for cam in candidates:
-            last_sent = last_alerts.get(cam)
-            
-            # Send if never sent OR sent > 30 mins ago
-            if not last_sent or (now - last_sent.replace(tzinfo=timezone.utc)) > timedelta(minutes=30):
-                send_gmail(email,subject,msg) 
+            if offline_camera_ids:
+                timestamp = int(timestamp.timestamp())
+                down_time = current_time - last_seen_seconds
                 
-                # Update "Last Record Sent"
-                cur.execute("""
-                    INSERT INTO alert_history (gate_id, camera_id, last_alert) 
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (gate_id, camera_id) DO UPDATE SET last_alert = EXCLUDED.last_alert
-                """, (gate_id, cam, now))
+                # 1. Check if device is legally "down"
+                if down_time > THRESHOLD_SECONDS:
+                    down_timer = format_downtime(down_time)
+                    # 2. Check if we are allowed to email (Smart Alert Logic)
+                    should_alert = False
+                    
+                    if last_alert is None:
+                        # Never alerted before
+                        should_alert = True
+                        print("  Status: First time alert.")
+                    else:
+                        # Alerted before, check if 24 hours passed
+                        last_alert_seconds = int(last_alert.timestamp())
+                        time_since_alert = current_time - last_alert_seconds
+                        
+                        if time_since_alert > ALERT_COOLDOWN:
+                            should_alert = True
+                            print(f"  Status: Cooldown expired ({time_since_alert}s). Resending.")
+                        else:
+                            print(f"  Status: In cooldown. Skipping.")
+
+                    # 3. Execute Alert
+                    if should_alert:
+                        try:
+                            # Format: YYYY-MM-DD HH:MM:SS.ss
+                            readable_timestamp = last_heartbeat.strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]
+                            subject = "Device Heartbeat Alert"
+                            body = (
+                                f"Hello,\n\n"
+                                f"The device with ID {device_id} is down.\n"
+                                f"Down for: {down_timer}\n"
+                                f"Last seen: {readable_timestamp}.\n\n"
+                                f"Regards,\nSystem Monitor"
+                            )
+
+                            send_email_gmail(subject, body)
+                            message = "We are currently experiencing technical difficulties with the . Our team is investigating the issue and working on a fix right now. We apologize for the interruption and expect to be back online shortly."
+                            topic = "Gate Access System Update"
+                            send_gmail(email,topic, message)
+                            print(f"  >> Email sent for {device_id}")
+                            
+                            # Update DB to prevent spamming
+                            cur.execute(
+                                "UPDATE gates SET last_alert_sent_at = NOW() WHERE id = %s", 
+                                (device_id,)
+                            )
+                            conn.commit() # Save the timestamp!
+
+                        except Exception as e:
+                            print(f"  !! Failed to send email/update DB: {e}")
+                            continue
         
-        conn.commit()
+        # This is now correctly indented outside the loop but inside the 'try'
+        return _success_response(200, {"message": "successfully monitored devices"})
+
+    except Exception as e:
+        print(f"Critical Monitoring Error: {e}")
+        return _error_response(500, "Monitoring execution failed.")

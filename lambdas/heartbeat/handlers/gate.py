@@ -131,6 +131,7 @@ def monitor_heartbeat(conn):
                 last_heartbeat = row['last_controller_heartbeat']
                 last_alert = row['last_alert_sent_at']
                 email = row['email']
+                name = row['name']
                 print(f"Checking device: {device_id}")
 
                 if last_heartbeat:
@@ -173,7 +174,7 @@ def monitor_heartbeat(conn):
                                 )
 
                                 send_email_gmail(subject, body)
-                                message = "We are currently experiencing technical difficulties with the . Our team is investigating the issue and working on a fix right now. We apologize for the interruption and expect to be back online shortly."
+                                message = f"We are currently experiencing technical difficulties with the {name} . Our team is investigating the issue and working on a fix right now. We apologize for the interruption and expect to be back online shortly."
                                 topic = "Gate Access System Update"
                                 send_gmail(email,topic, message)
                                 print(f"  >> Email sent for {device_id}")
