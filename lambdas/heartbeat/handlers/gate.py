@@ -248,6 +248,7 @@ def monitor_heartbeat(conn):
                         else:
                             last_alert_seconds = int(last_alert.timestamp())
                             time_since_alert = current_time - last_alert_seconds
+                            print(time_since_alert)
                             
                             if time_since_alert > ALERT_COOLDOWN:
                                 should_alert = True
@@ -275,12 +276,14 @@ def monitor_heartbeat(conn):
 
                                 # --- 2. USER ALERTS (Preserves original behavior) ---
                                 # We now loop through the list of emails to ensure every user still gets their notification.
-                                user_message = f"We are currently experiencing technical difficulties with the {name} . Our team is investigating the issue and working on a fix right now. We apologize for the interruption and expect to be back online shortly."
+                                user_message =(f"We are currently experiencing technical difficulties with the {name} . Our team is investigating the issue and working on a fix right now. We apologize for the interruption and expect to be back online shortly.\n\n"
+                                                f"Regards,\nSystem Monitor")
+                                
                                 user_topic = "Gate Access System Update"
                                 
-                                for email in user_emails_list:
-                                    if email: # Safety check to skip empty emails
-                                        send_gmail(email, user_topic, user_message)
+                                # for email in user_emails_list:
+                                #     if email: # Safety check to skip empty emails
+                                #         send_gmail(email, user_topic, user_message)
 
                                 # --- 3. UPDATE DB ---
                                 cur.execute(
