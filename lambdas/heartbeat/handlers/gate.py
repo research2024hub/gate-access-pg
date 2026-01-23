@@ -213,7 +213,7 @@ def monitor_heartbeat(conn):
                     g.last_controller_heartbeat, 
                     g.last_alert_sent_at,
                     g.name,
-                    array_agg(u.email) as user_emails
+                    array_agg(u.email) FILTER (WHERE u.email IS NOT NULL) AS user_emails
                 FROM gates g
                 LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
                 LEFT JOIN account_holders a ON pi.id = a.personal_info_id
@@ -239,6 +239,7 @@ def monitor_heartbeat(conn):
 
                 if last_heartbeat:
                     last_seen_seconds = int(last_heartbeat.timestamp())
+                    print("last seen",last_seen_seconds)
                     down_time = current_time - last_seen_seconds
                     
                     if down_time > THRESHOLD_SECONDS:
