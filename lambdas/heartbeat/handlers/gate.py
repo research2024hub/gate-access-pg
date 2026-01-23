@@ -267,6 +267,7 @@ def monitor_heartbeat(conn):
                                     "UPDATE gates SET last_alert_sent_at = NOW() WHERE id = %s", 
                                     (device_id,)
                                 )
+                                conn.commit()
                                 # --- 1. ADMIN ALERT (Fixes your issue) ---
                                 # This now runs exactly ONCE per device, because the loop runs once per device.
                                 subject = "Device Heartbeat Alert"
@@ -294,7 +295,7 @@ def monitor_heartbeat(conn):
 
                                 # --- 3. UPDATE DB ---
                                 
-                                conn.commit()
+                             
 
                             except Exception as e:
                                 print(f"  !! Failed to send email/update DB: {e}")
