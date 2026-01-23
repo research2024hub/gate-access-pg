@@ -227,7 +227,9 @@ def monitor_heartbeat(conn):
             for row in rows:
                 device_id = row['id']
                 last_heartbeat = row['last_controller_heartbeat']
+                print("last alert at",last_heartbeat)
                 last_alert = row['last_alert_sent_at']
+                print("last alert at",last_alert)
                 name = row['name']
                 # This is now a LIST of emails: ['user1@gmail.com', 'user2@yahoo.com']
                 user_emails_list = row['user_emails']
