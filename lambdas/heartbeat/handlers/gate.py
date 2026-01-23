@@ -301,6 +301,8 @@ def monitor_heartbeat(conn):
                             except Exception as e:
                                 print(f"  !! Failed to send email/update DB: {e}")
                                 continue
+                    else:
+                        print(f"{name} is up and running")
             
             return _success_response(200, {"message": "successfully monitored devices"})
 
