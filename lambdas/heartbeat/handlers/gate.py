@@ -222,6 +222,7 @@ def monitor_heartbeat(conn):
             """)
             
             rows = cur.fetchall()
+            print("the data",row)
             current_time = int(time.time())
 
             for row in rows:
