@@ -222,7 +222,7 @@ def monitor_heartbeat(conn):
             """)
             
             rows = cur.fetchall()
-            print("the data",row)
+            print("the data",rows)
             current_time = int(time.time())
 
             for row in rows:
@@ -258,11 +258,15 @@ def monitor_heartbeat(conn):
                                 print(f"  Status: Cooldown expired. Resending.")
                             else:
                                 print(f"  Status: In cooldown. Skipping.")
+                        
 
                         if should_alert:
                             try:
                                 readable_timestamp = last_heartbeat.strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]
-                                
+                                cur.execute(
+                                    "UPDATE gates SET last_alert_sent_at = NOW() WHERE id = %s", 
+                                    (device_id,)
+                                )
                                 # --- 1. ADMIN ALERT (Fixes your issue) ---
                                 # This now runs exactly ONCE per device, because the loop runs once per device.
                                 subject = "Device Heartbeat Alert"
@@ -289,10 +293,7 @@ def monitor_heartbeat(conn):
                                 #         send_gmail(email, user_topic, user_message)
 
                                 # --- 3. UPDATE DB ---
-                                cur.execute(
-                                    "UPDATE gates SET last_alert_sent_at = NOW() WHERE id = %s", 
-                                    (device_id,)
-                                )
+                                
                                 conn.commit()
 
                             except Exception as e:
