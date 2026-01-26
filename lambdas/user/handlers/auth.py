@@ -4,7 +4,7 @@ import os
 import json
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
-from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_message
 from middleware import verify_token, cors_wrap, CORS_HEADERS
 import random
 import smtplib
@@ -42,9 +42,21 @@ def send_email_gmail(to_email, subject, message):
     server.send_message(msg)
     server.quit()
     
-def create_token(email):
+# def create_token(email):
+#     payload = {
+#         "": email,
+#         "exp": datetime.utcnow() + timedelta(minutes=15)
+#     }
+#     return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
+
+def create_token(identifier):
+    # 1. Check if the identifier is an email or phone number
+    if "@" in identifier:
+        key = "email"
+    else:
+        key = "phone_number"
     payload = {
-        "email": email,
+        key: identifier,  # This creates either {"email": ...} or {"phone_number": ...}
         "exp": datetime.utcnow() + timedelta(minutes=15)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
@@ -52,7 +64,7 @@ def create_token(email):
 def decode_token(token):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
-        return payload["email"]
+        return payload
     except jwt.ExpiredSignatureError:
         raise ValueError("Token expired")
     except Exception:
@@ -146,71 +158,97 @@ def send_user_otp(conn, body):
 
 def register_user(conn, body):
     email = body.get("email")
+    phone_number = body.get("phone_number")
     password = body.get("password")
 
-    if not email or not password:
-        return _error_response(400, "Missing email or password.")
+    if not password or (not phone_number and not email):
+        return _error_response(400, "Missing email, phone_number or password.")
 
     hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     otp = str(random.randint(100000, 999999))
     print(f"otp:{otp}")
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT 1 FROM users WHERE email = %s LIMIT 1;", (email,))
+        cur.execute("SELECT 1 FROM users WHERE email = %s  OR  phone_number = %s LIMIT 1;", (email, phone_number))
         if cur.fetchone():
-            return _error_response(409, "Email already exist as a user.")
+            return _error_response(409, "User already exist .")
         cur.execute("""
-                DELETE FROM pending_users WHERE email = %s
-            """,(email,))
+                DELETE FROM pending_users WHERE email = %s OR phone_number = %s 
+            """,(email, phone_number))
         cur.execute("""
-            INSERT INTO pending_users (email, password, otp, otp_expiry)
-            VALUES (%s, %s, %s, NOW() + INTERVAL '10 minutes')
-        """, (email, hashed_password, otp))
-
-        title = 'Your OTP Code'
-        message =f"Your OTP is: {otp}\n\nExpires in 10 minutes."
-        token = create_token(email)
-        send_email_gmail(email, title, message)
+            INSERT INTO pending_users (email, password, otp, otp_expiry, phone_number)
+            VALUES (%s, %s, %s, NOW() + INTERVAL '10 minutes', %s)
+        """, (email, hashed_password, otp, phone_number))
+        message =f"Your OTP is: {otp}\n\nExpires in 10 minutes.\nPlease Do not share it."
+        if email:
+            title = 'Your OTP Code'
+            # message =f"Your OTP is: {otp}\n\nExpires in 10 minutes."
+            token = create_token(email)
+            send_email_gmail(email, title, message)
+        elif phone_number:
+            # message = f"Your OTP is {otp}. Valid for 10 minutes. Please Do not share it."
+            token = create_token(phone_number)
+            send_message(phone_number, message)
+            
       
 
         conn.commit()
 
     return _success_response(200, {"message": "OTP sent to email. Please verify to complete registration.", "token": token})
+# def receive_otp(conn, body):
+#     email = body.get("email")
+#     phone_number = body.get("phone_number")
+#     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#         cur.execute("SELECT otp FROM pending_users WHERE email = %s LIMIT 1;", (email,))
+#         otp_row = cur.fetchone()
+#         if otp_row:
+#             otp = otp_row['otp']
+#             print("ready to join users")
+            
+#             message = f"Your OTP is {otp}. Valid for 10 minutes. Please Do not share it."
+#             send_message(phone_number, message)
+#     return _success_response(200, {"message": "OTP sent to", "Phone Number":phone_number })
 
 def verify_otp(conn, body):
     token = body.get("token")
     input_otp = body.get("otp")
+    # phone_number = body.get("phone_number")
 
     if not token or not input_otp:
         return _error_response(400, "Missing token or OTP.")
 
-    email = decode_token(token)
-    if not email:
+    result = decode_token(token)
+    if not result:
         return _error_response(400, "Invalid token.")
-
+    email = result.get("email") 
+    phone_number = result.get("phone_number")
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
-            SELECT password, otp, otp_expiry FROM pending_users WHERE email = %s
-        """, (email,))
-        row = cur.fetchone()
-
+        if email:
+            cur.execute("""
+                SELECT password, otp, otp_expiry FROM pending_users WHERE email = %s
+            """, (email))
+            row = cur.fetchone()
+        else:
+            cur.execute("""
+                SELECT password, otp, otp_expiry FROM pending_users WHERE phone_number = %s 
+            """, (phone_number))
+            row = cur.fetchone()
         if not row:
             return _error_response(404, "No pending registration found for this email.")
         if row["otp"] != input_otp:
             return _error_response(401, "Invalid OTP.")
         if row["otp_expiry"] < datetime.utcnow():
             return _error_response(401, "OTP expired.")
-
         # Create user
         cur.execute("""
-            INSERT INTO users (email, password)
-            VALUES (%s, %s)
+            INSERT INTO users (email, password, phone_number)
+            VALUES (%s, %s, %s)
             RETURNING id
-        """, (email, row["password"]))
+        """, (email, row["password"],phone_number))
         user_id = cur.fetchone()["id"]
 
         # Clean up
-        cur.execute("DELETE FROM pending_users WHERE email = %s", (email,))
-        log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] registered", user_id, None, None)
+        cur.execute("DELETE FROM pending_users WHERE email = %s OR phone_number = %s", (email, phone_number))
+        log(conn, "USER_REGISTRATION", f"User '{user_id}' [{email}] or {phone_number} registered", user_id, None, None)
 
         conn.commit()
 
@@ -224,8 +262,9 @@ def register_admin_user(conn, body):
     email = body.get("email")
     password = body.get("password")
     passkey = body.get("passkey")
+    phone_number = body.get("phone_number")
 
-    if not email or not password:
+    if not password or (not phone_number and not email):
         return _error_response(400, "Missing 'email' or 'password'.")
     
     if passkey != "adnwcbwcqweinov":
@@ -234,15 +273,24 @@ def register_admin_user(conn, body):
     hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id FROM users WHERE email = %s", (email,))
-        if cur.fetchone():
+        if email:
+            cur.execute("""
+                SELECT password, otp, otp_expiry FROM pending_users WHERE email = %s
+            """, (email))
+            row = cur.fetchone()
+        else:
+            cur.execute("""
+                SELECT password, otp, otp_expiry FROM pending_users WHERE phone_number = %s 
+            """, (phone_number))
+            row = cur.fetchone()
+        if row:
             return _error_response(409, "User already exists.")
 
         cur.execute("""
-            INSERT INTO users (email, password, is_admin)
+            INSERT INTO users (email, password, is_admin, phone_number)
             VALUES (%s, %s, true)
             RETURNING id
-        """, (email, hashed_password))
+        """, (email, hashed_password, phone_number))
         user_id = cur.fetchone()["id"]
 
         log(conn, "GLOBAL_ADMIN_USER_REGISTRATION", f"User '{user_id}' [{email}] registered as global admin", user_id, None, None)
@@ -259,22 +307,27 @@ def login_user(conn, body):
     print("\n---[DEBUG] Starting login_user ---")
     email = body.get("email")
     password = body.get("password")
+    phone_number =body.get("phone_number")
 
     print("[DEBUG] Received login request. Email:", email)
 
-    if not email or not password:
-        print("[DEBUG] Missing email or password in request body")
-        return _error_response(400, "Missing 'email' or 'password'.")
+    if not password or (not phone_number and not email):
+        print("[DEBUG] Missing email, password or phone_number in request body")
+        return _error_response(400, "Missing 'email', 'password' or 'phone_number'.")
 
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             print("[DEBUG] Querying user by email...")
-            cur.execute("SELECT id, password, is_active, is_admin FROM users WHERE email = %s", (email,))
+            cur.execute("""
+                    SELECT id, password, is_active, is_admin 
+                    FROM users 
+                    WHERE email = %s OR phone_number = %s
+                """, (email, phone_number))
             user = cur.fetchone()
 
             if not user:
-                print("[DEBUG] No user found for email:", email)
-                return _error_response(401, "Invalid email or password.")
+                print("[DEBUG] No user such found")
+                return _error_response(401, "Invalid email, password or phone_number.")
 
             user_id = user["id"]
             stored_password = user["password"]
@@ -377,6 +430,7 @@ def login_user(conn, body):
             "message": "Login successful.",
             "token": token,
             "user_id": user_id,
+            "phone_number": phone_number,
             "accounts": process_db_results(accounts)
         })
 

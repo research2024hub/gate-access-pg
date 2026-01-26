@@ -42,6 +42,11 @@ Resources:
           Properties:
             Path: /user/send_otp  # Organized under /user/
             Method: POST
+        SendUserOTPviaSMSApi:
+          Type: Api
+          Properties:
+            Path: /user/receive_otp  # Organized under /user/
+            Method: POST
         VerifyUserOTPApi:
           Type: Api
           Properties:

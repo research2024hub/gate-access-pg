@@ -115,10 +115,11 @@ def create_sub_account(conn, body, event):
                   #"parent_account_holder_id": parent_account_holder_id,
                   "email" : child_email,
                   "pending_holder_id": pending_holder_id,
-                  "personal_info_id": personal_info_id
+                  "personal_info_id": personal_info_id,
             #     "user_id": child_user_id,
             #     "estate_id": estate_id,
             #     "house_address": house_address
+                  "phone_number": contact
             }
         })
 

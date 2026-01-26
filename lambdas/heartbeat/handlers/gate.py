@@ -8,6 +8,7 @@ import smtplib
 from email.mime.text import MIMEText
 from datetime import datetime, timedelta, timezone
 from typing import Dict
+from collections import defaultdict
 # ses_client = boto3.client('ses')
 SENDER_EMAIL =   "itcresearch85@gmail.com"
 RECIPIENT_EMAILS = "itcresearch340@gmail.com"
@@ -269,7 +270,7 @@ def monitor_heartbeat(conn):
                                     (device_id,)
                                 )
                                 conn.commit()
-                                # --- 1. ADMIN ALERT (Fixes your issue) ---
+    
                                 # This now runs exactly ONCE per device, because the loop runs once per device.
                                 subject = "Device Heartbeat Alert"
                                 admin_body = (
@@ -290,9 +291,9 @@ def monitor_heartbeat(conn):
                                 
                                 user_topic = "Gate Access System Update"
                                 
-                                # for email in user_emails_list:
-                                #     if email: # Safety check to skip empty emails
-                                #         send_gmail(email, user_topic, user_message)
+                                for email in user_emails_list:
+                                    if email: # Safety check to skip empty emails
+                                        send_gmail(email, user_topic, user_message)
 
                                 # --- 3. UPDATE DB ---
                                 
@@ -328,22 +329,18 @@ def get_camera_downtime(conn):
         records = cur.fetchall()
 
     # Track ongoing offline cameras
-    ongoing: Dict[str, datetime] = {}
+    ongoing: Dict[str, Dict[str, datetime]] = defaultdict(dict)
+    # Key: gate_id
+    # Value: dict {camera_id: first_seen_timestamp}
+
     alerted_this_run: set[str] = set()
 
     for rec in records:
-        # -------------------------
-        # Timestamp processing
-        # -------------------------
         ts = rec["device_timestamp"]
         if isinstance(ts, str):
             ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=timezone.utc)
-
-        # -------------------------
-        # Current offline cameras
-        # -------------------------
         raw = rec.get("offline_camera_ids")
         gate_id = rec.get('gate_id')
         if not raw:
@@ -355,89 +352,80 @@ def get_camera_downtime(conn):
                 offline_now = set(map(str, json.loads(raw)))
             except Exception:
                 offline_now = set()
-
-        # -------------------------
-        # Last alert timestamps (JSON)
-        # -------------------------
         raw_alert_ts = rec.get("camera_alert_ts")
         try:
+           # Track last alert per gate
             alert_ts_dict = json.loads(raw_alert_ts) if raw_alert_ts else {}
+            last_alerts: Dict[str, Dict[str, datetime]] = defaultdict(dict)
+            for cam, alert_ts in alert_ts_dict.items():
+                last_alerts[gate_id][cam] = parse_ts(alert_ts)
+
         except Exception:
             alert_ts_dict = {}
-
-        # -------------------------
-        # Track new offline cameras
-        # -------------------------
+        # Track new offline cameras per gate
         for cam in offline_now:
-            if cam not in ongoing:
-                ongoing[cam] = ts
+            if cam not in ongoing[gate_id]:
+                ongoing[gate_id][cam] = ts
 
-        # -------------------------
-        # Remove cameras that came back online
-        # -------------------------
-        for cam in list(ongoing):
+        # Remove cameras back online
+        for cam in list(ongoing[gate_id]):
             if cam not in offline_now:
-                ongoing.pop(cam, None)
+                ongoing[gate_id].pop(cam)
 
-        # -------------------------
-        # Check for alerts
-        # -------------------------
-        for cam, start_time in ongoing.items():
-            duration_minutes = (ts - start_time).total_seconds() / 60
-            if duration_minutes < 10:
-                continue
-
-            if cam in alerted_this_run:
-                continue
-
-            # Check last alert timestamp for 24-hour cooldown
-            last_alert_iso = alert_ts_dict.get(cam)
-            if last_alert_iso:
-                last_alert_dt = datetime.fromisoformat(last_alert_iso.replace("Z", "+00:00"))
-                if ts - last_alert_dt < timedelta(hours=24):
+        for gate, cams in ongoing.items():
+            for cam, start_time in cams.items():
+                duration_minutes = (ts - start_time).total_seconds() / 60
+                if duration_minutes < 10 or (gate, cam) in alerted_this_run:
                     continue
 
-            # -------------------------
-            # Send alert
-            # -------------------------
-            subject = "Camera Alert"
-            body = (
+                last_alert_iso = alert_ts_dict.get(cam)
+                if last_alert_iso:
+                    last_alert_dt = datetime.fromisoformat(last_alert_iso.replace("Z", "+00:00"))
+                    if ts - last_alert_dt < timedelta(hours=24):
+                        continue
+
+                # Send alert
+                subject = "Camera Alert"
+                body = (
                     f"Hello,\n\n"
-                    f"The camera with ID {raw} is down.\n"
-                    f"Last seen: {ts}.\n\n"
+                    f"The camera with ID {cam} at Gate {gate} is down.\n"
+                    f"Offline since: {start_time} ({int(duration_minutes)} min).\n\n"
                     f"Regards,\nSystem Monitor"
-                        )
-            send_email_gmail(subject, body)
-            alerted_this_run.add(cam)
+                )
+                send_email_gmail(subject, body)
+                alerted_this_run.add((gate, cam))
 
-            # -------------------------
-            # Update system_metrics.camera_alert_ts
-            # -------------------------
-            alert_ts_dict[cam] = ts.isoformat().replace("+00:00", "Z")
-            update_sql = """
-                UPDATE system_metrics
-                SET camera_alert_ts = %s
-                WHERE gate_id = %s AND device_timestamp = %s
-            """
-            with conn.cursor() as cur2:
-                cur2.execute(update_sql, (json.dumps(alert_ts_dict), gate_id, ts))
-            conn.commit()
+                # Update DB
+                alert_ts_dict[cam] = ts.isoformat().replace("+00:00", "Z")
+                update_sql = """
+                    UPDATE system_metrics
+                    SET camera_alert_ts = %s
+                    WHERE gate_id = %s AND device_timestamp = %s
+                """
+                with conn.cursor() as cur2:
+                    cur2.execute(update_sql, (json.dumps(alert_ts_dict), gate, ts))
+                conn.commit()
 
-    # -------------------------
-    # Return offline cameras for the last 15 min
-    # -------------------------
     return _success_response(200, {
-        "checked_from": start_dt.isoformat().replace("+00:00", "Z"),
-        "checked_to": now.isoformat().replace("+00:00", "Z"),
-        "currently_offline": [
-            {
-                "camera_id": cam,
-                "offline_since": start.isoformat().replace("+00:00", "Z"),
-                "duration_minutes": int((now - start).total_seconds() / 60),
-            }
-            for cam, start in ongoing.items()
-        ],
-    })
+    "checked_from": start_dt.isoformat().replace("+00:00", "Z"),
+    "checked_to": now.isoformat().replace("+00:00", "Z"),
+    "currently_offline": [
+        {
+            "camera_id": cam,
+            "offline_since": start.isoformat().replace("+00:00", "Z"),
+            "duration_minutes": int((now - start).total_seconds() / 60),
+        }
+        for gate, cams in ongoing.items()
+        for cam, start in cams.items()
+    ],
+})
+
+def parse_ts(ts):
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts
 
                            
                            
