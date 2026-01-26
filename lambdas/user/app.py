@@ -25,8 +25,8 @@ def lambda_handler(event, context):
                 return verify_otp(conn, body)
             elif path == "/user/send_otp":  # Added /user prefix
                 return send_user_otp(conn, body)
-            elif path == "/user/receive_otp":  # Added /user prefix
-                return receive_otp(conn, body)
+            # elif path == "/user/receive_otp":  # Added /user prefix
+            #     return receive_otp(conn, body)
             elif path == "/user/register":  # Added /user prefix
                 return register_user(conn, body)
             elif path == "/user/register-admin":  # Added /user prefix
