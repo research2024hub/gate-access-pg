@@ -225,12 +225,12 @@ def verify_otp(conn, body):
         if email:
             cur.execute("""
                 SELECT password, otp, otp_expiry FROM pending_users WHERE email = %s
-            """, (email))
+            """, (email,))
             row = cur.fetchone()
         else:
             cur.execute("""
                 SELECT password, otp, otp_expiry FROM pending_users WHERE phone_number = %s 
-            """, (phone_number))
+            """, (phone_number,))
             row = cur.fetchone()
         if not row:
             return _error_response(404, "No pending registration found for this email.")
