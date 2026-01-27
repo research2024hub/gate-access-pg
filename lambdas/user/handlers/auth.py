@@ -193,7 +193,7 @@ def register_user(conn, body):
 
         conn.commit()
 
-    return _success_response(200, {"message": "OTP sent to email. Please verify to complete registration.", "token": token})
+    return _success_response(200, {"message": "OTP sent to user. Please verify to complete registration.", "token": token})
 # def receive_otp(conn, body):
 #     email = body.get("email")
 #     phone_number = body.get("phone_number")
