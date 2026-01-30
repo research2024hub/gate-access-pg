@@ -541,13 +541,13 @@ def person_arrives_with_vehicle_callback(conn, body, event):
                 other_info.pop("entry_window", None)
                 guest_status = "CHECKED_IN"
                 log_action = "GUEST_VEHICLE_ENTRY"
-                log_message = f"Guest '{person_data['guest_id']}' [{person_data['name']}] entered with vehicle license plate '{license_plate_number}'"
+                log_message = f"Guest {person_data['name']} entered with vehicle license plate {license_plate_number}"
 
             else:  # status == "exit"
                 # Exit - no validation needed, just update status
                 guest_status = "CHECKED_OUT"
                 log_action = "GUEST_VEHICLE_EXIT"
-                log_message = f"Guest '{person_data['guest_id']}' [{person_data['name']}] exited with vehicle license plate '{license_plate_number}'"
+                log_message = f"Guest {person_data['name']} exited with vehicle license plate {license_plate_number}"
 
             # Update guest record
             cur.execute(
@@ -571,10 +571,10 @@ def person_arrives_with_vehicle_callback(conn, body, event):
             # Account holder — no OTP or time check, just log the appropriate action
             if status == "entry":
                 log_action = "ACCOUNT_HOLDER_VEHICLE_ENTRY"
-                log_message = f"Account holder '{person_data['account_holder_id']}' [{person_data['name']}] entered with vehicle license plate '{license_plate_number}'"
+                log_message = f"{person_data['name']} entered with vehicle license plate {license_plate_number}"
             else:  # status == "exit"
                 log_action = "ACCOUNT_HOLDER_VEHICLE_EXIT"
-                log_message = f"Account holder '{person_data['account_holder_id']}' [{person_data['name']}] exited with vehicle license plate '{license_plate_number}'"
+                log_message = f"{person_data['name']} exited with vehicle license plate {license_plate_number}"
             # cur.execute("""
             #     INSERT INTO AccessLog (license_plate_number, event, timestamp))
             #     VALUES (%s, %s, NOW()
