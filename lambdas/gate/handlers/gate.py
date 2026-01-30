@@ -2,7 +2,7 @@ import json
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
 
-from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_gate
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_gate, notify_user
 from middleware import verify_token, cors_wrap
 
 def _success_response(status_code: int, body: dict):
@@ -542,13 +542,13 @@ def person_arrives_with_vehicle_callback(conn, body, event):
                 guest_status = "CHECKED_IN"
                 log_action = "GUEST_VEHICLE_ENTRY"
                 log_message = f"Guest {person_data['name']} entered with vehicle license plate {license_plate_number}"
-
+                notify_user(person_data['user_id'], log_action,log_message)
             else:  # status == "exit"
                 # Exit - no validation needed, just update status
                 guest_status = "CHECKED_OUT"
                 log_action = "GUEST_VEHICLE_EXIT"
                 log_message = f"Guest {person_data['name']} exited with vehicle license plate {license_plate_number}"
-
+                notify_user(person_data['user_id'], log_action,log_message)
             # Update guest record
             cur.execute(
                 """
