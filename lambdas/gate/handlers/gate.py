@@ -542,13 +542,13 @@ def person_arrives_with_vehicle_callback(conn, body, event):
                 guest_status = "CHECKED_IN"
                 log_action = "GUEST_VEHICLE_ENTRY"
                 log_message = f"Guest {person_data['name']} entered with vehicle license plate {license_plate_number}"
-                notify_user(person_data['creator_user_id'], log_action,log_message)
+                notify_user(str(person_data['creator_user_id']), log_action,log_message)
             else:  # status == "exit"
                 # Exit - no validation needed, just update status
                 guest_status = "CHECKED_OUT"
                 log_action = "GUEST_VEHICLE_EXIT"
                 log_message = f"Guest {person_data['name']} exited with vehicle license plate {license_plate_number}"
-                notify_user(person_data['creator_user_id'], log_action,log_message)
+                notify_user(str(person_data['creator_user_id']), log_action,log_message)
             # Update guest record
             cur.execute(
                 """
