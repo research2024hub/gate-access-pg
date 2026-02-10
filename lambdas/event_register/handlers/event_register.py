@@ -111,8 +111,8 @@ def use_invite_token(conn, body, event):
         register_id = cur.fetchone()["id"]
 
         log(conn, "EVENT_REGISTER_ENTRY_CREATED",
-            f"Guest {name} registered for event '{event_id}' [{event_name}] via invite",
-            account_holder_id, account_holder_id, estate_id)
+            f"Guest {name} registered for event '{event_name}' via invite")
+             #,account_holder_id, account_holder_id, estate_id)
 
         conn.commit()
 
@@ -258,7 +258,7 @@ def register_guest_for_event(conn, body, event):
         """, (event_id, guest_id))
         register_id = cur.fetchone()["id"]
 
-        log(conn, "EVENT_REGISTER_ENTRY_CREATED", f"Guest {name} registered for event '{event_id}' [{event_data['name']}]", user_id, account_holder_id, estate_id)
+        log(conn, "EVENT_REGISTER_ENTRY_CREATED", f"Guest {name} registered for event '{event_data['name']}'.")#, user_id, account_holder_id, estate_id)
         # 8) Commit the transaction
         conn.commit()
 
@@ -388,9 +388,11 @@ def remove_guest_from_event(conn, body, event):
             return _error_response(403, "You do not have privileges to remove this event's guests")
 
         # Delete personal_info (which cascades deletion for guest & event_registers)
-        cur.execute("DELETE FROM personal_info WHERE id = (SELECT personal_info_id FROM guests WHERE id = %s) RETURNING id", (guest_id,))
-        if not cur.fetchone():
+        cur.execute("DELETE FROM personal_info WHERE id = (SELECT personal_info_id FROM guests WHERE id = %s) RETURNING id, name", (guest_id,))
+        del_result = cur.fetchone()
+        if not del_result :
             return _error_response(500, "Failed to delete guest.")
+        deleted_name = del_result['name']
         
         cur.execute("""
                     SELECT pi.estate_id, e.creator_id, e.name FROM events e 
@@ -401,7 +403,7 @@ def remove_guest_from_event(conn, body, event):
         
         result = cur.fetchone()
         
-        log(conn, "EVENT_REGISTER_ENTRY_REMOVED", f"Guest '{guest_id}' removed from event '{event_id}' [{result['name']}]", user_id, result["creator_id"], result["estate_id"])
+        log(conn, "EVENT_REGISTER_ENTRY_REMOVED", f"Guest '{deleted_name}' removed from event '{result['name']}'.")#, user_id, result["creator_id"], result["estate_id"])
 
         conn.commit()
 

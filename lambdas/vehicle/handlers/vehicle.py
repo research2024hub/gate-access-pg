@@ -83,7 +83,7 @@ def create_vehicle(conn, body, event):
         actor_id = result["actor_id"]
         estate_id = result["estate_id"]
         
-        log(conn, "VEHICLE_CREATION", f"Vehicle '{vehicle_id}' [{license_plate_number}] created", user_id, actor_id, estate_id)
+        log(conn, "VEHICLE_CREATION", f"Vehicle plate {license_plate_number} created")
 
         conn.commit()
 
@@ -175,7 +175,7 @@ def update_vehicle(conn, body, event):
         actor_id = result["actor_id"]
         estate_id = result["estate_id"]
         
-        log(conn, "VEHICLE_UPDATE", f"Vehicle '{vehicle_id}' [{license_plate_number}] updated", user_id, actor_id, estate_id)
+        log(conn, "VEHICLE_UPDATE", f"Vehicle plate {license_plate_number} updated.")# user_id, actor_id, estate_id)
         
         conn.commit()
 
@@ -254,7 +254,7 @@ def delete_vehicle(conn, body, event):
         if not cur.fetchone():
             return _error_response(500, "Failed to delete vehicle.")
         
-        log(conn, "VEHICLE_DELETION", f"Vehicle '{vehicle_id}' [{license_plate_number}] deleted", user_id, actor_id, estate_id)
+        log(conn, "VEHICLE_DELETION", f"Vehicle plate {license_plate_number} deleted.")#, user_id, actor_id, estate_id)
 
         conn.commit()
 

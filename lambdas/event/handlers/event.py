@@ -75,7 +75,7 @@ def generate_event_invite_link(conn, body, event):
         token = jwt.encode(token_payload, JWT_SECRET, algorithm="HS256")
         invite_url = f"{INVITE_BASE_URL}?token={token}"
 
-        log(conn, "INVITE_GENERATED", f"Invite link created for event '{event_info['event_name']}'", user_id, event_info["creator_account_holder_id"], event_info["estate_id"])
+        log(conn, "INVITE_GENERATED", f"Invite link created for event '{event_info['event_name']}'.")#, user_id, event_info["creator_account_holder_id"], event_info["estate_id"])
 
         conn.commit()
 
@@ -143,7 +143,7 @@ def create_event(conn, body, event):
         
         result = cur.fetchone()
 
-        log(conn, "EVENT_CREATION", f"Event '{event_id}' [{name}] created", user_id, creator_id, result["estate_id"])
+        log(conn, "EVENT_CREATION", f"The event '{name}' has been created.")#, user_id, creator_id, result["estate_id"])
         
         conn.commit()
 
@@ -221,7 +221,7 @@ def update_event(conn, body, event):
         
         result = cur.fetchone()
 
-        log(conn, "EVENT_UPDATE", f"Event '{event_id}' [{name}] updated", user_id, None, result["estate_id"])
+        log(conn, "EVENT_UPDATE", f"The event '{name}' has been updated.")#, user_id, None, result["estate_id"])
 
         conn.commit()
 
@@ -286,7 +286,7 @@ def delete_event(conn, body, event):
             return _error_response(500, "Failed to delete event.")
 
         # 4. Log deletion
-        log(conn, "EVENT_DELETION", f"Event '{event_id}' [{event_info['name']}] deleted", user_id, None, event_info["estate_id"])
+        log(conn, "EVENT_DELETION", f"The event '{event_info['name']}' has been deleted.")#, user_id, None, event_info["estate_id"])
 
         conn.commit()
 

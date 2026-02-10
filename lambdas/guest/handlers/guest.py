@@ -109,7 +109,7 @@ def create_guest_regular(conn, body, event):
             """, (personal_info_id, account_holder_id, json.dumps(other_info)))
             guest_id = cur.fetchone()["id"]
 
-            log(conn, "GUEST_CREATION", f"Guest '{guest_id}' [{name}] created", user_id, account_holder_id, estate_id)
+            log(conn, "GUEST_CREATION", f"Guest {name} created.")#, user_id, account_holder_id, estate_id)
 
             conn.commit()
 
@@ -240,7 +240,7 @@ def create_associate(conn, body, event):
             """, (personal_info_id, account_holder_id, json.dumps(other_info)))
             guest_id = cur.fetchone()["id"]
 
-            log(conn, "GUEST_CREATION", f"Guest '{guest_id}' [{name}] created", user_id, account_holder_id, estate_id)
+            log(conn, "GUEST_CREATION", f"Guest {name} created.")#, user_id, account_holder_id, estate_id)
 
             conn.commit()
 
@@ -372,7 +372,7 @@ def send_otp(conn, body, event):
         if not updated_row:
             return _error_response(400, "Failed to update OTP for the guest.")
         
-        log(conn, "GUEST_OTP_SENT", f"OTP sent to guest '{guest_id}' [{guest_data['name']}]", user_id, account_holder_id, estate_id)
+        log(conn, "GUEST_OTP_SENT", f"OTP sent to guest {guest_data['name']}.")#, user_id, account_holder_id, estate_id)
 
         conn.commit()
 
@@ -481,7 +481,7 @@ def verify_guest_otp(conn, body, event):
         if not updated_row:
             return _error_response(400, "Guest does not exist or could not be updated.")
         
-        log(conn, "GUEST_OTP_VERIFIED", f"OTP verified by guest '{guest_data['id']}' [{guest_data['name']}]", None, guest_data["creator_id"], guest_data["estate_id"])
+        log(conn, "GUEST_OTP_VERIFIED", f"OTP verified by guest {guest_data['name']}.")#, None, guest_data["creator_id"], guest_data["estate_id"])
 
         # Commit the changes
         conn.commit()
@@ -708,7 +708,7 @@ def update_guest(conn, body, event):
             # Get final contact info (use updated contact or existing)
             final_contact = contact if contact else current_contact
 
-            log(conn, "GUEST_UPDATE", f"Guest '{guest_id}' [{name or 'Unknown'}] updated", user_id, guest_data["creator_id"], guest_info_data["estate_id"])
+            log(conn, "GUEST_UPDATE", f"Guest {name or 'Unknown'} updated.")#, user_id, guest_data["creator_id"], guest_info_data["estate_id"])
 
             conn.commit()
 
@@ -812,7 +812,7 @@ def delete_guest(conn, body, event):
         guest_name = result["name"]
         estate_id = result["estate_id"]
 
-        log(conn, "GUEST_DELETION", f"Guest '{guest_id}' [{guest_name}] deleted", user_id, actor_id, estate_id)
+        log(conn, "GUEST_DELETION", f"Guest {guest_name} deleted.")#, user_id, actor_id, estate_id)
 
         conn.commit()
 
