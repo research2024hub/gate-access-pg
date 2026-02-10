@@ -75,7 +75,8 @@ def get_logs_by_estate(conn, event):
         # Paginated log retrieval
         cur.execute("""
             SELECT * FROM logs
-            WHERE estate_id = %s
+            WHERE estate_id = %s 
+                AND type != "GATE_CONTROLLER_HEARTBEAT"
                 AND date_created BETWEEN %s AND %s
             ORDER BY date_created DESC
             LIMIT %s OFFSET %s
