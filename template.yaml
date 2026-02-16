@@ -92,6 +92,11 @@ Resources:
           Properties:
             Path: /user/deactivate  # Organized under /user/
             Method: POST
+        TestUserEmailApi:
+          Type: Api
+          Properties:
+            Path: /user/emailtest  # Organized under /user/
+            Method: POST
         GetUsersApi:
           Type: Api
           Properties:
