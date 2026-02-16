@@ -1,5 +1,5 @@
 import json
-from utils import _error_response, _success_response, process_db_results, log
+from utils import _error_response, _success_response, process_db_results, log, send_email
 from middleware import verify_token
 from psycopg2.extras import RealDictCursor
 from handlers.auth import send_email_gmail,generate_otp
@@ -367,7 +367,7 @@ def forgot_password(conn, body):
         "If you did not request this, you can safely ignore this email."
     )
 
-    send_email_gmail(email, title, message)
+    send_email(email, title, message)
     return _success_response(200, {"message": "success.","token": token})
 
 def verify_reset_otp(conn, body, event):

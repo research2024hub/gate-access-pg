@@ -92,7 +92,7 @@ def send_user_otp(conn, body):
         conn.commit()
     title = 'Your OTP Code'
     message =f"Your OTP is: {otp}."
-    send_email_gmail(email, title, message)
+    send_email(email, title, message)
 
     return _success_response(200, {
         "message": "A new OTP has been sent to your email.",
@@ -191,7 +191,7 @@ def register_user(conn, body):
             title = 'Your OTP Code'
             # message =f"Your OTP is: {otp}\n\nExpires in 10 minutes."
             token = create_token(email)
-            send_email_gmail(email, title, message)
+            send_email(email, title, message)
         elif phone_number:
             # message = f"Your OTP is {otp}. Valid for 10 minutes. Please Do not share it."
             token = create_token(phone_number)

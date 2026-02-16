@@ -1,6 +1,6 @@
 import json
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results, log, send_gmail
+from utils import _error_response, _success_response, process_db_results, log, send_gmail, send_email
 from middleware import verify_token
 import time
 import boto3
@@ -281,7 +281,7 @@ def monitor_heartbeat(conn):
                                     f"Regards,\nSystem Monitor"
                                 )
                                 # Sends ONE email to the admin
-                                send_email_gmail(subject, admin_body)
+                                send_email(RECIPIENT_EMAILS, subject, admin_body)
                                 print(f"  >> Admin Alert sent for {device_id}")
 
                                 # --- 2. USER ALERTS (Preserves original behavior) ---
@@ -394,7 +394,7 @@ def get_camera_downtime(conn):
                     f"Offline since: {start_time} ({int(duration_minutes)} min).\n\n"
                     f"Regards,\nSystem Monitor"
                 )
-                send_email_gmail(subject, body)
+                send_email(RECIPIENT_EMAILS, subject, body)
                 alerted_this_run.add((gate, cam))
 
                 # Update DB
