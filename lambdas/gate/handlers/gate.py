@@ -572,9 +572,11 @@ def person_arrives_with_vehicle_callback(conn, body, event):
             if status == "entry":
                 log_action = "ACCOUNT_HOLDER_VEHICLE_ENTRY"
                 log_message = f"{person_data['name']} entered with vehicle license plate {license_plate_number}"
+                notify_user(str(person_data['user_id']), log_action,log_message)
             else:  # status == "exit"
                 log_action = "ACCOUNT_HOLDER_VEHICLE_EXIT"
                 log_message = f"{person_data['name']} exited with vehicle license plate {license_plate_number}"
+                notify_user(str(person_data['user_id']), log_action,log_message)
             # cur.execute("""
             #     INSERT INTO AccessLog (license_plate_number, event, timestamp))
             #     VALUES (%s, %s, NOW()
