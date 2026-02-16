@@ -4,7 +4,7 @@ import os
 import json
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
-from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_message
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_message, send_email
 from middleware import verify_token, cors_wrap, CORS_HEADERS
 import random
 import smtplib
@@ -99,7 +99,15 @@ def send_user_otp(conn, body):
         "token": token
     })
 
-
+def sendemail(body):
+    try:
+        email = body.get('email')
+        subject = "Test Email API"
+        msg = "This is your test API"
+        result = send_email(email, subject, msg)
+        return(f"Message Successfully sent: {result}")
+    except Exception as e:
+        return(f"this is the error; {e}")
 # def verify_user_otp(conn, body):
 #     token = body.get("token")
 #     input_otp = body.get("otp")

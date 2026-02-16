@@ -8,6 +8,7 @@ from psycopg2.extras import RealDictCursor
 import boto3
 import smtplib
 from email.mime.text import MIMEText
+import uuid
 
 Collection_Id='gate_app_collection_id'
 cred = credentials.Certificate("/opt/python/gate-access-dev-firebase-adminsdk-jk7hy-ebbdd45791.json")
@@ -90,6 +91,33 @@ def notify_user(user_id, title, message):
     except Exception as e:
         print("There is an error notifying the resident ", e)
         return False
+    
+def send_email(recipient_email, subject, msg):
+    url = "https://apis.itcsrvc.com/messaging/send-message"
+    
+    # Generating a dynamic traceId, but you can pass one as an argument if preferred
+    payload = {
+        "traceId": str(uuid.uuid4()), 
+        "sendingMethod": "e-mail",
+        "source": "third_party",
+        "details": {
+            "subject": subject,
+            "msg": msg
+        },
+        "control": {
+            "recipients": [recipient_email]
+        }
+    }
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        response.raise_for_status() # Raises an error for 4xx or 5xx responses
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
+    
     
 def generate_presigned_url(filename,bucket_name):
     return s3.generate_presigned_url(
