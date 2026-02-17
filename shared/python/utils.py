@@ -116,6 +116,7 @@ def send_email(recipient_email, subject, msg):
         response.raise_for_status() # Raises an error for 4xx or 5xx responses
         return _success_response(200, {response.json()})
     except requests.exceptions.RequestException as e:
+        print(f"error is{e}" )
         return {"error": str(e)}
     
     
