@@ -109,6 +109,7 @@ def sendemail(body):
         print("result is", result)
         return(f"Message Successfully sent: {result}")
     except Exception as e:
+        print("error is ",e)
         return(f"this is the error; {e}")
 # def verify_user_otp(conn, body):
 #     token = body.get("token")
