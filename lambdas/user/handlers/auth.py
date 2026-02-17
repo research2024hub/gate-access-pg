@@ -192,8 +192,11 @@ def register_user(conn, body):
             title = 'Your OTP Code'
             # message =f"Your OTP is: {otp}\n\nExpires in 10 minutes."
             token = create_token(email)
-            result = send_email(email, title, message)
-            print(result)
+            try:
+                result = send_email(email, title, message)
+                print(result)
+            except Exception as e:
+                print("error from email",e)
         elif phone_number:
             # message = f"Your OTP is {otp}. Valid for 10 minutes. Please Do not share it."
             token = create_token(phone_number)
