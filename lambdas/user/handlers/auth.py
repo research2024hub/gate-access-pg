@@ -106,6 +106,7 @@ def sendemail(body):
         subject = "Test Email API"
         msg = "This is your test API"
         result = send_email(email, subject, msg)
+        print("result is", result)
         return(f"Message Successfully sent: {result}")
     except Exception as e:
         return(f"this is the error; {e}")
