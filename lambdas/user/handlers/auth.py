@@ -92,11 +92,12 @@ def send_user_otp(conn, body):
         conn.commit()
     title = 'Your OTP Code'
     message =f"Your OTP is: {otp}."
-    send_email(email, title, message)
+    result = send_email(email, title, message)
 
     return _success_response(200, {
         "message": "A new OTP has been sent to your email.",
-        "token": token
+        "token": token,
+        "email result" : result
     })
 
 def sendemail(body):
@@ -191,7 +192,7 @@ def register_user(conn, body):
             title = 'Your OTP Code'
             # message =f"Your OTP is: {otp}\n\nExpires in 10 minutes."
             token = create_token(email)
-            send_email(email, title, message)
+            result = send_email(email, title, message)
         elif phone_number:
             # message = f"Your OTP is {otp}. Valid for 10 minutes. Please Do not share it."
             token = create_token(phone_number)
@@ -201,7 +202,7 @@ def register_user(conn, body):
 
         conn.commit()
 
-    return _success_response(200, {"message": "OTP sent to user. Please verify to complete registration.", "token": token})
+    return _success_response(200, {"message": "OTP sent to user. Please verify to complete registration.", "token": token, "email result": result})
 # def receive_otp(conn, body):
 #     email = body.get("email")
 #     phone_number = body.get("phone_number")

@@ -281,7 +281,7 @@ def monitor_heartbeat(conn):
                                     f"Regards,\nSystem Monitor"
                                 )
                                 # Sends ONE email to the admin
-                                send_email(RECIPIENT_EMAILS, subject, admin_body)
+                                result = send_email(RECIPIENT_EMAILS, subject, admin_body)
                                 print(f"  >> Admin Alert sent for {device_id}")
 
                                 # --- 2. USER ALERTS (Preserves original behavior) ---
@@ -293,7 +293,7 @@ def monitor_heartbeat(conn):
                                 try:
                                     for email in user_emails_list:
                                         if email: # Safety check to skip empty emails
-                                            send_gmail(email, user_topic, user_message)
+                                            result = send_gmail(email, user_topic, user_message)
                                 except Exception as e:
                                     print(f"Skipped {email} due to error: {e}")
 
@@ -394,7 +394,7 @@ def get_camera_downtime(conn):
                     f"Offline since: {start_time} ({int(duration_minutes)} min).\n\n"
                     f"Regards,\nSystem Monitor"
                 )
-                send_email(RECIPIENT_EMAILS, subject, body)
+                result = send_email(RECIPIENT_EMAILS, subject, body)
                 alerted_this_run.add((gate, cam))
 
                 # Update DB
