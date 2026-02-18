@@ -454,7 +454,9 @@ def delete_sub_account(conn, body, event):
         )
         
         cur.execute(                                                                                                                                                    
-            "DELETE FROM account_holders WHERE id = %s", (sub_account_holder_id,),)                               
+            "DELETE FROM account_holders WHERE id = %s", (sub_account_holder_id,),)  
+        cur.execute(                                                                                                                                                    
+            "DELETE FROM personal_info WHERE id = %s", (personal_info_id,),)                                
         # Optionally, also revoke all privileges (cleanup)
         cur.execute(
             "DELETE FROM personal_info_privilege_links WHERE personal_info_id = %s",(personal_info_id,),)
