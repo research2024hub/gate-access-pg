@@ -515,6 +515,7 @@ def person_arrives_with_vehicle_callback(conn, body, event):
         
         print(person_data)
         formatted_now = now.strftime("%b %d, %Y at %H:%M")
+        title = "USER ACCESS"
         if is_guest:
             other_info = person_data["other_info"] or {}
 
@@ -535,7 +536,7 @@ def person_arrives_with_vehicle_callback(conn, body, event):
 
                 if not (start_dt <= now <= end_dt):
                     return _error_response(400, "Guest cannot enter at this time (not yet valid or expired).")
-                title = "USER ACCESS"
+              
                 # Remove OTP and entry window on successful entry
                 other_info.pop("otp", None)
                 other_info.pop("entry_window", None)
@@ -573,7 +574,7 @@ def person_arrives_with_vehicle_callback(conn, body, event):
                 log_action = "ACCOUNT_HOLDER_VEHICLE_ENTRY"
                 log_message = f"{person_data['name']} entered with vehicle license plate {license_plate_number}  on {formatted_now}"
                 message = f"{person_data['name']}: You entered with vehicle license plate {license_plate_number}  on {formatted_now}"
-                title = "USER ACCESS"
+                # title = "USER ACCESS"
                 notify_user(str(person_data['user_id']), title, message)
             else:  # status == "exit"
                 log_action = "ACCOUNT_HOLDER_VEHICLE_EXIT"
