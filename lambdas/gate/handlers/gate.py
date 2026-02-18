@@ -514,7 +514,7 @@ def person_arrives_with_vehicle_callback(conn, body, event):
         is_guest = person_data["guest_id"] is not None
         
         print(person_data)
-
+        formatted_now = now.strftime("%b %d, %Y at %H:%M")
         if is_guest:
             other_info = person_data["other_info"] or {}
 
@@ -541,14 +541,13 @@ def person_arrives_with_vehicle_callback(conn, body, event):
                 other_info.pop("entry_window", None)
                 guest_status = "CHECKED_IN"
                 log_action = "GUEST_VEHICLE_ENTRY"
-                log_message = f"Guest {person_data['name']} entered with vehicle license plate {license_plate_number}"
+                log_message = f"Guest {person_data['name']} entered with vehicle license plate {license_plate_number} on {formatted_now}"
                 notify_user(str(person_data['creator_user_id']), title,log_message)
             else:  # status == "exit"
                 # Exit - no validation needed, just update status
                 guest_status = "CHECKED_OUT"
                 log_action = "GUEST_VEHICLE_EXIT"
-                log_message = f"Guest {person_data['name']} exited with vehicle license plate {license_plate_number}"
-                
+                log_message = f"Guest {person_data['name']} exited with vehicle license plate {license_plate_number}  on {formatted_now}" 
                 notify_user(str(person_data['creator_user_id']), title,log_message)
             # Update guest record
             cur.execute(
@@ -572,13 +571,15 @@ def person_arrives_with_vehicle_callback(conn, body, event):
             # Account holder — no OTP or time check, just log the appropriate action
             if status == "entry":
                 log_action = "ACCOUNT_HOLDER_VEHICLE_ENTRY"
-                log_message = f"{person_data['name']} entered with vehicle license plate {license_plate_number}"
+                log_message = f"{person_data['name']} entered with vehicle license plate {license_plate_number}  on {formatted_now}"
+                message = f"{person_data['name']}: You entered with vehicle license plate {license_plate_number}  on {formatted_now}"
                 title = "USER ACCESS"
-                notify_user(str(person_data['user_id']), title,log_message)
+                notify_user(str(person_data['user_id']), title, message)
             else:  # status == "exit"
                 log_action = "ACCOUNT_HOLDER_VEHICLE_EXIT"
-                log_message = f"{person_data['name']} exited with vehicle license plate {license_plate_number}"
-                notify_user(str(person_data['user_id']), title,log_message)
+                log_message = f"{person_data['name']} exited with vehicle license plate {license_plate_number} on {formatted_now}"
+                message = f"{person_data['name']}: You exited with vehicle license plate  {license_plate_number}  on {formatted_now}"
+                notify_user(str(person_data['user_id']), title, message)
             # cur.execute("""
             #     INSERT INTO AccessLog (license_plate_number, event, timestamp))
             #     VALUES (%s, %s, NOW()
