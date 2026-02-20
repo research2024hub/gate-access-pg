@@ -238,14 +238,19 @@ def search_logs_by_estate(conn, event):
         filters = ["estate_id = %s", "type != 'GATE_CONTROLLER_HEARTBEAT'"]
         params = [estate_id]
 
+        # ... (inside your existing function) ...
+
         if search_plate:
-            filters.append("license_plate ILIKE %s")
+            # Search for the plate string inside the long message
+            filters.append("message ILIKE %s")
             params.append(f"%{search_plate}%")
 
         if search_name:
-            # Single column check
-            filters.append("name ILIKE %s")
+            # Search for the name string inside the long message
+            filters.append("message ILIKE %s")
             params.append(f"%{search_name}%")
+
+# ... (the rest of your query building stays the same) ...
 
         where_clause = " WHERE " + " AND ".join(filters)
 
@@ -333,11 +338,12 @@ def search_logs_by_account_holder(conn, event):
         params = [account_holder_id, account_holder_id]
 
         if search_plate:
-            filter_sql += " AND license_plate ILIKE %s"
+            filter_sql += " AND message ILIKE %s"
             params.append(f"%{search_plate}%")
 
+        # Search within the 'message' column for the name
         if search_name:
-            filter_sql += " AND name ILIKE %s"
+            filter_sql += " AND message ILIKE %s"
             params.append(f"%{search_name}%")
 
         # --- 3. Execute Count ---
