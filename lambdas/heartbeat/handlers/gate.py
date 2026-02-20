@@ -293,7 +293,7 @@ def monitor_heartbeat(conn):
                                 try:
                                     for email in user_emails_list:
                                         if email: # Safety check to skip empty emails
-                                            result = send_gmail(email, user_topic, user_message)
+                                            result = send_email(email, user_topic, user_message)
                                 except Exception as e:
                                     print(f"Skipped {email} due to error: {e}")
 
