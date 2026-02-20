@@ -195,3 +195,172 @@ def get_logs_by_account_holder(conn, event):
         }
     })
 
+def search_logs_by_estate(conn, event):
+    payload, error = verify_token(event)
+    if error: return error
+    
+    user_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+    path_params = event.get("pathParameters", {})
+    estate_id = path_params.get("estate_id")
+    
+    # Extract search and pagination params
+    query_params = event.get("queryStringParameters") or {}
+    search_plate = query_params.get("plate", "").strip()
+    search_name = query_params.get("name", "").strip() # Searching against the single 'name' column
+    
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+    except ValueError:
+        return _error_response(400, "Invalid pagination parameters.")
+    
+    offset = (page - 1) * page_size
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # Permission check
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM users u
+                JOIN account_holders ah ON u.id = ah.user_id
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE u.id = %s AND pi.estate_id = %s
+                AND (pv.name = 'MANAGE_ALL' OR pv.name = 'VIEW_LOGS')
+            ) AS exists_flag
+        """, (user_id, estate_id))
+        if not (cur.fetchone()["exists_flag"] or is_admin):
+            return _error_response(403, "Access denied.")
+
+        # --- DYNAMIC SQL BUILDING ---
+        filters = ["estate_id = %s", "type != 'GATE_CONTROLLER_HEARTBEAT'"]
+        params = [estate_id]
+
+        if search_plate:
+            filters.append("license_plate ILIKE %s")
+            params.append(f"%{search_plate}%")
+
+        if search_name:
+            # Single column check
+            filters.append("name ILIKE %s")
+            params.append(f"%{search_name}%")
+
+        where_clause = " WHERE " + " AND ".join(filters)
+
+        # 1. Total Count for Pagination
+        cur.execute(f"SELECT COUNT(*) FROM logs {where_clause}", tuple(params))
+        total = cur.fetchone()["count"]
+
+        # 2. Results
+        fetch_sql = f"""
+            SELECT * FROM logs 
+            {where_clause} 
+            ORDER BY date_created DESC 
+            LIMIT %s OFFSET %s
+        """
+        cur.execute(fetch_sql, tuple(params + [page_size, offset]))
+        logs = cur.fetchall()
+
+    return _success_response(200, {
+        "logs": process_db_results(logs),
+        "pagination": {
+            "page": page,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+    
+    
+def search_logs_by_account_holder(conn, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+    
+    user_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+    path_params = event.get("pathParameters", {})
+    account_holder_id = path_params.get("account_holder_id")
+    
+    if not account_holder_id:
+        return _error_response(400, "Missing 'account_holder_id'.")
+
+    # Extract search and pagination params
+    query_params = event.get("queryStringParameters") or {}
+    search_plate = query_params.get("plate", "").strip()
+    search_name = query_params.get("name", "").strip()
+    
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+    except ValueError:
+        return _error_response(400, "Invalid pagination parameters.")
+
+    offset = (page - 1) * page_size
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # --- 1. Privilege Check ---
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM users u
+                JOIN account_holders ah ON u.id = ah.user_id
+                JOIN personal_info pi ON ah.personal_info_id = pi.id
+                JOIN account_types act ON pi.account_type_id = act.id
+                JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
+                JOIN privileges pv ON atpl.privilege_id = pv.id
+                WHERE u.id = %s AND pi.estate_id = ( 
+                    SELECT pi.estate_id 
+                    FROM account_holders ah
+                    JOIN personal_info pi ON ah.personal_info_id = pi.id
+                    WHERE ah.id = %s
+                ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'VIEW_LOGS')
+            ) AS exists_flag
+        """, (user_id, account_holder_id))
+
+        if not (cur.fetchone()["exists_flag"] or is_admin):
+            cur.execute("SELECT EXISTS (SELECT 1 FROM account_holders WHERE user_id = %s AND id = %s)", (user_id, account_holder_id))
+            if not cur.fetchone()["exists_flag"]:
+                return _error_response(403, "Access denied.")
+
+        # --- 2. Build Dynamic Filters ---
+        # Base filter: logs related to this account holder
+        filter_sql = """
+            (target_account_holder_id = %s OR actor_user_id = (
+                SELECT user_id FROM account_holders WHERE id = %s
+            ))
+        """
+        params = [account_holder_id, account_holder_id]
+
+        if search_plate:
+            filter_sql += " AND license_plate ILIKE %s"
+            params.append(f"%{search_plate}%")
+
+        if search_name:
+            filter_sql += " AND name ILIKE %s"
+            params.append(f"%{search_name}%")
+
+        # --- 3. Execute Count ---
+        cur.execute(f"SELECT COUNT(*) FROM logs WHERE {filter_sql}", tuple(params))
+        total = cur.fetchone()["count"]
+
+        # --- 4. Execute Fetch ---
+        fetch_sql = f"""
+            SELECT * FROM logs
+            WHERE {filter_sql}
+            ORDER BY date_created DESC
+            LIMIT %s OFFSET %s
+        """
+        cur.execute(fetch_sql, tuple(params + [page_size, offset]))
+        logs = cur.fetchall()
+
+    return _success_response(200, {
+        "account_holder_id": account_holder_id,
+        "logs": process_db_results(logs),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })

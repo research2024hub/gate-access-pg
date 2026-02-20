@@ -893,6 +893,16 @@ Resources:
           Properties:
             Path: /log/account_holder/{account_holder_id}
             Method: GET
+        SearchLogsByAccountHolderApi:
+          Type: Api
+          Properties:
+            Path: /log/search_account_holder/{account_holder_id}
+            Method: GET
+        SearchLogsByEstate:
+          Type: Api
+          Properties:
+            Path: /log/search_estate/{estate_id}
+            Method: GET
       Environment:  # ✅ Global environment variables apply to all Lambda functions
         Variables:
           DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
