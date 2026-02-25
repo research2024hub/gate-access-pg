@@ -595,6 +595,8 @@ def get_videos(event):
         # 2. Iterate through folders named by date
         while current_date <= end_date:
             date_folder = current_date.strftime('%Y-%m-%d')
+            print(date_folder)
+            print(PARENT_FOLDER)
             prefix = f"{PARENT_FOLDER}/{date_folder}/"
             print(f"DEBUG: S3 found nothing for prefix '{prefix}'")
             # Use paginator in case a single day has hundreds of "Event" videos
