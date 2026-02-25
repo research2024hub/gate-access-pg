@@ -565,6 +565,13 @@ def alert_user(conn, body, event):
 
 def get_videos(event):
     # 1. Extract Query Parameters from the API Gateway event
+    payload, error = verify_token(event)
+    if error:
+        return error
+    is_admin = payload.get("is_admin", False)
+    user_id = payload.get("user_id")
+    if not is_admin:
+        return _error_response(403, "Access denied. Only admins can perform this action.")
     query_params = event.get('queryStringParameters', {})
     
     start_date_str = query_params.get('start_date')
@@ -613,21 +620,19 @@ def get_videos(event):
             
             current_date += timedelta(days=1)
 
-        return {
-            'statusCode': 200,
+        return _success_response( 200,{
             'headers': {'Content-Type': 'application/json'},
             'body': json.dumps({
                 'camera': camera_id,
                 'count': len(video_links),
                 'videos': video_links
             })
-        }
+        })
 
     except Exception as e:
-        return {
-            'statusCode': 500,
+        return _error_response(500, {
             'body': json.dumps({'error': str(e)})
-        }
+        })
 # def process_downtime_alerts(conn, gate_id):
 #     now = datetime.now(timezone.utc)
     

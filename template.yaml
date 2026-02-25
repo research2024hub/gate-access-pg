@@ -309,6 +309,11 @@ Resources:
           Properties:
             Path: /system/access
             Method: GET
+        GetVideosApi:
+          Type: Api
+          Properties:
+            Path: /system/videos
+            Method: GET
       Environment:
         Variables:
           DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"

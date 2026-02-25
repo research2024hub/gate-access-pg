@@ -344,7 +344,7 @@ def search_logs_by_account_holder(conn, event):
         """, (user_id, account_holder_id))
 
         if not (cur.fetchone()["exists_flag"] or is_admin):
-            cur.execute("SELECT EXISTS (SELECT 1 FROM account_holders WHERE user_id = %s AND id = %s)", (user_id, account_holder_id))
+            cur.execute("SELECT EXISTS (SELECT 1 FROM account_holders WHERE user_id = %s AND id = %s) AS exists_flag", (user_id, account_holder_id))
             if not cur.fetchone()["exists_flag"]:
                 return _error_response(403, "Access denied.")
 
