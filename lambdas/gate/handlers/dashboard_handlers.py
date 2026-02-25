@@ -6,12 +6,15 @@ from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 import time
-
+import boto3
 from psycopg2.extras import RealDictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, log, send_gmail # project-level helpers
 from middleware import verify_token, cors_wrap
 THRESHOLD_SECONDS = 600
 ALERT_COOLDOWN = 1800  # 24 hours in seconds
+s3_client = boto3.client('s3')
+BUCKET_NAME = 'itc-lpr-bucket'
+PARENT_FOLDER = 'lpr-images'
 # ---------------------------------------------------------------------------
 # CORS helper & patched response wrappers
 # ---------------------------------------------------------------------------
@@ -559,6 +562,72 @@ def alert_user(conn, body, event):
 
 
 
+
+def get_videos(event):
+    # 1. Extract Query Parameters from the API Gateway event
+    query_params = event.get('queryStringParameters', {})
+    
+    start_date_str = query_params.get('start_date')
+    end_date_str = query_params.get('end_date')
+    camera_id = query_params.get('camera_id')
+
+    # Basic validation
+    if not all([start_date_str, end_date_str, camera_id]):
+        return {
+            'statusCode': 400,
+            'body': json.dumps({'error': 'Missing parameters: start_date, end_date, and camera_id are required.'})
+        }
+
+    try:
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+        
+        video_links = []
+        current_date = start_date
+
+        # 2. Iterate through folders named by date
+        while current_date <= end_date:
+            date_folder = current_date.strftime('%Y-%m-%d')
+            prefix = f"{PARENT_FOLDER}/{date_folder}/"
+            
+            # Use paginator in case a single day has hundreds of "Event" videos
+            paginator = s3_client.get_paginator('list_objects_v2')
+            for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=prefix):
+                if 'Contents' in page:
+                    for obj in page['Contents']:
+                        key = obj['Key']
+                        
+                        # 3. Filter for camera_id in the filename
+                        if camera_id in key:
+                            # Generate Presigned URL (valid for 1 hour)
+                            url = s3_client.generate_presigned_url(
+                                'get_object',
+                                Params={'Bucket': BUCKET_NAME, 'Key': key},
+                                ExpiresIn=3600
+                            )
+                            video_links.append({
+                                'filename': key.split('/')[-1],
+                                'url': url,
+                                'last_modified': str(obj['LastModified'])
+                            })
+            
+            current_date += timedelta(days=1)
+
+        return {
+            'statusCode': 200,
+            'headers': {'Content-Type': 'application/json'},
+            'body': json.dumps({
+                'camera': camera_id,
+                'count': len(video_links),
+                'videos': video_links
+            })
+        }
+
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
 # def process_downtime_alerts(conn, gate_id):
 #     now = datetime.now(timezone.utc)
     

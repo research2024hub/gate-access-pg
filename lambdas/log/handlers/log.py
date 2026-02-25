@@ -195,6 +195,7 @@ def get_logs_by_account_holder(conn, event):
         }
     })
 
+
 def search_logs_by_estate(conn, event):
     payload, error = verify_token(event)
     if error: return error
@@ -204,10 +205,15 @@ def search_logs_by_estate(conn, event):
     path_params = event.get("pathParameters", {})
     estate_id = path_params.get("estate_id")
     
-    # Extract search and pagination params
+    if not estate_id:
+        return _error_response(400, "Missing 'estate_id'.")
+
+    # Extract query parameters
     query_params = event.get("queryStringParameters") or {}
     search_plate = query_params.get("plate", "").strip()
-    search_name = query_params.get("name", "").strip() # Searching against the single 'name' column
+    search_name = query_params.get("name", "").strip()
+    start_date_str = query_params.get("start_date")
+    end_date_str = query_params.get("end_date")
     
     try:
         page = int(query_params.get("page", 1))
@@ -218,7 +224,7 @@ def search_logs_by_estate(conn, event):
     offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # Permission check
+        # Privilege check
         cur.execute("""
             SELECT EXISTS (
                 SELECT 1 FROM users u
@@ -231,6 +237,7 @@ def search_logs_by_estate(conn, event):
                 AND (pv.name = 'MANAGE_ALL' OR pv.name = 'VIEW_LOGS')
             ) AS exists_flag
         """, (user_id, estate_id))
+        
         if not (cur.fetchone()["exists_flag"] or is_admin):
             return _error_response(403, "Access denied.")
 
@@ -238,27 +245,35 @@ def search_logs_by_estate(conn, event):
         filters = ["estate_id = %s", "type != 'GATE_CONTROLLER_HEARTBEAT'"]
         params = [estate_id]
 
-        # ... (inside your existing function) ...
+        # Add Optional Date Range Filter
+        if start_date_str and end_date_str:
+            try:
+                # Handle ISO-8601 formatting (handling Z for UTC)
+                start = datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
+                end = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
+                filters.append("date_created BETWEEN %s AND %s")
+                params.extend([start, end])
+            except ValueError:
+                return _error_response(400, "Invalid date format. Use ISO-8601.")
 
+        # Add Search by Plate (inside message)
         if search_plate:
-            # Search for the plate string inside the long message
             filters.append("message ILIKE %s")
             params.append(f"%{search_plate}%")
 
+        # Add Search by Name (inside message)
         if search_name:
-            # Search for the name string inside the long message
             filters.append("message ILIKE %s")
             params.append(f"%{search_name}%")
 
-# ... (the rest of your query building stays the same) ...
-
+        # Finalize the WHERE clause
         where_clause = " WHERE " + " AND ".join(filters)
 
-        # 1. Total Count for Pagination
+        # 1. Total Count for Pagination (with filters)
         cur.execute(f"SELECT COUNT(*) FROM logs {where_clause}", tuple(params))
         total = cur.fetchone()["count"]
 
-        # 2. Results
+        # 2. Paginated Results
         fetch_sql = f"""
             SELECT * FROM logs 
             {where_clause} 
@@ -269,6 +284,7 @@ def search_logs_by_estate(conn, event):
         logs = cur.fetchall()
 
     return _success_response(200, {
+        "estate_id": estate_id,
         "logs": process_db_results(logs),
         "pagination": {
             "page": page,
@@ -278,6 +294,8 @@ def search_logs_by_estate(conn, event):
     })
     
     
+
+
 def search_logs_by_account_holder(conn, event):
     payload, error = verify_token(event)
     if error:
@@ -291,10 +309,12 @@ def search_logs_by_account_holder(conn, event):
     if not account_holder_id:
         return _error_response(400, "Missing 'account_holder_id'.")
 
-    # Extract search and pagination params
+    # Extract query parameters
     query_params = event.get("queryStringParameters") or {}
     search_plate = query_params.get("plate", "").strip()
     search_name = query_params.get("name", "").strip()
+    start_date_str = query_params.get("start_date")
+    end_date_str = query_params.get("end_date")
     
     try:
         page = int(query_params.get("page", 1))
@@ -305,7 +325,7 @@ def search_logs_by_account_holder(conn, event):
     offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # --- 1. Privilege Check ---
+        # --- 1. Privilege Check (Remains the same) ---
         cur.execute("""
             SELECT EXISTS (
                 SELECT 1 FROM users u
@@ -329,7 +349,6 @@ def search_logs_by_account_holder(conn, event):
                 return _error_response(403, "Access denied.")
 
         # --- 2. Build Dynamic Filters ---
-        # Base filter: logs related to this account holder
         filter_sql = """
             (target_account_holder_id = %s OR actor_user_id = (
                 SELECT user_id FROM account_holders WHERE id = %s
@@ -337,20 +356,31 @@ def search_logs_by_account_holder(conn, event):
         """
         params = [account_holder_id, account_holder_id]
 
-        if search_plate:
-            filter_sql += " AND message ILIKE %s"
-            params.append(f"%{search_plate}%")
+        # Add Date Range filter if both are provided
+        if start_date_str and end_date_str:
+            try:
+                # Replace 'Z' with +00:00 for ISO compatibility
+                start = datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
+                end = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
+                filter_sql += " AND date_created BETWEEN %s AND %s"
+                params.extend([start, end])
+            except ValueError:
+                return _error_response(400, "Invalid date format. Use ISO-8601.")
 
-        # Search within the 'message' column for the name
+        # Add Name Search
         if search_name:
             filter_sql += " AND message ILIKE %s"
             params.append(f"%{search_name}%")
 
-        # --- 3. Execute Count ---
+        # Add Plate Search
+        if search_plate:
+            filter_sql += " AND message ILIKE %s"
+            params.append(f"%{search_plate}%")
+
+        # --- 3. Execute Count and Fetch ---
         cur.execute(f"SELECT COUNT(*) FROM logs WHERE {filter_sql}", tuple(params))
         total = cur.fetchone()["count"]
 
-        # --- 4. Execute Fetch ---
         fetch_sql = f"""
             SELECT * FROM logs
             WHERE {filter_sql}
