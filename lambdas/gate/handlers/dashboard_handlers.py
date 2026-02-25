@@ -597,7 +597,7 @@ def get_videos(event):
             date_folder = current_date.strftime('%Y-%m-%d')
             print(date_folder)
             print(PARENT_FOLDER)
-            prefix = f"{PARENT_FOLDER}/{date_folder}/"
+            prefix = f"lpr-images/{date_folder}/"
             print(f"DEBUG: S3 found nothing for prefix '{prefix}'")
             # Use paginator in case a single day has hundreds of "Event" videos
             paginator = s3_client.get_paginator('list_objects_v2')
@@ -609,6 +609,7 @@ def get_videos(event):
                         # 3. Filter for camera_id in the filename
                         if camera_id in key:
                             # Generate Presigned URL (valid for 1 hour)
+                            print(f"the key is {key}")
                             url = s3_client.generate_presigned_url(
                                 'get_object',
                                 Params={'Bucket': BUCKET_NAME, 'Key': key},
