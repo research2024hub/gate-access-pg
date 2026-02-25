@@ -596,7 +596,7 @@ def get_videos(event):
         while current_date <= end_date:
             date_folder = current_date.strftime('%Y-%m-%d')
             prefix = f"{PARENT_FOLDER}/{date_folder}/"
-            
+            print(f"DEBUG: S3 found nothing for prefix '{prefix}'")
             # Use paginator in case a single day has hundreds of "Event" videos
             paginator = s3_client.get_paginator('list_objects_v2')
             for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=prefix):
