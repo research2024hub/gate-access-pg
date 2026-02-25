@@ -623,19 +623,14 @@ def get_videos(event):
             
             current_date += timedelta(days=1)
 
-        return _success_response( 200,{
-            'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({
-                'camera': camera_id,
-                'count': len(video_links),
-                'videos': video_links
+        return _success_response(200,{
+            'camera': camera_id,
+            'count': len(video_links),
+            'videos': video_links
             })
-        })
 
     except Exception as e:
-        return _error_response(500, {
-            'body': json.dumps({'error': str(e)})
-        })
+        return _error_response(500,f"error: {str(e)}")
 # def process_downtime_alerts(conn, gate_id):
 #     now = datetime.now(timezone.utc)
     
