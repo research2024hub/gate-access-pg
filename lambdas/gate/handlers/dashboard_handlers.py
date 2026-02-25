@@ -614,6 +614,7 @@ def get_videos(event):
                                 Params={'Bucket': BUCKET_NAME, 'Key': key},
                                 ExpiresIn=3600
                             )
+                            print(f'The camera name is {camera_id}')
                             video_links.append({
                                 'filename': key.split('/')[-1],
                                 'url': url,
