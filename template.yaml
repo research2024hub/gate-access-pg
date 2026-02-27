@@ -239,6 +239,11 @@ Resources:
           Properties:
             Path: /gate/vehicle_arrival/callback
             Method: POST
+        EmailUserAboutGateApi:
+          Type: Api
+          Properties:
+            Path: /gate/email_user
+            Method: POST
         DeleteGateApi:
           Type: Api
           Properties:

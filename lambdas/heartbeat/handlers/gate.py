@@ -290,12 +290,13 @@ def monitor_heartbeat(conn):
                                                 f"Regards,\nSystem Monitor")
                                 
                                 user_topic = "Gate Access System Update"
-                                try:
-                                    for email in user_emails_list:
-                                        if email: # Safety check to skip empty emails
+                                
+                                for email in user_emails_list:
+                                    if email: # Safety check to skip empty emails
+                                        try:
                                             result = send_email(email, user_topic, user_message)
-                                except Exception as e:
-                                    print(f"Skipped {email} due to error: {e}")
+                                        except Exception as e:
+                                            print(f"Skipped {email} due to error: {e}")
 
                                 # --- 3. UPDATE DB ---
                                 

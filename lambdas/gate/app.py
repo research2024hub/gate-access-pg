@@ -14,7 +14,7 @@ from handlers.gate import (
     get_vehicles_by_gate_with_time_check,
     get_vehicles_by_gate_no_time_check_by_gate_controller,
     get_vehicles_by_gate_with_time_check_by_gate_controller,
-    person_arrives_with_vehicle_callback
+    person_arrives_with_vehicle_callback, notify_via_email
 )
 import os
 from handlers.dashboard_handlers import (
@@ -52,6 +52,8 @@ def lambda_handler(event, context):
                 return deactivate_gate(conn, body, event)
             elif path == "/system/metrics":
                 return ingest_system_metrics(conn, body, event)
+            elif path == "/gate/email_user":
+                return notify_via_email(conn, body, event)
             elif path.startswith("/gate/vehicle_arrival/callback"):
                 return person_arrives_with_vehicle_callback(conn, body, event)
             else:

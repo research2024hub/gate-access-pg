@@ -2,7 +2,7 @@ import json
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
 
-from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_gate, notify_user
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_gate, notify_user, send_email
 from middleware import verify_token, cors_wrap
 
 def _success_response(status_code: int, body: dict):
@@ -807,3 +807,47 @@ def deactivate_gate(conn, body, event):
 
     return _success_response(200, {"message": "Gate deactivated successfully.", "gate_id": gate_id})
 
+def notify_via_email(conn, body, event):
+    payload, error = verify_token(event)
+    if error:
+        return error 
+    user_id = payload.get("user_id")
+    is_admin = payload.get("is_admin", False)
+    if not is_admin:
+        return _error_response(400, "Sorry; Only Admins can perform this action.")
+
+    message = body.get("message")
+    gate_name = body.get("gate_name")
+    title = "Gate Access System Update"
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""
+        SELECT 
+            g.id, 
+            g.name,
+            array_agg(u.email) FILTER (WHERE u.email IS NOT NULL) AS user_emails
+        FROM gates g
+        LEFT JOIN personal_info pi 
+            ON g.estate_id = pi.estate_id
+        LEFT JOIN account_holders a 
+            ON pi.id = a.personal_info_id
+        LEFT JOIN users u 
+            ON a.user_id = u.id  
+        WHERE g.name = %s
+        GROUP BY 
+            g.id, 
+            g.name;
+        """, (gate_name,))
+
+        row = cur.fetchone()
+        if not row or not row["user_emails"]:
+            return _error_response(404, f"No users found for gate {gate_name}")
+        user_emails_list = row["user_emails"]
+        
+        for email in user_emails_list:
+            if email: # Safety check to skip empty emails
+                try:
+                    result = send_email(email, title, message)
+                except Exception as e:
+                    print(f"Skipped {email} due to error: {e}")
+    
+    return _success_response(200, {"message": "Gate Update sent successfully.", "gate_name": gate_name})
