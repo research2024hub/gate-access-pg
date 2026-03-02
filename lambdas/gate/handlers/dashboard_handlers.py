@@ -14,7 +14,7 @@ THRESHOLD_SECONDS = 600
 ALERT_COOLDOWN = 1800  # 24 hours in seconds
 s3_client = boto3.client('s3')
 BUCKET_NAME = 'itc-lpr-bucket'
-PARENT_FOLDER = 'lpr-images'
+PARENT_FOLDER = 'lp-images'
 # ---------------------------------------------------------------------------
 # CORS helper & patched response wrappers
 # ---------------------------------------------------------------------------
@@ -563,75 +563,163 @@ def alert_user(conn, body, event):
 
 
 
+# def get_videos(event):
+#     # 1. Extract Query Parameters from the API Gateway event
+#     payload, error = verify_token(event)
+#     if error:
+#         return error
+#     is_admin = payload.get("is_admin", False)
+#     user_id = payload.get("user_id")
+#     if not is_admin:
+#         return _error_response(403, "Access denied. Only admins can perform this action.")
+#     query_params = event.get('queryStringParameters', {})
+    
+#     start_date_str = query_params.get('start_date')
+#     end_date_str = query_params.get('end_date')
+#     camera_id = query_params.get('camera_id')
+
+#     # Basic validation
+#     if not all([start_date_str, end_date_str, camera_id]):
+#         return {
+#             'statusCode': 400,
+#             'body': json.dumps({'error': 'Missing parameters: start_date, end_date, and camera_id are required.'})
+#         }
+
+#     try:
+#         start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+#         end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+        
+#         video_links = []
+#         current_date = start_date
+
+#         # 2. Iterate through folders named by date
+#         while current_date <= end_date:
+#             date_folder = current_date.strftime('%Y-%m-%d')
+#             print(date_folder)
+#             print(PARENT_FOLDER)
+#             prefix = f"lp-images/{date_folder}/"
+#             print(f"DEBUG: S3 found nothing for prefix '{prefix}'")
+#             # Use paginator in case a single day has hundreds of "Event" videos
+#             paginator = s3_client.get_paginator('list_objects_v2')
+#             for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=prefix):
+#                 if 'Contents' in page:
+#                     for obj in page['Contents']:
+#                         key = obj['Key']
+                        
+#                         # 3. Filter for camera_id in the filename
+#                         if camera_id in key:
+#                             # Generate Presigned URL (valid for 1 hour)
+#                             print(f"the key is {key}")
+#                             url = s3_client.generate_presigned_url(
+#                                 'get_object',
+#                                 Params={'Bucket': BUCKET_NAME, 'Key': key},
+#                                 ExpiresIn=3600
+#                             )
+#                             print(f'The camera name is {camera_id}')
+#                             video_links.append({
+#                                 'filename': key.split('/')[-1],
+#                                 'url': url,
+#                                 'last_modified': str(obj['LastModified'])
+#                             })
+            
+#             current_date += timedelta(days=1)
+
+#         return _success_response(200,{
+#             'camera': camera_id,
+#             'count': len(video_links),
+#             'videos': video_links
+#             })
+
+#     except Exception as e:
+#         return _error_response(500,f"error: {str(e)}")
+
 def get_videos(event):
-    # 1. Extract Query Parameters from the API Gateway event
+    # 1. Admin & Token Verification (Restored)
     payload, error = verify_token(event)
     if error:
         return error
+    
     is_admin = payload.get("is_admin", False)
-    user_id = payload.get("user_id")
     if not is_admin:
         return _error_response(403, "Access denied. Only admins can perform this action.")
-    query_params = event.get('queryStringParameters', {})
     
+    # 2. Extract Query Parameters
+    query_params = event.get('queryStringParameters', {}) or {}
     start_date_str = query_params.get('start_date')
     end_date_str = query_params.get('end_date')
     camera_id = query_params.get('camera_id')
 
-    # Basic validation
+    # Pagination Parameters (Defaults: Page 1, Limit 20)
+    try:
+        page_num = int(query_params.get('page', 1))
+        limit = int(query_params.get('limit', 20))
+    except ValueError:
+        return _error_response(400, "Page and limit must be integers.")
+
     if not all([start_date_str, end_date_str, camera_id]):
-        return {
-            'statusCode': 400,
-            'body': json.dumps({'error': 'Missing parameters: start_date, end_date, and camera_id are required.'})
-        }
+        return _error_response(400, "Missing parameters: start_date, end_date, and camera_id are required.")
 
     try:
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
         
-        video_links = []
+        all_matches = []
         current_date = start_date
 
-        # 2. Iterate through folders named by date
+        # 3. Collect all matching metadata across the date range
         while current_date <= end_date:
             date_folder = current_date.strftime('%Y-%m-%d')
-            print(date_folder)
-            print(PARENT_FOLDER)
-            prefix = f"lp-images/{date_folder}/"
-            print(f"DEBUG: S3 found nothing for prefix '{prefix}'")
-            # Use paginator in case a single day has hundreds of "Event" videos
+            # Using your 'lpr-images' structure
+            prefix = f"{PARENT_FOLDER}/{date_folder}/"
+            
             paginator = s3_client.get_paginator('list_objects_v2')
             for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=prefix):
                 if 'Contents' in page:
                     for obj in page['Contents']:
                         key = obj['Key']
-                        
-                        # 3. Filter for camera_id in the filename
-                        if camera_id in key:
-                            # Generate Presigned URL (valid for 1 hour)
-                            print(f"the key is {key}")
-                            url = s3_client.generate_presigned_url(
-                                'get_object',
-                                Params={'Bucket': BUCKET_NAME, 'Key': key},
-                                ExpiresIn=3600
-                            )
-                            print(f'The camera name is {camera_id}')
-                            video_links.append({
-                                'filename': key.split('/')[-1],
-                                'url': url,
-                                'last_modified': str(obj['LastModified'])
+                        # Case-insensitive filter to ensure we don't return 0
+                        if camera_id.lower() in key.lower():
+                            all_matches.append({
+                                'key': key,
+                                'last_modified': obj['LastModified']
                             })
             
             current_date += timedelta(days=1)
 
-        return _success_response(200,{
-            'camera': camera_id,
-            'count': len(video_links),
-            'videos': video_links
+        # 4. Apply Pagination Slicing
+        # Logic: Start at (Page-1)*Limit. End at Start+Limit.
+        total_count = len(all_matches)
+        start_index = (page_num - 1) * limit
+        end_index = start_index + limit
+        paginated_items = all_matches[start_index:end_index]
+
+        # 5. Generate Presigned URLs ONLY for the paginated slice
+        # This prevents the Lambda from timing out on large result sets
+        video_links = []
+        for item in paginated_items:
+            url = s3_client.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': BUCKET_NAME, 'Key': item['key']},
+                ExpiresIn=3600
+            )
+            video_links.append({
+                'filename': item['key'].split('/')[-1],
+                'url': url,
+                'last_modified': str(item['last_modified'])
             })
 
+        return _success_response(200, {
+            'camera': camera_id,
+            'total_found': total_count,
+            'current_page': page_num,
+            'limit': limit,
+            'has_more': end_index < total_count,
+            'videos': video_links
+        })
+
     except Exception as e:
-        return _error_response(500,f"error: {str(e)}")
+        return _error_response(500, f"Internal error: {str(e)}")
+
 # def process_downtime_alerts(conn, gate_id):
 #     now = datetime.now(timezone.utc)
     
