@@ -435,4 +435,54 @@ def parse_ts(ts):
         return ts
 
                            
+def process_messages(conn):
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    # get messages older than 1 hour
+            cur.execute("""
+                SELECT message, topic, date_created
+                FROM messagedb
+                WHERE date_created <= NOW() - INTERVAL '1 hour'
+            """)
+
+            rows = cur.fetchall()
+            topic =rows['topic']
+            message = rows['message']
+            date_created =rows['date_created']
+            
+            cur.execute("""
+              SELECT 
+                    g.id, 
+                    g.last_controller_heartbeat, 
+                    g.last_alert_sent_at,
+                    g.name,
+                    array_agg(u.email) FILTER (WHERE u.email IS NOT NULL) AS user_emails
+                FROM gates g
+                LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
+                LEFT JOIN account_holders a ON pi.id = a.personal_info_id
+                LEFT JOIN users u ON a.user_id = u.id  
+                GROUP BY g.id, g.last_controller_heartbeat, g.last_alert_sent_at, g.name
+            """)
+            
+            rows = cur.fetchall()
+            user_emails_list = rows['user_emails']
+                # call email function
+            for email in user_emails_list:
+                if email: # Safety check to skip empty emails
+                    try:
+                        result = send_email(email, topic, message)
+                    except Exception as e:
+                        print(f"Skipped {email} due to error: {e}")
+                # send_email(message, topic)
+
+                # delete processed message
+            cur.execute("""
+                DELETE FROM messagedb
+                WHERE date_created = %s
+            """, (date_created))
+
+            conn.commit()
+
+    finally:
+        conn.close()
                            
