@@ -5,7 +5,7 @@ import json
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_message, send_email
-from middleware import verify_token, cors_wrap, CORS_HEADERS
+from middleware import verify_token, cors_wrap, CORS_HEADERS, verify_google_token
 import random
 import smtplib
 from email.mime.text import MIMEText
@@ -453,6 +453,18 @@ def login_user(conn, body):
         conn.rollback()
         print("[ERROR] Exception during login:", str(e))
         return _error_response(500, "Internal server error during login.")
+    
+    import json
+
+def googleauth(body):
+    token = body.get("token")
+
+    user = verify_google_token(token)
+
+    if not user:
+        return _error_response(401, "Invalid token")
+
+    return _success_response( 200, "Token verified, You can login")
 
 
 def change_password(conn, body, event):

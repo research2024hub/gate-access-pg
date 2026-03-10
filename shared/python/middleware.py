@@ -1,12 +1,16 @@
 import jwt
 import os
 from utils import _error_response
-
+from google.oauth2 import id_token
+from google.auth.transport import requests
+import json
 # ---------------------------------------------------------------------------
 # JWT verification helper (existing code)
 # ---------------------------------------------------------------------------
 JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")
-
+GOOGLE_CLIENT_ID_AND = os.environ.get("GOOGLE_CLIENT_ID_AND")
+GOOGLE_CLIENT_ID_IOS = os.environ.get("GOOGLE_CLIENT_ID_IOS")
+ALLOWED_CLIENT_IDS = [GOOGLE_CLIENT_ID_AND, GOOGLE_CLIENT_ID_IOS]
 def verify_token(event):
     """
     Extracts and verifies JWT from request headers.
@@ -43,3 +47,18 @@ def cors_wrap(resp: dict) -> dict:
     hdrs.update(CORS_HEADERS)
     resp["headers"] = hdrs
     return resp
+
+
+def verify_google_token(token):
+    try:
+        idinfo = id_token.verify_oauth2_token(
+            token,
+            requests.Request(),
+            None
+        )
+        if idinfo['aud'] not in ALLOWED_CLIENT_IDS:
+            raise ValueError("Invalid audience")
+        return idinfo
+
+    except ValueError:
+        return  _error_response(500, "Unsuccessful Authentication")

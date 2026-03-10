@@ -261,13 +261,20 @@ def monitor_heartbeat(conn):
                             else:
                                 print(f"  Status: In cooldown. Skipping.")
                         
-
+                        user_message =(f"We are currently experiencing technical difficulties with the {name} . Our team is investigating the issue and working on a fix right now. We apologize for the interruption and expect to be back online shortly.\n\n"
+                                                f"Regards,\nSystem Monitor")
+                                
+                        user_topic = "Gate Access System Update"
                         if should_alert:
                             try:
                                 readable_timestamp = last_heartbeat.strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]
                                 cur.execute(
                                     "UPDATE gates SET last_alert_sent_at = NOW() WHERE id = %s", 
                                     (device_id,)
+                                )
+                                cur.execute(""""
+                                    INSERT INTO messagedb (topic, message)
+                                    VALUES(%s, %s)""",(user_topic,user_message) 
                                 )
                                 conn.commit()
     
@@ -286,17 +293,14 @@ def monitor_heartbeat(conn):
 
                                 # --- 2. USER ALERTS (Preserves original behavior) ---
                                 # We now loop through the list of emails to ensure every user still gets their notification.
-                                user_message =(f"We are currently experiencing technical difficulties with the {name} . Our team is investigating the issue and working on a fix right now. We apologize for the interruption and expect to be back online shortly.\n\n"
-                                                f"Regards,\nSystem Monitor")
+                              
                                 
-                                user_topic = "Gate Access System Update"
-                                
-                                for email in user_emails_list:
-                                    if email: # Safety check to skip empty emails
-                                        try:
-                                            result = send_email(email, user_topic, user_message)
-                                        except Exception as e:
-                                            print(f"Skipped {email} due to error: {e}")
+                                # for email in user_emails_list:
+                                #     if email: # Safety check to skip empty emails
+                                #         try:
+                                #             result = send_email(email, user_topic, user_message)
+                                #         except Exception as e:
+                                #             print(f"Skipped {email} due to error: {e}")
 
                                 # --- 3. UPDATE DB ---
                                 
