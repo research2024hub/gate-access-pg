@@ -443,6 +443,8 @@ def process_messages(conn):
                 SELECT message, topic, date_created
                 FROM messagedb
                 WHERE date_created <= NOW() - INTERVAL '1 hour'
+                ORDER BY date_created DESC
+                LIMIT 1;        
             """)
 
             rows = cur.fetchall()
@@ -478,7 +480,7 @@ def process_messages(conn):
                 # delete processed message
             cur.execute("""
                 DELETE FROM messagedb
-                WHERE date_created = %s
+                WHERE date_created <= %s
             """, (date_created))
 
             conn.commit()
