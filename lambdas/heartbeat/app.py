@@ -4,7 +4,7 @@ from handlers.gate import (monitor_heartbeat,process_messages)
 import os
 from utils import _error_response
 db_url = os.environ.get("DATABASE_URL")
-conn = psycopg2.connect(db_url)
+# conn = psycopg2.connect(db_url)
 # def lambda_handler(event, context):
 #     if not db_url:
 #         return _error_response(500, "DATABASE_URL not set")
@@ -24,6 +24,7 @@ def lambda_handler(event, context):
     path = event.get("path")
     if not db_url:
         return _error_response(500, "DATABASE_URL not set")
+    conn = psycopg2.connect(db_url)
     try:
         if path == "heartbeat":
             return monitor_heartbeat(conn)
