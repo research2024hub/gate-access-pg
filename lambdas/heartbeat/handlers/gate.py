@@ -447,7 +447,7 @@ def process_messages(conn):
                 LIMIT 1;        
             """)
 
-            rows = cur.fetchall()
+            rows = cur.fetchone()
             topic =rows['topic']
             message = rows['message']
             date_created =rows['date_created']
