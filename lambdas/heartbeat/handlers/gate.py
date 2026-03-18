@@ -448,6 +448,9 @@ def process_messages(conn):
             """)
 
             rows = cur.fetchone()
+            if rows is None:
+                print("No data found")
+                return None
             topic =rows['topic']
             message = rows['message']
             date_created =rows['date_created']
