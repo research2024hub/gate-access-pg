@@ -272,7 +272,7 @@ def monitor_heartbeat(conn):
                                     "UPDATE gates SET last_alert_sent_at = NOW() WHERE id = %s", 
                                     (device_id,)
                                 )
-                                cur.execute(""""
+                                cur.execute("""
                                     INSERT INTO messagedb (topic, message)
                                     VALUES(%s, %s)""",(user_topic,user_message) 
                                 )
@@ -484,7 +484,7 @@ def process_messages(conn):
             cur.execute("""
                 DELETE FROM messagedb
                 WHERE date_created <= %s
-            """, (date_created))
+            """, (date_created,))
 
             conn.commit()
 
