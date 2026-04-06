@@ -303,7 +303,7 @@ def register_admin_user(conn, body):
 
         cur.execute("""
             INSERT INTO users (email, password, is_admin, phone_number)
-            VALUES (%s, %s, true)
+            VALUES (%s, %s, true, %s)
             RETURNING id
         """, (email, hashed_password, phone_number,))
         user_id = cur.fetchone()["id"]
