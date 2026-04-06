@@ -291,12 +291,12 @@ def register_admin_user(conn, body):
         if email:
             cur.execute("""
                 SELECT password, otp, otp_expiry FROM pending_users WHERE email = %s
-            """, (email))
+            """, (email,))
             row = cur.fetchone()
         else:
             cur.execute("""
                 SELECT password, otp, otp_expiry FROM pending_users WHERE phone_number = %s 
-            """, (phone_number))
+            """, (phone_number,))
             row = cur.fetchone()
         if row:
             return _error_response(409, "User already exists.")
@@ -305,7 +305,7 @@ def register_admin_user(conn, body):
             INSERT INTO users (email, password, is_admin, phone_number)
             VALUES (%s, %s, true)
             RETURNING id
-        """, (email, hashed_password, phone_number))
+        """, (email, hashed_password, phone_number,))
         user_id = cur.fetchone()["id"]
 
         log(conn, "GLOBAL_ADMIN_USER_REGISTRATION", f"User '{user_id}' [{email}] registered as global admin", user_id, None, None)
