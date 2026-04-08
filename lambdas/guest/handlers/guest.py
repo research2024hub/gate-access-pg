@@ -113,8 +113,8 @@ def create_guest_regular(conn, body, event):
 
             conn.commit()
 
-            expiry_date_readable = datetime.fromisoformat(expiry).strftime("%A, %d %B %Y %H:%M")
-            start_date_readable = datetime.fromisoformat(start).strftime("%A, %d %B %Y %H:%M")
+            expiry_date_readable = datetime.fromisoformat(expiry).strftime("%A, %d %B %Y at %H:%M")
+            start_date_readable = datetime.fromisoformat(start).strftime("%A, %d %B %Y at %H:%M")
 
             phone_number = contact.lstrip('+')
             if license_plate_number:
