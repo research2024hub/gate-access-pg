@@ -135,11 +135,11 @@ def update_gate_controller_heartbeat(conn, event, body):
         cur.execute("""
             UPDATE gates
             SET last_controller_heartbeat = CURRENT_TIMESTAMP,
-            SNR = COALESCE(%s, p.SNR) 
-            RSSI = COALESCE(%s, p.RSSI)
+            SNR = COALESCE(%s, SNR) 
+            RSSI = COALESCE(%s, RSSI)
             WHERE id = %s
             RETURNING name, estate_id;
-        """, (gate_id,))
+        """, (SNR, RSSI, gate_id,))
         row = cur.fetchone()
         if not row:
             return _error_response(404, "Gate not found.")
