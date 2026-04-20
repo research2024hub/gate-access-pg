@@ -275,7 +275,7 @@ def save_guest_face(conn, body, event):
 
             g = cur.fetchone()
             message = {
-            "body": f"{g['guest_name']} has arrived",
+            "body": f"{guest_name} has arrived",
             "image_url": image_url
         }
 

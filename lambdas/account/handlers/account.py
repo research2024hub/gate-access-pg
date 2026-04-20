@@ -1135,7 +1135,7 @@ def update_account(conn, body, event):
                 name = COALESCE(%s, p.name), 
                 id_type = COALESCE(%s, p.id_type), 
                 id_num = COALESCE(%s, p.id_num), 
-                contact = COALESCE(%s, p.contact)
+                contact = COALESCE(%s, p.contact),
                 access_group_id = COALESCE(%s, p.access_group_id)
             FROM 
                 account_holders ah_sub -- The account we are editing
@@ -1156,11 +1156,11 @@ def update_account(conn, body, event):
                 ah_sub.user_id AS matched_user_id,
                 p.estate_id; 
         """, (
-            name, id_type, id_num, contact,  # For COALESCE
-            account_holder_id_to_edit,       # For ah_sub.id = %s
-            caller_user_id,                  # For ah_sub.user_id = %s
-            caller_user_id,                  # For ah_owner.user_id = %s
-            is_admin                         # For %s = True
+            name, id_type, id_num, contact, access_group_id,   # For COALESCE
+        account_holder_id_to_edit,                              # For ah_sub.id = %s
+            caller_user_id,                                      # For ah_sub.user_id = %s
+            caller_user_id,                                      # For ah_owner.user_id = %s
+            is_admin                                            # For %s = True
         ))
         result = cur.fetchone()
 

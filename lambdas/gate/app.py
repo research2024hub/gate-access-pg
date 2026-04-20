@@ -45,7 +45,7 @@ def lambda_handler(event, context):
             elif path == "/gate/update":
                 return update_gate(conn, body, event)
             elif path == "/gate/heartbeat":
-                return update_gate_controller_heartbeat(conn, event)
+                return update_gate_controller_heartbeat(conn, event, body)
             elif path == "/gate/activate":
                 return activate_gate(conn, body, event)
             elif path == "/gate/deactivate":
