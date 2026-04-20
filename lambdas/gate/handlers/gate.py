@@ -135,8 +135,8 @@ def update_gate_controller_heartbeat(conn, event, body):
         cur.execute("""
             UPDATE gates
             SET last_controller_heartbeat = CURRENT_TIMESTAMP,
-            SNR = COALESCE(%s, SNR), 
-            RSSI = COALESCE(%s, RSSI)
+            snr = COALESCE(%s, snr), 
+            rssi = COALESCE(%s, rssi)
             WHERE id = %s
             RETURNING name, estate_id;
         """, (SNR, RSSI, gate_id,))
