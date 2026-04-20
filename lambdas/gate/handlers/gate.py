@@ -112,7 +112,7 @@ def update_gate(conn, body, event):
     return _success_response(200, {"message": "Gate updated successfully.", "gate_id": gate_id})
 
 
-def update_gate_controller_heartbeat(conn, event):
+def update_gate_controller_heartbeat(conn, event, body):
     """
     Updates the gate's last_controller_heartbeat field to the current timestamp.
     This endpoint should be called by the gate controller to signal its heartbeat.

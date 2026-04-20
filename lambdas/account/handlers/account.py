@@ -1,7 +1,7 @@
 import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_personal_info, get_user_privileges_for_account_holder,send_gmail
+from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_estate,get_user_privileges_for_personal_info,get_user_privileges_for_account_holder,send_gmail, notify_user
 import random
 from datetime import datetime, timedelta
 from middleware import verify_token
@@ -691,6 +691,9 @@ def activate_account(conn, body, event):
         log(conn, "ACCOUNT_ACTIVATION", "Account activated", user_id, account_holder_id, result["estate_id"])
 
         conn.commit()
+        title = "ACCOUNT ACTIVATATED"
+        message = f"Welcome Aboard \n Your account is now fully active. We’re glad to have you with us!"
+        notify_user(user_id,title,message)
 
     return _success_response(200, {"message": "Account activated successfully."})
 
@@ -892,25 +895,38 @@ def verify_account_otp(conn, body, event):
     payload, error = verify_token(event)
     if error:
         return error
+    gate_id = payload.get("gate_id", None)
+    device_type = payload.get("type", None)
 
-    account_holder_id = body.get("account_holder_id")
+    if not (gate_id and device_type == "TABLET"):
+        return _error_response(401, "Unauthorized. Not a registered tablet")
+
+    # account_holder_id = body.get("account_holder_id")
     otp_provided = body.get("otp")
-
-    if not account_holder_id or not otp_provided:
-        return _error_response(400, "Missing 'account_holder_id' or 'otp'.")
+    # if not account_holder_id or not otp_provided:
+    #     return _error_response(400, "Missing 'account_holder_id' or 'otp'.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # 1. Get current OTP
-        cur.execute("""
-            SELECT otp, otp_generated_at FROM account_holders WHERE id = %s
-        """, (account_holder_id,))
-        
+        # cur.execute("""
+        #     SELECT otp, otp_generated_at FROM account_holders WHERE id = %s
+        # """, (account_holder_id,))
+        cur.execute(
+            """
+            SELECT pi.name, ah.id, ah.user_id, pi.estate_id, ah.otp_generated_at
+            FROM account_holders ah
+            JOIN personal_info pi ON pi.id = ah.personal_info_id
+            WHERE ah.otp = %s 
+            AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s)
+            """,(otp_provided, gate_id,)
+        )
         account_info = cur.fetchone()
         if not account_info:
             return _error_response(404, "Account holder not found.")
 
         otp_stored = account_info["otp"]
         otp_generated_at = account_info["otp_generated_at"]
+        account_holder_id = account_info["id"]
 
         # 2. Validate
         if not otp_stored:
@@ -1095,7 +1111,7 @@ def update_account(conn, body, event):
     caller_user_id = payload.get("user_id")
     is_admin = payload.get("is_admin", False) # Default to False if not present
     
-    if not caller_user_id:
+    if not caller_user_id and not is_admin:
         return _error_response(401, "Invalid token or user ID.")
 
     # 2. INPUT: Get what to update and which account to target
@@ -1103,6 +1119,7 @@ def update_account(conn, body, event):
     id_type = body.get("id_type")
     id_num = body.get("id_num")
     contact = body.get("contact")
+    access_group_id = body.get("access_group_id")
     account_holder_id_to_edit = body.get("account_holder_id")
     if not account_holder_id_to_edit:
         # Fixed the error message to match the check
@@ -1119,6 +1136,7 @@ def update_account(conn, body, event):
                 id_type = COALESCE(%s, p.id_type), 
                 id_num = COALESCE(%s, p.id_num), 
                 contact = COALESCE(%s, p.contact)
+                access_group_id = COALESCE(%s, p.access_group_id)
             FROM 
                 account_holders ah_sub -- The account we are editing
             LEFT JOIN 
