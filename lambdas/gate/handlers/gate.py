@@ -122,17 +122,21 @@ def update_gate_controller_heartbeat(conn, event, body):
     if error:
         return error
 
-    gate_id = payload.get("gate_id", None)
+    gate_iid = payload.get("gate_id", None)
     device_type = payload.get("type", None)
-
-    if not (gate_id and device_type == "GATE"):
+    SNR = body.get("SNR")
+    RSSI = body.get("RSSI")
+    gate_id = body.get("gate_id")
+    if not (gate_iid and device_type == "GATE"):
         return _error_response(401, "Unauthorized.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check user privileges
         cur.execute("""
             UPDATE gates
-            SET last_controller_heartbeat = CURRENT_TIMESTAMP
+            SET last_controller_heartbeat = CURRENT_TIMESTAMP,
+            SNR = COALESCE(%s, p.SNR) 
+            RSSI = COALESCE(%s, p.RSSI)
             WHERE id = %s
             RETURNING name, estate_id;
         """, (gate_id,))

@@ -1125,7 +1125,7 @@ def update_account(conn, body, event):
         # Fixed the error message to match the check
         return _error_response(400, "Missing 'account_holder_id' in request body.")
     
-    if all(v is None for v in [name, id_type, id_num, contact]):
+    if all(v is None for v in [name, id_type, id_num, contact, access_group_id]):
         return _error_response(400, "No fields provided to update.")
     # 4. EXECUTION: Run the single, atomic, and secure query
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
