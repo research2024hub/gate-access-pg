@@ -157,14 +157,14 @@ def match_guest_face(conn, body, event):
             cur.execute("""
                 DELETE FROM faces
                 WHERE id = %s
-                RETURNING id, name
+                RETURNING id, guest_id
             """, (face_id_to_delete,))
 
             row = cur.fetchone()
             if not row:
                 # Means the face was not actually in DB or was already deleted
                 return _error_response(404, "Face not found in DB.")
-            guest_name = row["name"]
+            guest_id = row["guest_id"]
             cur.execute("""
                 SELECT estate_id, name FROM gates g
                 WHERE g.id = %s
@@ -173,8 +173,9 @@ def match_guest_face(conn, body, event):
             gate_data = cur.fetchone()
 
             cur.execute("""
-                SELECT ah.user_id, g.name FROM guests g
+                SELECT ah.user_id, p.name FROM guests g
                 JOIN account_holders ah ON ah.id = g.creator_id
+                JOIN personal_info p ON p.id = g.personal_info_id
                 WHERE g.id = %s
             """, (updated_guest["id"],))
 
@@ -182,7 +183,7 @@ def match_guest_face(conn, body, event):
 
             notify_user(g["user_id"],"Guest Exit", f"{g['name']} has exited")
             
-            log(conn, "FACE_MATCH", f"Guest {guest_name} exited at gate '[{gate_data['name']}]", None, None, gate_data["estate_id"])
+            log(conn, "FACE_MATCH", f"Guest {g['name']} exited at gate '[{gate_data['name']}]", None, None, gate_data["estate_id"])
             
             conn.commit()
 
