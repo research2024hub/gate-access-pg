@@ -913,7 +913,7 @@ def verify_account_otp(conn, body, event):
         # """, (account_holder_id,))
         cur.execute(
             """
-            SELECT pi.name, ah.id, ah.user_id, pi.estate_id, ah.otp_generated_at
+            SELECT pi.name, ah.id, ah.user_id, pi.estate_id, ah.otp_generated_at, ah.otp
             FROM account_holders ah
             JOIN personal_info pi ON pi.id = ah.personal_info_id
             WHERE ah.otp = %s 
@@ -922,7 +922,7 @@ def verify_account_otp(conn, body, event):
         )
         account_info = cur.fetchone()
         if not account_info:
-            return _error_response(404, "Account holder not found.")
+            return _error_response(404, "Invalid OTP or Account not found for this estate.")
 
         otp_stored = account_info["otp"]
         otp_generated_at = account_info["otp_generated_at"]
@@ -936,8 +936,8 @@ def verify_account_otp(conn, body, event):
         if (datetime.utcnow() - otp_generated_at).total_seconds() > 60:
             return _error_response(400, "OTP has expired.")
 
-        if otp_provided != otp_stored:
-            return _error_response(400, "Invalid OTP.")
+        # if otp_provided != otp_stored:
+        #     return _error_response(400, "Invalid OTP.")
 
         # 3. Clear OTP after successful verification
         cur.execute("""
