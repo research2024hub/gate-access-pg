@@ -693,7 +693,7 @@ def activate_account(conn, body, event):
         conn.commit()
         title = "ACCOUNT ACTIVATATED"
         message = f"Welcome Aboard \n Your account is now fully active. We’re glad to have you with us!"
-        notify_user(user_id,title,message)
+        notify_user(str(user_id),title,message)
 
     return _success_response(200, {"message": "Account activated successfully."})
 
