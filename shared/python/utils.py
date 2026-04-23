@@ -666,6 +666,17 @@ def get_user_privileges_for_estate(cur, user_id, estate_id, is_admin=False):
     """, (user_id, estate_id))
 
     result = cur.fetchone()
+
+    if not result and is_admin:
+        cur.execute("""
+            SELECT ah.id as account_holder_id
+            FROM account_holders ah
+            JOIN personal_info pi ON ah.personal_info_id = pi.id
+            WHERE pi.estate_id = %s AND ah.is_active = TRUE
+            LIMIT 1
+        """, (estate_id,))
+        result = cur.fetchone()
+
     if not result:
         return None
 
