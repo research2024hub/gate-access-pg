@@ -1,7 +1,7 @@
 import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_estate,get_user_privileges_for_personal_info,get_user_privileges_for_account_holder,send_gmail, notify_user
+from utils import _error_response, _success_response, process_db_results, log, get_user_privileges_for_estate,get_user_privileges_for_personal_info,get_user_privileges_for_account_holder,send_gmail, notify_user, get_user_privileges
 import random
 from datetime import datetime, timedelta
 from middleware import verify_token
@@ -256,8 +256,8 @@ def signupAdmin(conn, body):
 
             # Create account holder entry.
             cur.execute("""
-                INSERT INTO account_holders (user_id, personal_info_id, house_address)
-                VALUES (%s, %s, %s)
+                INSERT INTO account_holders (user_id, personal_info_id, house_address, is_active)
+                VALUES (%s, %s, %s, true)
                 RETURNING id
             """, (user_id, personal_info_id, house_address))
             account_holder_row = cur.fetchone()
@@ -661,7 +661,8 @@ def activate_account(conn, body, event):
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
-        privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin=is_admin)
+        # privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin=is_admin)
+        privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin=is_admin)
 
         if not privileges:
             return _error_response(403, "Account holder not found or you do not have an account in this estate")
