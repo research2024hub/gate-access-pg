@@ -654,14 +654,14 @@ def activate_account(conn, body, event):
         return error
     
     user_id = payload.get("user_id")
-
+    is_admin = payload.get("is_admin")
     account_holder_id = body.get("account_holder_id")
     if not account_holder_id:
-        return _error_response(400, "Missing 'account_holder_id'.")
+        return _error_response(400, "Missing 'account_holder_id'")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Check privileges using enhanced helper
-        privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin=False)
+        privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin=is_admin)
 
         if not privileges:
             return _error_response(403, "Account holder not found or you do not have an account in this estate")
