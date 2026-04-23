@@ -1,6 +1,6 @@
 import json
 import psycopg2
-from handlers.access_group import create_access_group, update_access_group, delete_access_group, get_access_groups, get_access_group_by_id
+from handlers.access_group import create_access_group, update_access_group, delete_access_group, get_access_groups, get_access_group_by_id, get_access_groups_by_estate
 import os
 from utils import _error_response
 
@@ -33,6 +33,8 @@ def lambda_handler(event, context):
         elif http_method == "GET":
             if path == "/access_group/all":
                 return get_access_groups(conn, event)
+            elif path == "/access_group/estate":
+                return get_access_groups_by_estate(conn, event)
             elif path.startswith("/access_group/") and path.count("/") == 2:
                 return get_access_group_by_id(conn, event)
             else:

@@ -400,6 +400,11 @@ Resources:
           Properties:
             Path: /access_group/all
             Method: GET
+        GetAccessGroupsByEstateApi:
+          Type: Api
+          Properties:
+            Path: /access_group/estate
+            Method: GET
         GetAccessGroupByIdApi:
           Type: Api
           Properties:
