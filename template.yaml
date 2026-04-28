@@ -403,7 +403,7 @@ Resources:
         GetAccessGroupsByEstateApi:
           Type: Api
           Properties:
-            Path: /access_group/estate{id}
+            Path: /access_group/estate/{id}
             Method: GET
         GetAccessGroupByIdApi:
           Type: Api
