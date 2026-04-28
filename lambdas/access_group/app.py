@@ -33,7 +33,7 @@ def lambda_handler(event, context):
         elif http_method == "GET":
             if path == "/access_group/all":
                 return get_access_groups(conn, event)
-            elif path == "/access_group/estate":
+            elif path.startswith("/access_group/estate/"):
                 return get_access_groups_by_estate(conn, event)
             elif path.startswith("/access_group/") and path.count("/") == 2:
                 return get_access_group_by_id(conn, event)
