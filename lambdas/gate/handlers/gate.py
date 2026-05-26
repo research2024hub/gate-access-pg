@@ -481,6 +481,8 @@ def person_arrives_with_vehicle_callback(conn, body, event):
 
     license_plate_number = body.get("license_plate_number", None)
     status = body.get("status", None)
+    formatted_now =  body.get("timestamp", None)
+    
 
     if not license_plate_number:
         return _error_response(400, "Missing required field: 'license_plate_number'.")
@@ -518,7 +520,7 @@ def person_arrives_with_vehicle_callback(conn, body, event):
         is_guest = person_data["guest_id"] is not None
         
         print(person_data)
-        formatted_now = now.strftime("%b %d, %Y at %H:%M")
+        # formatted_now = now.strftime("%b %d, %Y at %H:%M")
         title = "USER ACCESS"
         if is_guest:
             other_info = person_data["other_info"] or {}
