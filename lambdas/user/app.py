@@ -1,7 +1,7 @@
 import json
 import psycopg2
 from handlers.auth import register_user, verify_otp, send_user_otp, register_admin_user, login_user, change_password, sendemail, googleauth
-from handlers.user import deactivate_user, activate_user, get_users, get_own_accounts, get_user_accounts, change_user_type,forgot_password,verify_reset_otp,reset_password,delete_user
+from handlers.user import deactivate_user, activate_user, get_users, get_own_accounts, get_user_accounts, change_user_type, forgot_password, verify_reset_otp, reset_password, delete_user, submit_report, get_reports, update_report_status, get_report_status
 import os
 from utils import _error_response
 
@@ -53,7 +53,11 @@ def lambda_handler(event, context):
                 return sendemail(body)
             elif path == "/user/oauth":  # Updated (consistent with template.yaml)
                 return googleauth(body)
-            
+            elif path == "/user/submit_report":
+                return submit_report(conn, body, event)
+            elif path == "/user/update_report_status":
+                return update_report_status(conn, body, event)
+
             else:
                 return _error_response(404, f"Path '{path}' not found.")
         if http_method == "GET":
@@ -64,6 +68,10 @@ def lambda_handler(event, context):
                     return get_own_accounts(conn, event)
                 else:
                     return get_user_accounts(conn, event)
+            elif path == "/user/reports":
+                return get_reports(conn, event)
+            elif path.startswith("/user/report_status/") or path == "/user/report_status":
+                return get_report_status(conn, event)
             else:
                 return _error_response(404, f"Path '{path}' not found.")
             

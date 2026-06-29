@@ -12,7 +12,7 @@ from collections import defaultdict
 # ses_client = boto3.client('ses')
 SENDER_EMAIL =   "itcresearch85@gmail.com"
 RECIPIENT_EMAILS = "itcresearch340@gmail.com"
-THRESHOLD_SECONDS = 900  # Adjust based on your requirements
+THRESHOLD_SECONDS = 1200  # Adjust based on your requirements
 ALERT_COOLDOWN = 86400  # 24 hours in seconds
 
 def send_email_gmail(subject,message):

@@ -336,6 +336,195 @@ def get_user_accounts(conn, event):
         }
     })
 
+def submit_report(conn, body, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    user_id = payload.get("user_id")
+    subject = body.get("subject")
+    description = body.get("description")
+
+    if not subject or not description:
+        return _error_response(400, "Both 'subject' and 'description' are required.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""
+            INSERT INTO user_reports (user_id, subject, description)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        """, (user_id, subject, description))
+
+        report_id = cur.fetchone()["id"]
+
+        cur.execute("""
+            INSERT INTO report_status (report_id, status)
+            VALUES (%s, 'unresolved')
+        """, (report_id,))
+
+        log(conn, "USER_REPORT_SUBMITTED", f"User '{user_id}' submitted report '{report_id}'", user_id, None, None)
+
+        cur.execute("SELECT email FROM users WHERE is_admin = TRUE AND is_active = TRUE")
+        admin_emails = [row["email"] for row in cur.fetchall()]
+
+        conn.commit()
+
+    for admin_email in admin_emails:
+        send_email(admin_email, f"New User Report: {subject}", f"Description:\n{description}\n\nFrom user: {user_id}")
+
+    return _success_response(201, {"message": "Report submitted successfully.", "report_id": report_id})
+
+
+def get_reports(conn, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    if not payload.get("is_admin"):
+        return _error_response(403, "Access denied. Only admins can view reports.")
+
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT COUNT(*) FROM user_reports")
+        total = cur.fetchone()["count"]
+
+        cur.execute("""
+            SELECT ur.id, ur.subject, ur.description, ur.date_created,
+                   u.id AS user_id, u.email AS reported_by
+            FROM user_reports ur
+            JOIN users u ON ur.user_id = u.id
+            ORDER BY ur.date_created DESC
+            LIMIT %s OFFSET %s
+        """, (page_size, offset))
+        reports = process_db_results(cur.fetchall())
+
+    return _success_response(200, {
+        "reports": reports,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+
+
+def update_report_status(conn, body, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    if not payload.get("is_admin"):
+        return _error_response(403, "Access denied. Only admins can update report status.")
+
+    report_id = body.get("report_id")
+    status = body.get("status")
+
+    allowed_statuses = {"resolved", "inprogress", "unresolved"}
+    if not report_id:
+        return _error_response(400, "'report_id' is required.")
+    if status not in allowed_statuses:
+        return _error_response(400, "Invalid status. Must be 'resolved', 'inprogress', or 'unresolved'.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""
+            UPDATE report_status SET status = %s
+            WHERE report_id = %s
+            RETURNING report_id
+        """, (status, report_id))
+
+        if not cur.fetchone():
+            return _error_response(404, "Report not found.")
+
+        log(conn, "REPORT_STATUS_UPDATED", f"Report '{report_id}' status set to '{status}'", payload.get("user_id"), None, None)
+        conn.commit()
+
+    return _success_response(200, {"message": "Report status updated successfully."})
+
+
+def get_report_status(conn, event):
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    if not payload.get("is_admin"):
+        return _error_response(403, "Access denied. Only admins can view report status.")
+
+    path_params = event.get("pathParameters") or {}
+    query_params = event.get("queryStringParameters") or {}
+
+    report_id = path_params.get("report_id")
+    status_filter = query_params.get("status")
+
+    if not report_id and not status_filter:
+        return _error_response(400, "Provide either a 'report_id' in the path or a 'status' query parameter.")
+
+    if report_id:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT rs.report_id, rs.status, ur.subject, ur.description, ur.date_created,
+                       u.email AS reported_by
+                FROM report_status rs
+                JOIN user_reports ur ON rs.report_id = ur.id
+                JOIN users u ON ur.user_id = u.id
+                WHERE rs.report_id = %s
+            """, (report_id,))
+            row = cur.fetchone()
+            if not row:
+                return _error_response(404, "Report not found.")
+        return _success_response(200, process_db_results([row])[0])
+
+    allowed_statuses = {"resolved", "inprogress", "unresolved"}
+    if status_filter not in allowed_statuses:
+        return _error_response(400, "Invalid status. Must be 'resolved', 'inprogress', or 'unresolved'.")
+
+    try:
+        page = int(query_params.get("page", 1))
+        page_size = int(query_params.get("page_size", 20))
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise ValueError
+    except ValueError:
+        return _error_response(400, "Invalid 'page' or 'page_size' parameter.")
+
+    offset = (page - 1) * page_size
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT COUNT(*) FROM report_status WHERE status = %s", (status_filter,))
+        total = cur.fetchone()["count"]
+
+        cur.execute("""
+            SELECT rs.report_id, rs.status, ur.subject, ur.description, ur.date_created,
+                   u.email AS reported_by
+            FROM report_status rs
+            JOIN user_reports ur ON rs.report_id = ur.id
+            JOIN users u ON ur.user_id = u.id
+            WHERE rs.status = %s
+            ORDER BY ur.date_created DESC
+            LIMIT %s OFFSET %s
+        """, (status_filter, page_size, offset))
+        reports = process_db_results(cur.fetchall())
+
+    return _success_response(200, {
+        "reports": reports,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size
+        }
+    })
+
+
 def forgot_password(conn, body):
     email = body.get("email")
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
