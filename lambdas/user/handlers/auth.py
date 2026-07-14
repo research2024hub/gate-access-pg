@@ -171,7 +171,7 @@ def register_user(conn, body):
     email = body.get("email")
     phone_number = body.get("phone_number")
     password = body.get("password")
-
+    result = None
     if not password or (not phone_number and not email):
         return _error_response(400, "Missing email, phone_number or password.")
 
@@ -202,13 +202,13 @@ def register_user(conn, body):
         elif phone_number:
             # message = f"Your OTP is {otp}. Valid for 10 minutes. Please Do not share it."
             token = create_token(phone_number)
-            send_message(phone_number, message)
+            result = send_message(phone_number, message)
             
       
 
         conn.commit()
 
-    return _success_response(200, {"message": "OTP sent to user. Please verify to complete registration.", "token": token, "email result": result})
+    return _success_response(200, {"message": "OTP sent to user. Please verify to complete registration.", "token": token, "result": result})
 # def receive_otp(conn, body):
 #     email = body.get("email")
 #     phone_number = body.get("phone_number")
