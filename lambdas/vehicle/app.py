@@ -2,7 +2,11 @@ import json
 import psycopg2
 import os
 from handlers.vehicle import create_vehicle, update_vehicle, delete_vehicle, get_vehicle_details, list_vehicles_by_owner
-from utils import _error_response
+from utils import _error_response as _base_error_response
+from middleware import cors_wrap
+
+def _error_response(status_code: int, message: str):
+    return cors_wrap(_base_error_response(status_code, message))
 
 def lambda_handler(event, context):
     db_url = os.environ.get("DATABASE_URL")

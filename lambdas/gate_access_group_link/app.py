@@ -5,7 +5,11 @@ from handlers.gate_access_group_link import (
     list_gate_access_groups, list_access_group_gates, update_access_group_link
 )
 import os
-from utils import _error_response
+from utils import _error_response as _base_error_response
+from middleware import cors_wrap
+
+def _error_response(status_code: int, message: str):
+    return cors_wrap(_base_error_response(status_code, message))
 
 def lambda_handler(event, context):
     db_url = os.environ.get("DATABASE_URL")

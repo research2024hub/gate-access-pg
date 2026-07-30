@@ -17,7 +17,7 @@ def verify_token(event):
     """
     auth_header = event.get("headers", {}).get("Authorization", "")
     if not auth_header or not auth_header.startswith("Bearer "):
-        return None, _error_response(401, "Authorization token is missing.")
+        return None, cors_wrap(_error_response(401, "Authorization token is missing."))
 
     token = auth_header.split(" ")[1]
 
@@ -27,9 +27,9 @@ def verify_token(event):
         print(payload)
         return payload, None
     except jwt.ExpiredSignatureError:
-        return None, _error_response(401, "Token has expired.")
+        return None, cors_wrap(_error_response(401, "Token has expired."))
     except jwt.InvalidTokenError:
-        return None, _error_response(401, "Invalid token.")
+        return None, cors_wrap(_error_response(401, "Invalid token."))
 
 # ---------------------------------------------------------------------------
 # CORS utilities – can be imported by any Lambda handler
@@ -61,4 +61,4 @@ def verify_google_token(token):
         return idinfo
 
     except ValueError:
-        return  _error_response(500, "Unsuccessful Authentication")
+        return cors_wrap(_error_response(500, "Unsuccessful Authentication"))

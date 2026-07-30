@@ -1,7 +1,13 @@
 import json
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results, log, get_user_privileges
-from middleware import verify_token
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges
+from middleware import verify_token, cors_wrap
+
+def _success_response(status_code: int, body: dict):
+    return cors_wrap(_base_success_response(status_code, body))
+
+def _error_response(status_code: int, message: str):
+    return cors_wrap(_base_error_response(status_code, message))
 
 def create_vehicle(conn, body, event):
     """

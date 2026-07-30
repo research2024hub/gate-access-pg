@@ -1,9 +1,15 @@
 import boto3
 import base64
 from datetime import datetime
-from utils import _error_response, _success_response, log, notify_user, generate_presigned_url
-from middleware import verify_token
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, log, notify_user, generate_presigned_url
+from middleware import verify_token, cors_wrap
 from psycopg2.extras import RealDictCursor
+
+def _success_response(status_code: int, body: dict):
+    return cors_wrap(_base_success_response(status_code, body))
+
+def _error_response(status_code: int, message: str):
+    return cors_wrap(_base_error_response(status_code, message))
 
 rekognition = boto3.client('rekognition')
 s3 = boto3.client('s3', region_name='eu-west-1')

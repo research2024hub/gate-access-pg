@@ -1,7 +1,7 @@
 import json
 from psycopg2.extras import RealDictCursor
-from utils import _error_response, _success_response, process_db_results, log, send_gmail, send_email
-from middleware import verify_token
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_gmail, send_email
+from middleware import verify_token, cors_wrap
 import time
 import boto3
 import smtplib
@@ -14,6 +14,12 @@ SENDER_EMAIL =   "itcresearch85@gmail.com"
 RECIPIENT_EMAILS = "itcresearch340@gmail.com"
 THRESHOLD_SECONDS = 1200  # Adjust based on your requirements
 ALERT_COOLDOWN = 86400  # 24 hours in seconds
+
+def _success_response(status_code: int, body: dict):
+    return cors_wrap(_base_success_response(status_code, body))
+
+def _error_response(status_code: int, message: str):
+    return cors_wrap(_base_error_response(status_code, message))
 
 def send_email_gmail(subject,message):
     # gmail_user = 'vdowana@itconsortiumgh.com'  # e.g. "yourname@gmail.com"

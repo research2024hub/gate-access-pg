@@ -3,7 +3,11 @@ import psycopg2
 from handlers.auth import register_user, verify_otp, send_user_otp, register_admin_user, login_user, change_password, sendemail, googleauth
 from handlers.user import deactivate_user, activate_user, get_users, get_own_accounts, get_user_accounts, change_user_type, forgot_password, verify_reset_otp, reset_password, delete_user, submit_report, get_reports, update_report_status, get_report_status
 import os
-from utils import _error_response
+from utils import _error_response as _base_error_response
+from middleware import cors_wrap
+
+def _error_response(status_code: int, message: str):
+    return cors_wrap(_base_error_response(status_code, message))
 
 def lambda_handler(event, context):
     db_url = os.environ.get("DATABASE_URL")

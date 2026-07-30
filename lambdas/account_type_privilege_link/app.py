@@ -4,7 +4,11 @@ from handlers.account_type_privilege_link import (
     create_privilege_link, remove_privilege_link, list_account_type_privileges
 )
 import os
-from utils import _error_response
+from utils import _error_response as _base_error_response
+from middleware import cors_wrap
+
+def _error_response(status_code: int, message: str):
+    return cors_wrap(_base_error_response(status_code, message))
 
 def lambda_handler(event, context):
     db_url = os.environ.get("DATABASE_URL")

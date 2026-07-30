@@ -2,7 +2,11 @@ import json
 import psycopg2
 from handlers.device_token import generate_gate_controller_token, generate_tablet_token
 import os
-from utils import _error_response
+from utils import _error_response as _base_error_response
+from middleware import cors_wrap
+
+def _error_response(status_code: int, message: str):
+    return cors_wrap(_base_error_response(status_code, message))
 
 def lambda_handler(event, context):
     db_url = os.environ.get("DATABASE_URL")

@@ -1,12 +1,18 @@
 import json
-from utils import _error_response, _success_response, process_db_results, log, send_email
-from middleware import verify_token
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_email
+from middleware import verify_token, cors_wrap
 from psycopg2.extras import RealDictCursor
 from handlers.auth import send_email_gmail,generate_otp
 import bcrypt
 import jwt
 import os
 from datetime import datetime, timezone
+
+def _success_response(status_code: int, body: dict):
+    return cors_wrap(_base_success_response(status_code, body))
+
+def _error_response(status_code: int, message: str):
+    return cors_wrap(_base_error_response(status_code, message))
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key") 
 

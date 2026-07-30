@@ -2,7 +2,11 @@ import json
 import psycopg2
 from handlers.access_group import create_access_group, update_access_group, delete_access_group, get_access_groups, get_access_group_by_id, get_access_groups_by_estate
 import os
-from utils import _error_response
+from utils import _error_response as _base_error_response
+from middleware import cors_wrap
+
+def _error_response(status_code: int, message: str):
+    return cors_wrap(_base_error_response(status_code, message))
 
 def lambda_handler(event, context):
     db_url = os.environ.get("DATABASE_URL")
