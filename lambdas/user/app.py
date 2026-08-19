@@ -1,6 +1,6 @@
 import json
 import psycopg2
-from handlers.auth import register_user, verify_otp, send_user_otp, register_admin_user, login_user, change_password, sendemail, googleauth
+from handlers.auth import register_user, verify_otp, send_user_otp, register_admin_user, login_user, change_password, sendemail, googleauth, promote_to_admin
 from handlers.user import deactivate_user, activate_user, get_users, get_own_accounts, get_user_accounts, change_user_type, forgot_password, verify_reset_otp, reset_password, delete_user, submit_report, get_reports, update_report_status, get_report_status
 import os
 from utils import _error_response as _base_error_response
@@ -35,6 +35,8 @@ def lambda_handler(event, context):
                 return register_user(conn, body)
             elif path == "/user/register-admin":  # Added /user prefix
                 return register_admin_user(conn, body)
+            elif path == "/user/promote-admin":
+                return promote_to_admin(conn, body, event)
             elif path == "/user/login":  # Added /user prefix
                 return login_user(conn, body)
             elif path == "/user/change_password":  # Added /user prefix

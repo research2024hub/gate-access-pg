@@ -314,6 +314,41 @@ def register_admin_user(conn, body):
 
     return _success_response(201, {"message": "Global Admin User registered successfully.", "user_id": user_id})
 
+def promote_to_admin(conn, body, event):
+    """
+    Promotes an existing user to admin. Only callable by an existing admin.
+    """
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    if not payload.get("is_admin", False):
+        return _error_response(403, "Access denied. Only admins can promote users.")
+
+    email = body.get("email")
+    phone_number = body.get("phone_number")
+
+    if not email and not phone_number:
+        return _error_response(400, "Missing 'email' or 'phone_number'.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT id, is_admin FROM users WHERE email = %s OR phone_number = %s", (email, phone_number))
+        user = cur.fetchone()
+
+        if not user:
+            return _error_response(404, "User not found.")
+        if user["is_admin"]:
+            return _error_response(409, "User is already an admin.")
+
+        cur.execute("UPDATE users SET is_admin = true WHERE id = %s", (user["id"],))
+
+        log(conn, "USER_PROMOTED_TO_ADMIN", f"User '{user['id']}' promoted to admin", payload.get("user_id"), None, None)
+
+        conn.commit()
+
+    return _success_response(200, {"message": "User promoted to admin successfully.", "user_id": user["id"]})
+
+
 def login_user(conn, body):
     """
     Logs in a user and returns a JWT token.
