@@ -441,67 +441,67 @@ def parse_ts(ts):
         return ts
 
                            
-def process_messages(conn):
-    try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-    # get messages older than 1 hour
-            cur.execute("""
-                SELECT message, topic, date_created
-                FROM messagedb
-                WHERE date_created <= NOW() - INTERVAL '1 hour'
-                ORDER BY date_created DESC
-                LIMIT 1;        
-            """)
+# def process_messages(conn):
+#     try:
+#         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#     # get messages older than 1 hour
+#             cur.execute("""
+#                 SELECT message, topic, date_created
+#                 FROM messagedb
+#                 WHERE date_created <= NOW() - INTERVAL '1 hour'
+#                 ORDER BY date_created DESC
+#                 LIMIT 1;        
+#             """)
 
-            pending = cur.fetchone()
-            if pending is None:
-                print("No data found")
-                return _success_response(200, {"message": "No pending messages to process."})
-            topic = pending['topic']
-            message = pending['message']
-            date_created = pending['date_created']
+#             pending = cur.fetchone()
+#             if pending is None:
+#                 print("No data found")
+#                 return _success_response(200, {"message": "No pending messages to process."})
+#             topic = pending['topic']
+#             message = pending['message']
+#             date_created = pending['date_created']
 
-            cur.execute("""
-              SELECT
-                    g.id,
-                    g.last_controller_heartbeat,
-                    g.last_alert_sent_at,
-                    g.name,
-                    array_agg(u.email) FILTER (WHERE u.email IS NOT NULL) AS user_emails
-                FROM gates g
-                LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
-                LEFT JOIN account_holders a ON pi.id = a.personal_info_id
-                LEFT JOIN users u ON a.user_id = u.id
-                GROUP BY g.id, g.last_controller_heartbeat, g.last_alert_sent_at, g.name
-            """)
+#             cur.execute("""
+#               SELECT
+#                     g.id,
+#                     g.last_controller_heartbeat,
+#                     g.last_alert_sent_at,
+#                     g.name,
+#                     array_agg(u.email) FILTER (WHERE u.email IS NOT NULL) AS user_emails
+#                 FROM gates g
+#                 LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
+#                 LEFT JOIN account_holders a ON pi.id = a.personal_info_id
+#                 LEFT JOIN users u ON a.user_id = u.id
+#                 GROUP BY g.id, g.last_controller_heartbeat, g.last_alert_sent_at, g.name
+#             """)
 
-            gate_rows = cur.fetchall()
-            emails_sent = []
-            seen_emails = set()
-            for gate_row in gate_rows:
-                for email in (gate_row['user_emails'] or []):
-                    if email and email not in seen_emails:
-                        seen_emails.add(email)
-                        try:
-                            send_email(email, topic, message)
-                            emails_sent.append(email)
-                        except Exception as e:
-                            print(f"Skipped {email} due to error: {e}")
+#             gate_rows = cur.fetchall()
+#             emails_sent = []
+#             seen_emails = set()
+#             for gate_row in gate_rows:
+#                 for email in (gate_row['user_emails'] or []):
+#                     if email and email not in seen_emails:
+#                         seen_emails.add(email)
+#                         try:
+#                             send_email(email, topic, message)
+#                             emails_sent.append(email)
+#                         except Exception as e:
+#                             print(f"Skipped {email} due to error: {e}")
 
-                # delete processed message
-            cur.execute("""
-                DELETE FROM messagedb
-                WHERE date_created <= %s
-            """, (date_created,))
+#                 # delete processed message
+#             cur.execute("""
+#                 DELETE FROM messagedb
+#                 WHERE date_created <= %s
+#             """, (date_created,))
 
-            conn.commit()
+#             conn.commit()
 
-            return _success_response(200, {
-                "message": "Message processed.",
-                "topic": topic,
-                "emails_sent": emails_sent,
-            })
+#             return _success_response(200, {
+#                 "message": "Message processed.",
+#                 "topic": topic,
+#                 "emails_sent": emails_sent,
+#             })
 
-    finally:
-        conn.close()
+#     finally:
+#         conn.close()
                            
