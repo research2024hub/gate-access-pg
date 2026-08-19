@@ -453,38 +453,40 @@ def process_messages(conn):
                 LIMIT 1;        
             """)
 
-            rows = cur.fetchone()
-            if rows is None:
+            pending = cur.fetchone()
+            if pending is None:
                 print("No data found")
-                return None
-            topic =rows['topic']
-            message = rows['message']
-            date_created =rows['date_created']
-            
+                return _success_response(200, {"message": "No pending messages to process."})
+            topic = pending['topic']
+            message = pending['message']
+            date_created = pending['date_created']
+
             cur.execute("""
-              SELECT 
-                    g.id, 
-                    g.last_controller_heartbeat, 
+              SELECT
+                    g.id,
+                    g.last_controller_heartbeat,
                     g.last_alert_sent_at,
                     g.name,
                     array_agg(u.email) FILTER (WHERE u.email IS NOT NULL) AS user_emails
                 FROM gates g
                 LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
                 LEFT JOIN account_holders a ON pi.id = a.personal_info_id
-                LEFT JOIN users u ON a.user_id = u.id  
+                LEFT JOIN users u ON a.user_id = u.id
                 GROUP BY g.id, g.last_controller_heartbeat, g.last_alert_sent_at, g.name
             """)
-            
-            rows = cur.fetchall()
-            user_emails_list = rows['user_emails']
-                # call email function
-            for email in user_emails_list:
-                if email: # Safety check to skip empty emails
-                    try:
-                        result = send_email(email, topic, message)
-                    except Exception as e:
-                        print(f"Skipped {email} due to error: {e}")
-                # send_email(message, topic)
+
+            gate_rows = cur.fetchall()
+            emails_sent = []
+            seen_emails = set()
+            for gate_row in gate_rows:
+                for email in (gate_row['user_emails'] or []):
+                    if email and email not in seen_emails:
+                        seen_emails.add(email)
+                        try:
+                            send_email(email, topic, message)
+                            emails_sent.append(email)
+                        except Exception as e:
+                            print(f"Skipped {email} due to error: {e}")
 
                 # delete processed message
             cur.execute("""
@@ -493,6 +495,12 @@ def process_messages(conn):
             """, (date_created,))
 
             conn.commit()
+
+            return _success_response(200, {
+                "message": "Message processed.",
+                "topic": topic,
+                "emails_sent": emails_sent,
+            })
 
     finally:
         conn.close()

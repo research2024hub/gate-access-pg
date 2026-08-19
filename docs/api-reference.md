@@ -116,7 +116,7 @@ Directly creates a `users` row with `is_admin = true` (no OTP flow).
 
 **Error responses**: `401` missing/invalid/expired token; `403` caller is not an admin; `400` missing both `email` and `phone_number`; `404` user not found; `409` user is already an admin.
 
-Promotes an existing user (looked up by email or phone number) to global admin by setting `is_admin = true`, and logs a `USER_PROMOTED_TO_ADMIN` event. Note: this route is wired in `lambdas/user/app.py` (`elif path == "/user/promote-admin"`) but is **not** currently declared as an API event in `template.yaml`'s `UserAuthFunction` resource.
+Promotes an existing user (looked up by email or phone number) to global admin by setting `is_admin = true`, and logs a `USER_PROMOTED_TO_ADMIN` event.
 
 ### POST /user/login
 
@@ -124,11 +124,47 @@ Promotes an existing user (looked up by email or phone number) to global admin b
 
 **Request body**: `password` (required), plus `email` or `phone_number` (at least one required).
 
-**Success response**: `200` — `{ "message": "Login successful.", "token": "<JWT, 1yr expiry>", "user_id": <id>, "phone_number": ..., "accounts": [...] }`. The JWT payload contains `user_id`, `is_admin`, and `exp`. `accounts` lists the user's account-holder records (and any pending household-member invitations) across estates.
+**Success response**: `200` —
+```json
+{
+  "message": "Login successful.",
+  "token": "<gate-access session JWT, 1yr expiry>",
+  "user_id": <id>,
+  "phone_number": "...",
+  "accounts": [...],
+  "feedback_token": "<fihankra-feedback identity JWT, 1hr expiry> | null",
+  "email": "... | null",
+  "sub": "<user_id as string> | null",
+  "sourceKeys": ["fihankra-feedback"] | null
+}
+```
+The `token` JWT payload contains `user_id`, `is_admin`, and `exp`. `accounts` lists the user's account-holder records (and any pending household-member invitations) across estates.
+
+`feedback_token`/`email`/`sub`/`sourceKeys` are a separate identity token pair for the third-party **fihankra-feedback** embed, signed with a different shared secret (`FIHANKRA_FEEDBACK_SECRET`, unrelated to the app's own `JWT_SECRET`). They're populated only when the logging-in user is a global admin (`is_admin=true`) or an estate admin (has an `account_holders` row with `account_types.name = 'ADMIN'` in any estate) — `null` for everyone else, and also `null` if `FIHANKRA_FEEDBACK_SECRET` isn't configured. `email`/`sub`/`sourceKeys` mirror the claims embedded inside `feedback_token` itself, provided as plain fields so the frontend doesn't need to decode the JWT to read them.
 
 **Error responses**: `400` missing credentials; `401` invalid credentials; `403` account deactivated; `500` internal error during login.
 
 Verifies the bcrypt-hashed password, checks `is_active`, and returns a long-lived JWT plus the user's linked accounts.
+
+### POST /user/feedback_token/refresh
+
+**Auth**: requires Bearer JWT (the normal gate-access session token, not a device token — the payload must carry `user_id`).
+
+**Request body**: none.
+
+**Success response**: `200` —
+```json
+{
+  "feedback_token": "<fihankra-feedback identity JWT, fresh 1hr expiry>",
+  "email": "...",
+  "sub": "<user_id as string>",
+  "sourceKeys": ["fihankra-feedback"]
+}
+```
+
+**Error responses**: `401` missing/invalid/expired token, or token has no `user_id` (e.g. a device token was used instead); `404` user not found; `403` caller is neither a global admin nor an estate admin; `500` `FIHANKRA_FEEDBACK_SECRET` not configured.
+
+Re-checks the caller's admin status fresh from the database (global `is_admin`, or an `account_holders` row with account type `ADMIN`) and mints a new fihankra-feedback identity token, without requiring a full re-login. Intended to be called by the frontend shortly before the previously issued `feedback_token` expires (it has a fixed 1-hour lifetime and does not auto-renew), either on a timer while the embedded widget is mounted, or reactively if the widget signals the identity token has gone stale.
 
 ### POST /user/change_password
 

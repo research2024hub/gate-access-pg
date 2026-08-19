@@ -11,6 +11,7 @@ import smtplib
 from email.mime.text import MIMEText
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")
+FIHANKRA_FEEDBACK_SECRET = os.environ.get("FIHANKRA_FEEDBACK_SECRET")
 
 # ------------------------------------------------------------------
 # CORS response helpers (wrapping shared utils responses)
@@ -349,6 +350,70 @@ def promote_to_admin(conn, body, event):
     return _success_response(200, {"message": "User promoted to admin successfully.", "user_id": user["id"]})
 
 
+def generate_feedback_token(user_id, email):
+    if not FIHANKRA_FEEDBACK_SECRET:
+        return None
+    now = int(datetime.utcnow().timestamp())
+    sub = str(user_id)
+    source_keys = ["fihankra-feedback"]
+    payload = {
+        "iss": "fihankra-feedback",
+        "sub": sub,
+        "email": email,
+        "name": "Fihankra feedback",
+        "sourceKeys": source_keys,
+        "iat": now,
+        "exp": now + 3600,
+    }
+    token = jwt.encode(payload, FIHANKRA_FEEDBACK_SECRET, algorithm="HS256")
+    return {
+        "feedback_token": token,
+        "email": email,
+        "sub": sub,
+        "sourceKeys": source_keys,
+    }
+
+
+def refresh_feedback_token(conn, event):
+    """
+    Mints a fresh fihankra-feedback identity token for an already-logged-in
+    admin (global or estate), without requiring a full re-login.
+    """
+    payload, error = verify_token(event)
+    if error:
+        return error
+
+    user_id = payload.get("user_id")
+    if not user_id:
+        return _error_response(401, "Invalid token for this operation.")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT email, is_admin FROM users WHERE id = %s", (user_id,))
+        user = cur.fetchone()
+
+        if not user:
+            return _error_response(404, "User not found.")
+
+        cur.execute("""
+            SELECT 1
+            FROM account_holders ah
+            JOIN personal_info pi ON pi.id = ah.personal_info_id
+            JOIN account_types at ON at.id = pi.account_type_id
+            WHERE ah.user_id = %s AND at.name = 'ADMIN'
+            LIMIT 1
+        """, (user_id,))
+        is_estate_admin = cur.fetchone() is not None
+
+    if not (user["is_admin"] or is_estate_admin):
+        return _error_response(403, "Access denied. Only admins have a feedback identity.")
+
+    feedback_data = generate_feedback_token(user_id, user["email"])
+    if not feedback_data:
+        return _error_response(500, "Feedback integration not configured.")
+
+    return _success_response(200, feedback_data)
+
+
 def login_user(conn, body):
     """
     Logs in a user and returns a JWT token.
@@ -369,8 +434,8 @@ def login_user(conn, body):
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             print("[DEBUG] Querying user by email...")
             cur.execute("""
-                    SELECT id, password, is_active, is_admin 
-                    FROM users 
+                    SELECT id, email, password, is_active, is_admin
+                    FROM users
                     WHERE email = %s OR phone_number = %s
                 """, (email, phone_number))
             user = cur.fetchone()
@@ -476,13 +541,24 @@ def login_user(conn, body):
         conn.commit()
         print("[DEBUG] Login flow completed successfully. Returning response.")
 
-        return _success_response(200, {
+        is_estate_admin = any(acc.get("account_type_name") == "ADMIN" for acc in accounts)
+        feedback_data = generate_feedback_token(user_id, user["email"]) if (is_admin or is_estate_admin) else None
+
+        response_body = {
             "message": "Login successful.",
             "token": token,
             "user_id": user_id,
             "phone_number": phone_number,
-            "accounts": process_db_results(accounts)
-        })
+            "accounts": process_db_results(accounts),
+            "feedback_token": None,
+            "email": None,
+            "sub": None,
+            "sourceKeys": None,
+        }
+        if feedback_data:
+            response_body.update(feedback_data)
+
+        return _success_response(200, response_body)
 
     except Exception as e:
         conn.rollback()
