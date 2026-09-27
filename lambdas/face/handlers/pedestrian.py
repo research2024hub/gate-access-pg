@@ -94,7 +94,7 @@ def match_guest_face(conn, body, event):
     is found in our local 'faces' table, and if so, deletes that face from the DB
     and Rekognition.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -180,16 +180,18 @@ def match_guest_face(conn, body, event):
 
             cur.execute("""
                 SELECT ah.user_id, p.name FROM guests g
-                JOIN account_holders ah ON ah.id = g.creator_id
+                LEFT JOIN account_holders ah ON ah.id = g.creator_id AND ah.deleted_at IS NULL
                 JOIN personal_info p ON p.id = g.personal_info_id
                 WHERE g.id = %s
             """, (updated_guest["id"],))
 
             g = cur.fetchone()
 
-            notify_user(g["user_id"],"Guest Exit", f"{g['name']} has exited")
-            
-            log(conn, "FACE_MATCH", f"Guest {g['name']} exited at gate '[{gate_data['name']}]", None, None, gate_data["estate_id"])
+            if g and g.get("user_id"):
+                notify_user(g["user_id"], "Guest Exit", f"{g['name']} has exited")
+
+            guest_name = g["name"] if g else "Guest"
+            log(conn, "FACE_MATCH", f"Guest {guest_name} exited at gate '[{gate_data['name']}]", None, None, gate_data["estate_id"])
             
             conn.commit()
 
@@ -204,7 +206,7 @@ def save_guest_face(conn, body, event):
     """
     Registers a new vehicle under a personal_info entry.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -276,7 +278,7 @@ def save_guest_face(conn, body, event):
             
             cur.execute("""
                 SELECT ah.user_id FROM guests g
-                JOIN account_holders ah ON ah.id = g.creator_id
+                LEFT JOIN account_holders ah ON ah.id = g.creator_id AND ah.deleted_at IS NULL
                 WHERE g.id = %s
             """, (guest_id,))
 
@@ -286,7 +288,8 @@ def save_guest_face(conn, body, event):
             "image_url": image_url
         }
 
-            notify_user(g["user_id"],"Guest Arrival", message)
+            if g and g.get("user_id"):
+                notify_user(g["user_id"], "Guest Arrival", message)
 
             log(conn, "FACE_SAVED", f"Face saved. Guest entered at gate '{gate_id}' [{gate_data['name']}]", None, None, gate_data["estate_id"])      
 

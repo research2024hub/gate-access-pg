@@ -91,7 +91,7 @@ def lambda_handler(event, context):
             elif path == "/system/access":
                 return get_gate_usage(conn, event)
             elif path == "/system/videos":
-                return get_videos(event)
+                return get_videos(conn, event)
             elif path.startswith("/gate/") and path.count("/") == 2:
                 return get_gate_by_id(conn, event)
             else:

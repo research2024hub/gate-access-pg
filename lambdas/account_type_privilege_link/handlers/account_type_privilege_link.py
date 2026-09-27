@@ -13,7 +13,7 @@ def create_privilege_link(conn, body, event):
     """
     Assigns a privilege to an account type after verifying that both exist.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -63,7 +63,7 @@ def remove_privilege_link(conn, body, event):
     """
     Removes a privilege from an account type.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -100,7 +100,7 @@ def list_account_type_privileges(conn, event):
     Lists privileges assigned to a specific account type with optional pagination.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 

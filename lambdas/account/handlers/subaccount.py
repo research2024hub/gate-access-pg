@@ -1,7 +1,7 @@
 import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_personal_info, get_user_privileges_for_account_holder,send_email
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_personal_info, get_user_privileges_for_account_holder,send_email, soft_delete_account_holder, as_utc, utc_now
 import random
 from datetime import datetime, timedelta
 from middleware import verify_token, cors_wrap
@@ -27,7 +27,7 @@ def create_sub_account(conn, body, event):
     id_type = body.get("id_type")
     id_num = body.get("id_num")
     contact = body.get("contact")
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     caller_user_id = payload.get("user_id")
@@ -42,7 +42,7 @@ def create_sub_account(conn, body, event):
                        pi.estate_id
                 FROM   account_holders ah
                 JOIN   personal_info  pi ON pi.id = ah.personal_info_id
-                WHERE  ah.id = %s
+                WHERE  ah.id = %s AND ah.deleted_at IS NULL
             """, (parent_account_holder_id,))
 
             parent = cur.fetchone()
@@ -75,6 +75,7 @@ def create_sub_account(conn, body, event):
                 JOIN   personal_info pi ON pi.id = ah.personal_info_id
                 WHERE  pi.contact = %s
                 AND    pi.estate_id = %s
+                AND    ah.deleted_at IS NULL
             """, (contact, estate_id))
             if cur.fetchone():
                 return _error_response(409, "User already has an account in this estate.")
@@ -134,7 +135,7 @@ def create_sub_account(conn, body, event):
         return _error_response(500, f"An error occurred: {e}")
     
 def verify_otp(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -157,7 +158,7 @@ def verify_otp(conn, body, event):
             return _error_response(404, "No Otp found for this user.")
         if row["otp"] != input_otp:
             return _error_response(401, "Invalid OTP.")
-        if row["otp_generated_at"] < datetime.utcnow():
+        if as_utc(row["otp_generated_at"]) < utc_now():
             return _error_response(401, "OTP expired.")
         pending_holder_id = row["id"] 
 
@@ -179,7 +180,7 @@ def verify_otp(conn, body, event):
 
 def create_personal_info_privilege_link(conn, body, event):
     # 1.  Authentication / basic validation
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -244,7 +245,7 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
         personal_info_id : int                                                                                            
         privilege_ids    : list[int]                                                                                      
     """                                                                                                                   
-    payload, error = verify_token(event)                                                                                  
+    payload, error = verify_token(event, conn)                                                                                  
     if error:                                                                                                             
         return error                                                                                                      
                                                                                                                            
@@ -304,7 +305,7 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
     })                                                                                                                    
                   
 def send_sub_user_otp(conn, body, event):
-    payload, error = verify_token(event)                                                                                  
+    payload, error = verify_token(event, conn)                                                                                  
     if error:                                                                                                             
         return error                                                                                                      
                                                                                                                             
@@ -327,7 +328,7 @@ def send_sub_user_otp(conn, body, event):
     })
     
 def update_sub_account_privileges(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -409,12 +410,13 @@ def update_sub_account_privileges(conn, body, event):
 
 def delete_sub_account(conn, body, event):
     """
-    Permanently (or soft-) delete a sub-account.
+    Soft-delete a sub-account (sets deleted_at on the account_holders row).
+    The linked personal_info and its privilege links are kept.
 
     Expected body:
         sub_account_holder_id : int – The account_holders.id of the sub-user
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -432,9 +434,9 @@ def delete_sub_account(conn, body, event):
             SELECT ah_sub.personal_info_id, ah_sub.owner_account_holder_id, ah_owner.user_id AS owner_user_id,
                    ah_sub.house_address, pi.estate_id
             FROM   account_holders ah_sub
-            JOIN   account_holders ah_owner ON ah_sub.owner_account_holder_id = ah_owner.id
+            LEFT JOIN account_holders ah_owner ON ah_sub.owner_account_holder_id = ah_owner.id
             JOIN   personal_info pi        ON ah_sub.personal_info_id        = pi.id
-            WHERE  ah_sub.id = %s
+            WHERE  ah_sub.id = %s AND ah_sub.deleted_at IS NULL
             """,
             (sub_account_holder_id,),
         )
@@ -459,22 +461,19 @@ def delete_sub_account(conn, body, event):
             estate_id,
         )
         
-        cur.execute(                                                                                                                                                    
-            "DELETE FROM account_holders WHERE id = %s", (sub_account_holder_id,),)  
-        cur.execute(                                                                                                                                                    
-            "DELETE FROM personal_info WHERE id = %s", (personal_info_id,),)                                
-        # Optionally, also revoke all privileges (cleanup)
-        cur.execute(
-            "DELETE FROM personal_info_privilege_links WHERE personal_info_id = %s",(personal_info_id,),)
-        
-       
+        # Soft delete: flag the account_holders row; keep personal_info and its
+        # privilege links for history.
+        deleted = soft_delete_account_holder(cur, sub_account_holder_id)
+        if not deleted:
+            return _error_response(404, "Sub-account not found or already deleted")
+
         conn.commit()
 
-    return _success_response(200, {"message": "Sub-account deleted (deactivated)"})
+    return _success_response(200, {"message": "Sub-account deleted."})
 
 def get_sub_accounts(conn, event):
     # 1. AUTHENTICATION: Get the trusted caller ID
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -515,16 +514,18 @@ def get_sub_accounts(conn, event):
                     p.id_num,
                     p.id AS personal_info_id,
                     u.email
-                FROM 
+                FROM
                     account_holders ah_sub -- This is the sub-account
-                JOIN 
+                JOIN
                     account_holders ah_owner ON ah_sub.owner_account_holder_id = ah_owner.id -- This is the owner
-                JOIN 
+                JOIN
                     personal_info p ON ah_sub.personal_info_id = p.id
-                JOIN 
+                LEFT JOIN
                     users u ON ah_sub.user_id = u.id
-                WHERE 
+                WHERE
                     ah_owner.user_id = %s AND p.estate_id = %s -- Match the owner's user_id to the caller
+                    AND ah_sub.deleted_at IS NULL
+                    AND ah_owner.deleted_at IS NULL
                 -- You might want to add an ORDER BY clause:
                 ORDER BY p.name ASC  LIMIT %s OFFSET %s
             """,(user_id, estate_id,limit, offset))

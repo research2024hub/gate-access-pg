@@ -10,7 +10,7 @@ def _error_response(status_code: int, message: str):
     return cors_wrap(_base_error_response(status_code, message))
 
 def create_account_type(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -42,7 +42,7 @@ def create_account_type(conn, body, event):
 
 
 def update_account_type(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -76,7 +76,7 @@ def update_account_type(conn, body, event):
 
 
 def delete_account_type(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -111,7 +111,7 @@ def get_account_types(conn, event):
     Retrieves all account types with optional pagination.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -151,7 +151,7 @@ def get_account_types(conn, event):
 
 
 def get_account_type_by_id(conn, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 

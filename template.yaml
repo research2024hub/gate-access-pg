@@ -5,14 +5,30 @@ Description: >
 
   SAM Template for gate-access-pg with PostgreSQL backend.
 
+Parameters:
 # Re-enable these parameters with VpcConfig when Aurora networking is ready.
-# Parameters:
 #   LambdaSubnetIds:
 #     Type: List<AWS::EC2::Subnet::Id>
 #     Description: Private subnets in Aurora's VPC with outbound connectivity for external API calls.
 #   LambdaSecurityGroupIds:
 #     Type: List<AWS::EC2::SecurityGroup::Id>
 #     Description: Lambda security groups allowed to reach Aurora on TCP port 5432.
+  DatabaseUrl:
+    Type: String
+    Default: "postgresql://itc:082001@54.246.247.31/gate_access"
+    NoEcho: true
+    MinLength: 1
+    Description: PostgreSQL connection URL; default used by the repository deployment wrapper.
+  JwtSecret:
+    Type: String
+    Default: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
+    NoEcho: true
+    MinLength: 1
+  FeedbackSecret:
+    Type: String
+    Default: "fe_embed_KPvKZQoNbbF5uIvhvrnFD69JznsU8VYZ"
+    NoEcho: true
+    MinLength: 1
 
 Globals:
   Api:
@@ -29,18 +45,19 @@ Globals:
     #   SecurityGroupIds: !Ref LambdaSecurityGroupIds
     Environment:
       Variables:
+        DATABASE_URL: !Ref DatabaseUrl
+        JWT_SECRET: !Ref JwtSecret
         GOOGLE_CLIENT_ID_AND: "706580043666-a74rr3n7rmjtevu5t9gajm3b7pq128jh.apps.googleusercontent.com"
         GOOGLE_CLIENT_ID_IOS: "706580043666-are3skqem3lltje5vihdb0j5hn4136cj.apps.googleusercontent.com"
 
 Resources:
+
   MiddlewareLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
       ContentUri: shared/  # ✅ Path to the shared middleware
       CompatibleRuntimes:
         - python3.9
-    #       DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          # JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   UserAuthFunction:
     Type: AWS::Serverless::Function
@@ -183,11 +200,9 @@ Resources:
           Properties:
             Path: /user/report_status
             Method: GET
-      Environment:  # ✅ Global environment variables apply to all Lambda functions
+      Environment:
         Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
-          FIHANKRA_FEEDBACK_SECRET: "fe_embed_KPvKZQoNbbF5uIvhvrnFD69JznsU8VYZ"
+          FIHANKRA_FEEDBACK_SECRET: !Ref FeedbackSecret
 
   EstateFunction:
     Type: AWS::Serverless::Function
@@ -225,10 +240,6 @@ Resources:
           Properties:
             Path: /estate/{id}  # Fetch a specific estate
             Method: GET
-      Environment:
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   GateHeartbeatFunction:
     Type: AWS::Serverless::Function
@@ -248,10 +259,6 @@ Resources:
       #       # Schedule: rate(6 minutes)
       #       Description: "Run every 6 minutes to monitor device heartbeat"
         
-      Environment:
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
       Policies:
       - SESCrudPolicy:
           IdentityName: "*"
@@ -282,8 +289,6 @@ Resources:
         
   #     Environment:
   #       Variables:
-  #         DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-  #         JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
   #     Policies:
   #     - SESCrudPolicy:
   #         IdentityName: "*"
@@ -409,16 +414,13 @@ Resources:
           Properties:
             Path: /system/videos
             Method: GET
-      Environment:
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
       Policies:
       - Statement:
         - Effect: Allow
           Action:
           - s3:*
           Resource: '*'
+
   AccessGroupFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -460,10 +462,6 @@ Resources:
           Properties:
             Path: /access_group/{id}
             Method: GET  
-      Environment:
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   AccountTypeFunction:
     Type: AWS::Serverless::Function
@@ -501,10 +499,6 @@ Resources:
           Properties:
             Path: /account_type/{id}
             Method: GET
-      Environment:
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   PrivilegeFunction:
     Type: AWS::Serverless::Function
@@ -542,10 +536,6 @@ Resources:
           Properties:
             Path: /privilege/{id}
             Method: GET
-      Environment:
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   AccountFunction:
     Type: AWS::Serverless::Function
@@ -648,10 +638,6 @@ Resources:
           Properties:
             Path: /account/sub_user/getsub/{user_id}/{estate_id}
             Method: GET
-      Environment:  # ✅ Environment variables for database and JWT
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   AccountTypePrivilegeLinkFunction:
     Type: AWS::Serverless::Function
@@ -679,10 +665,6 @@ Resources:
           Properties:
             Path: /account_type_privilege_link/account_type/{account_type_id}
             Method: GET
-      Environment:
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   GateAccessGroupLinkFunction:
     Type: AWS::Serverless::Function
@@ -720,10 +702,6 @@ Resources:
           Properties:
             Path: /gate_access_group_link/access_group/{access_group_id}
             Method: GET
-      Environment:
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   GuestFunction:
     Type: AWS::Serverless::Function
@@ -781,11 +759,7 @@ Resources:
           Properties:
             Path: /guest/{guest_id}
             Method: GET
-      Environment:
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
-  
+
   VehicleFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -822,11 +796,7 @@ Resources:
           Properties:
             Path: /vehicle/person/{personal_info_id}
             Method: GET
-      Environment:  # ✅ Global environment variables apply to all Lambda functions
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
-          
+
   EventFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -873,11 +843,7 @@ Resources:
           Properties:
             Path: /event/estate/{estate_id}
             Method: GET
-      Environment:  # ✅ Global environment variables apply to all Lambda functions
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
-  
+
   EventRegisterFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -909,10 +875,6 @@ Resources:
           Properties:
             Path: /event_register/delete
             Method: DELETE
-      Environment:  # ✅ Global environment variables apply to all Lambda functions
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   FaceFunction:
     Type: AWS::Serverless::Function
@@ -951,10 +913,6 @@ Resources:
             Action:
             - rekognition:*
             Resource: '*'
-      Environment:  # ✅ Global environment variables apply to all Lambda functions
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
 
   DeviceTokensFunction:
     Type: AWS::Serverless::Function
@@ -977,11 +935,7 @@ Resources:
           Properties:
             Path: /device_token/generate_tablet_token
             Method: POST
-      Environment:  # ✅ Global environment variables apply to all Lambda functions
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
-  
+
   LogFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -1013,11 +967,6 @@ Resources:
           Properties:
             Path: /log/search_estate/{estate_id}
             Method: GET
-      Environment:  # ✅ Global environment variables apply to all Lambda functions
-        Variables:
-          DATABASE_URL: "postgresql://itc:082001@54.246.247.31/gate_access"
-          JWT_SECRET: "34cbe872d046c83b981fcac67bebb6595165e14fefee91363c37b890aaaad8ab0d67d8a0ca049ed8be4ad806f761586cc33d61c83a9597a866d91bcf597de07bf58361f38402e5277ef8021102edac0b3b12b4bf5d3aaebace49703fa4c3462f2da8e2ab507f5c676c12c18c5d87e82fd6a19f72aa8fe2ab05f332e8014644fee8d61a1240baab237e7df905209a3b4b84fe2aaa765a0c75a056a77d08528d9a4189301c254248f9fdc37879546e75f9e90feddb7ef3332bf368f06602a772331dd94958619fbd02ce65ebd1c9b6196f486eaac38d2522d72bbd857fbd263784ea374d2f3f6a0024885c67c802610961cd740d40f953f28c67860f0f28ffc011"
-
 
 Outputs:
   ApiBaseUrl:

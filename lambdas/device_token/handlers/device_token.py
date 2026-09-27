@@ -13,7 +13,7 @@ def _success_response(status_code: int, body: dict):
 def _error_response(status_code: int, message: str):
     return cors_wrap(_base_error_response(status_code, message))
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")  # Replace with a secure key in production
+JWT_SECRET = os.environ["JWT_SECRET"]  # Replace with a secure key in production
 
 def generate_gate_controller_token(conn, body, event):
     """
@@ -26,7 +26,7 @@ def generate_gate_controller_token(conn, body, event):
     Expects a JSON body with:
         { "gate_id": <gate_id> }
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -80,7 +80,7 @@ def generate_tablet_token(conn, body, event):
     Expects a JSON body with:
         { "gate_id": <gate_id> }
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     

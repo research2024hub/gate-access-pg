@@ -10,7 +10,7 @@ def _error_response(status_code: int, message: str):
     return cors_wrap(_base_error_response(status_code, message))
 
 def create_access_group(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -48,7 +48,7 @@ def create_access_group(conn, body, event):
 
 
 def update_access_group(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -91,7 +91,7 @@ def update_access_group(conn, body, event):
 
 
 def delete_access_group(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -128,7 +128,7 @@ def delete_access_group(conn, body, event):
 
 
 def get_access_groups(conn, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -174,7 +174,7 @@ def get_access_groups(conn, event):
 
 
 def get_access_group_by_id(conn, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -198,7 +198,7 @@ def get_access_group_by_id(conn, event):
     return _success_response(200, {"access_group": process_db_results([access_group])})
 
 def get_access_groups_by_estate(conn, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     

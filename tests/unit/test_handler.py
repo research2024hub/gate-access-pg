@@ -1,72 +1,43 @@
-import json
+"""Gate Lambda routing and connection lifecycle regression tests."""
+import importlib.util
+import sys
+from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
-from user import app
 
 
-@pytest.fixture()
-def apigw_event():
-    """ Generates API GW Event"""
-
-    return {
-        "body": '{ "test": "body"}',
-        "resource": "/{proxy+}",
-        "requestContext": {
-            "resourceId": "123456",
-            "apiId": "1234567890",
-            "resourcePath": "/{proxy+}",
-            "httpMethod": "POST",
-            "requestId": "c6af9ac6-7b61-11e6-9a41-93e8deadbeef",
-            "accountId": "123456789012",
-            "identity": {
-                "apiKey": "",
-                "userArn": "",
-                "cognitoAuthenticationType": "",
-                "caller": "",
-                "userAgent": "Custom User Agent String",
-                "user": "",
-                "cognitoIdentityPoolId": "",
-                "cognitoIdentityId": "",
-                "cognitoAuthenticationProvider": "",
-                "sourceIp": "127.0.0.1",
-                "accountId": "",
-            },
-            "stage": "prod",
-        },
-        "queryStringParameters": {"foo": "bar"},
-        "headers": {
-            "Via": "1.1 08f323deadbeefa7af34d5feb414ce27.cloudfront.net (CloudFront)",
-            "Accept-Language": "en-US,en;q=0.8",
-            "CloudFront-Is-Desktop-Viewer": "true",
-            "CloudFront-Is-SmartTV-Viewer": "false",
-            "CloudFront-Is-Mobile-Viewer": "false",
-            "X-Forwarded-For": "127.0.0.1, 127.0.0.2",
-            "CloudFront-Viewer-Country": "US",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Upgrade-Insecure-Requests": "1",
-            "X-Forwarded-Port": "443",
-            "Host": "1234567890.execute-api.us-east-1.amazonaws.com",
-            "X-Forwarded-Proto": "https",
-            "X-Amz-Cf-Id": "aaaaaaaaaae3VYQb9jd-nvCd-de396Uhbp027Y2JvkCPNLmGJHqlaA==",
-            "CloudFront-Is-Tablet-Viewer": "false",
-            "Cache-Control": "max-age=0",
-            "User-Agent": "Custom User Agent String",
-            "CloudFront-Forwarded-Proto": "https",
-            "Accept-Encoding": "gzip, deflate, sdch",
-        },
-        "pathParameters": {"proxy": "/examplepath"},
-        "httpMethod": "POST",
-        "stageVariables": {"baz": "qux"},
-        "path": "/examplepath",
-    }
+@pytest.fixture
+def app(monkeypatch):
+    for name in ("handlers", "handlers.gate", "handlers.dashboard_handlers", "utils", "middleware", "psycopg2"):
+        monkeypatch.setitem(sys.modules, name, MagicMock())
+    sys.modules["middleware"].cors_wrap.side_effect = lambda response: response
+    sys.modules["utils"]._error_response.side_effect = lambda status, message: {"statusCode": status, "body": message}
+    path = Path(__file__).resolve().parents[2] / "lambdas/gate/app.py"
+    spec = importlib.util.spec_from_file_location("gate_app_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def test_lambda_handler(apigw_event, mocker):
+def test_missing_database_configuration(app, monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    assert app.lambda_handler({}, None)["statusCode"] == 500
+    app.psycopg2.connect.assert_not_called()
 
-    ret = app.lambda_handler(apigw_event, "")
-    data = json.loads(ret["body"])
-    status_code = 200
-    assert ret["statusCode"] == status_code
-    assert "message" in ret["body"]
-    assert data["message"] == "hello world"
-    # assert "location" in data.dict_keys()
+
+def test_video_route_passes_connection_for_account_status_check(app, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "test-database")
+    event = {"path": "/system/videos", "httpMethod": "GET"}
+    app.get_videos.return_value = {"statusCode": 200}
+    assert app.lambda_handler(event, None)["statusCode"] == 200
+    conn = app.psycopg2.connect.return_value
+    app.get_videos.assert_called_once_with(conn, event)
+    conn.close.assert_called_once()
+
+
+def test_handler_failure_closes_connection(app, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "test-database")
+    app.get_gates.side_effect = RuntimeError("query failed")
+    assert app.lambda_handler({"path": "/gate/all", "httpMethod": "GET"}, None)["statusCode"] == 500
+    app.psycopg2.connect.return_value.close.assert_called_once()

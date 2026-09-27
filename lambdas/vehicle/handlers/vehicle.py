@@ -13,7 +13,7 @@ def create_vehicle(conn, body, event):
     """
     Registers a new vehicle under a personal_info entry.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -34,7 +34,7 @@ def create_vehicle(conn, body, event):
         cur.execute("""
             SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
             FROM personal_info pi
-            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
+            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id AND ah.deleted_at IS NULL
             LEFT JOIN guests g ON pi.id = g.personal_info_id
             WHERE pi.id = %s
         """, (personal_info_id,))
@@ -80,7 +80,7 @@ def create_vehicle(conn, body, event):
             SELECT COALESCE(ah.id, g.creator_id) AS actor_id, pi.estate_id
             FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
-            LEFT JOIN account_holders ah ON ah.personal_info_id = pi.id
+            LEFT JOIN account_holders ah ON ah.personal_info_id = pi.id AND ah.deleted_at IS NULL
             LEFT JOIN guests g ON g.personal_info_id = pi.id
             WHERE v.id = %s
         """, (vehicle_id,))
@@ -100,7 +100,7 @@ def update_vehicle(conn, body, event):
     """
     Updates a vehicle's details. Owners and admins can update.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -133,7 +133,7 @@ def update_vehicle(conn, body, event):
         cur.execute("""
             SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
             FROM personal_info pi
-            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
+            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id AND ah.deleted_at IS NULL
             LEFT JOIN guests g ON pi.id = g.personal_info_id
             WHERE pi.id = %s
         """, (vehicle_personal_info_id,))
@@ -172,7 +172,7 @@ def update_vehicle(conn, body, event):
             SELECT COALESCE(ah.id, g.creator_id) AS actor_id, pi.estate_id
             FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
-            LEFT JOIN account_holders ah ON ah.personal_info_id = pi.id
+            LEFT JOIN account_holders ah ON ah.personal_info_id = pi.id AND ah.deleted_at IS NULL
             LEFT JOIN guests g ON g.personal_info_id = pi.id
             WHERE v.id = %s
         """, (vehicle_id,))
@@ -192,7 +192,7 @@ def delete_vehicle(conn, body, event):
     """
     Deletes a vehicle. Only the owner or an admin can delete it.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -220,7 +220,7 @@ def delete_vehicle(conn, body, event):
         cur.execute("""
             SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
             FROM personal_info pi
-            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
+            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id AND ah.deleted_at IS NULL
             LEFT JOIN guests g ON pi.id = g.personal_info_id
             WHERE pi.id = %s
         """, (vehicle_personal_info_id,))
@@ -245,7 +245,7 @@ def delete_vehicle(conn, body, event):
             SELECT COALESCE(ah.id, g.creator_id) AS actor_id, pi.estate_id, v.license_plate_number
             FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
-            LEFT JOIN account_holders ah ON ah.personal_info_id = pi.id
+            LEFT JOIN account_holders ah ON ah.personal_info_id = pi.id AND ah.deleted_at IS NULL
             LEFT JOIN guests g ON g.personal_info_id = pi.id
             WHERE v.id = %s
         """, (vehicle_id,))
@@ -271,7 +271,7 @@ def get_vehicle_details(conn, event):
     """
     Retrieves details of a specific vehicle.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -300,7 +300,7 @@ def get_vehicle_details(conn, event):
         cur.execute("""
             SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
             FROM personal_info pi
-            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
+            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id AND ah.deleted_at IS NULL
             LEFT JOIN guests g ON pi.id = g.personal_info_id
             WHERE pi.id = %s
         """, (vehicle_personal_info_id,))
@@ -339,7 +339,7 @@ def list_vehicles_by_owner(conn, event):
     Lists all vehicles belonging to a specific person, with optional pagination.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -367,7 +367,7 @@ def list_vehicles_by_owner(conn, event):
         cur.execute("""
             SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
             FROM personal_info pi
-            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
+            LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id AND ah.deleted_at IS NULL
             LEFT JOIN guests g ON pi.id = g.personal_info_id
             WHERE pi.id = %s
         """, (personal_info_id,))

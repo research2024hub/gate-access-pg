@@ -58,7 +58,7 @@ _METRICS_DATA: List[Dict[str, Any]] = []
 # ---------------------------------------------------------------------------
 
 def ingest_system_metrics(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -172,7 +172,7 @@ def get_latest_system_metrics(conn, event):
     If the caller is a gate controller it can omit ?gate_id – the value from
     its token will be used. Admin callers must provide ?gate_id.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -531,7 +531,7 @@ def get_gate_usage(conn, event):
 wiring up in a minimal custom Lambda handler or another framework."""
 
 def alert_user(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     is_admin = payload.get("is_admin", False)
@@ -550,8 +550,8 @@ def alert_user(conn, body, event):
                     u.email
                 FROM gates g
                 LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
-                LEFT JOIN account_holders a ON pi.id = a.personal_info_id
-                LEFT JOIN users u ON a.user_id = u.id
+                LEFT JOIN account_holders a ON pi.id = a.personal_info_id AND a.deleted_at IS NULL
+                LEFT JOIN users u ON a.user_id = u.id AND u.deleted_at IS NULL
             """
             cur.execute(query)
             rows = cur.fetchall()
@@ -563,9 +563,9 @@ def alert_user(conn, body, event):
 
 
 
-# def get_videos(event):
+# def get_videos(conn, event):
 #     # 1. Extract Query Parameters from the API Gateway event
-#     payload, error = verify_token(event)
+#     payload, error = verify_token(event, conn)
 #     if error:
 #         return error
 #     is_admin = payload.get("is_admin", False)
@@ -633,9 +633,9 @@ def alert_user(conn, body, event):
 #     except Exception as e:
 #         return _error_response(500,f"error: {str(e)}")
 
-def get_videos(event):
+def get_videos(conn, event):
     # 1. Admin & Token Verification (Restored)
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     

@@ -1,7 +1,7 @@
 import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate,get_user_privileges_for_personal_info,get_user_privileges_for_account_holder,send_gmail, notify_user, get_user_privileges
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate,get_user_privileges_for_personal_info,get_user_privileges_for_account_holder,send_gmail, notify_user, get_user_privileges, soft_delete_account_holder, as_utc, utc_now
 import random
 from datetime import datetime, timedelta
 from middleware import verify_token, cors_wrap
@@ -15,11 +15,38 @@ def _success_response(status_code: int, body: dict):
 def _error_response(status_code: int, message: str):
     return cors_wrap(_base_error_response(status_code, message))
 
-def signup(conn, body):
+def _identity_exists(cur, body):
+    # Soft deletion keeps personal_info for history, including its unique identity.
+    # Never attach a signup to that row: it may belong to another user and carry
+    # existing privileges, vehicles, or guest access.
+    cur.execute("""
+        SELECT id FROM personal_info
+        WHERE estate_id = %s AND id_type = %s AND id_num = %s
+    """, (body.get("estate_id"), body.get("id_type"), body.get("id_num")))
+    return cur.fetchone() is not None
+
+
+def _signup_conflict():
+    return _error_response(
+        409,
+        "An account or identity already exists in this estate. "
+        "If your account was deleted, contact the estate administrator for review. "
+        "Signup cannot restore previous access.",
+    )
+
+
+def signup(conn, body, event=None):
     """
     Handles account creation for an existing user in a new estate.
     """
-    user_id = body.get("user_id")
+    payload, error = verify_token(event or {}, conn)
+    if error:
+        return error
+    user_id = payload.get("user_id")
+    if not user_id:
+        return _error_response(403, "A resident login is required.")
+    if body.get("user_id") is not None and str(body["user_id"]) != str(user_id):
+        return _error_response(403, "You can only sign up for your own account.")
     estate_id = body.get("estate_id")
     house_address = body.get("house_address")
 
@@ -38,12 +65,48 @@ def signup(conn, body):
             # Prevent duplicate signup in the same estate.
             cur.execute("""
                 SELECT id FROM account_holders
-                WHERE user_id = %s AND personal_info_id IN (
+                WHERE user_id = %s AND deleted_at IS NULL AND personal_info_id IN (
                     SELECT id FROM personal_info WHERE estate_id = %s
                 )
             """, (user_id, estate_id))
             if cur.fetchone():
                 return _error_response(409, "User already has an account in this estate.")
+
+            cur.execute("""
+                SELECT id FROM personal_info
+                WHERE estate_id = %s AND id_type = %s AND id_num = %s
+                FOR UPDATE
+            """, (estate_id, body["id_type"], body["id_num"]))
+            identity = cur.fetchone()
+            if identity:
+                cur.execute("""
+                    SELECT id, user_id, deleted_at, owner_account_holder_id
+                    FROM account_holders WHERE personal_info_id = %s FOR UPDATE
+                """, (identity["id"],))
+                holders = cur.fetchall()
+                if (len(holders) != 1 or str(holders[0]["user_id"]) != str(user_id)
+                        or holders[0]["deleted_at"] is None
+                        or holders[0]["owner_account_holder_id"] is not None):
+                    return _signup_conflict()
+                account_holder_id = holders[0]["id"]
+                cur.execute("""
+                    UPDATE account_holders
+                    SET deleted_at = NULL, is_active = false, house_address = %s,
+                        otp = NULL, otp_generated_at = NULL, date_updated = CURRENT_TIMESTAMP
+                    WHERE id = %s AND deleted_at IS NOT NULL RETURNING id
+                """, (house_address, account_holder_id))
+                if not cur.fetchone():
+                    return _signup_conflict()
+                log(conn, "ACCOUNT_REREGISTRATION", "Returning resident awaiting administrator approval",
+                    user_id, account_holder_id, estate_id)
+                conn.commit()
+                return _success_response(200, {
+                    "message": "Re-registration submitted. Awaiting estate administrator approval.",
+                    "account": {"account_holder_id": account_holder_id,
+                                "personal_info_id": identity["id"], "user_id": user_id,
+                                "estate_id": estate_id, "house_address": house_address,
+                                "is_active": False}
+                })
 
             # Lookup default account type
             cur.execute("SELECT id FROM account_types WHERE name = 'USER_A'")
@@ -106,6 +169,10 @@ def signup(conn, body):
             }
         })
 
+    except psycopg2.errors.UniqueViolation:
+        # A concurrent signup can pass the prechecks; the database is authoritative.
+        conn.rollback()
+        return _signup_conflict()
     except Exception as e:
         conn.rollback()
         return _error_response(500, f"An error occurred: {e}")
@@ -116,7 +183,7 @@ def signup(conn, body):
 #     Handles account creation for an existing user in a new estate.
 #     """
     
-#     payload, error = verify_token(event)
+#     payload, error = verify_token(event, conn)
 #     if error:
 #         return error
     
@@ -234,12 +301,15 @@ def signupAdmin(conn, body):
             # Prevent duplicate signup in the same estate.
             cur.execute("""
                 SELECT id FROM account_holders
-                WHERE user_id = %s AND personal_info_id IN (
+                WHERE user_id = %s AND deleted_at IS NULL AND personal_info_id IN (
                     SELECT id FROM personal_info WHERE estate_id = %s
                 )
             """, (user_id, estate_id))
             if cur.fetchone():
                 return _error_response(409, "User already has an account in this estate.")
+
+            if _identity_exists(cur, body):
+                return _signup_conflict()
 
             # Insert into personal_info.
             cur.execute("""
@@ -286,6 +356,9 @@ def signupAdmin(conn, body):
             }
         })
     
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        return _signup_conflict()
     except Exception as e:
         conn.rollback()
         return _error_response(500, f"An error occurred: {e}")
@@ -310,7 +383,7 @@ def signupAdmin(conn, body):
 #     id_num = body.get("id_num")
 #     contact = body.get("contact")
 #     # Token verification (so we know *who* is making the request)
-#     payload, error = verify_token(event)
+#     payload, error = verify_token(event, conn)
 #     if error:
 #         return error
 
@@ -443,7 +516,7 @@ def signupAdmin(conn, body):
 #         return _error_response(500, f"An error occurred: {e}")
 
 # def verify_otp(conn, body, event):
-#     payload, error = verify_token(event)
+#     payload, error = verify_token(event, conn)
 #     if error:
 #         return error
     
@@ -498,7 +571,7 @@ def change_account_type(conn, body, event):
     """
     Allows an admin to change an account holder's account type.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -545,7 +618,7 @@ def change_account_type(conn, body, event):
         cur.execute("""
                     SELECT ah.id, pi.estate_id FROM account_holders ah
                     JOIN personal_info pi ON pi.id = ah.personal_info_id
-                    WHERE ah.personal_info_id = %s
+                    WHERE ah.personal_info_id = %s AND ah.deleted_at IS NULL
                     """, (personal_info_id,))
 
         result = cur.fetchone()
@@ -560,7 +633,7 @@ def deactivate_account(conn, body, event):
     """
     Deactivates an account.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -583,7 +656,7 @@ def deactivate_account(conn, body, event):
 
         cur.execute("""
             UPDATE account_holders SET is_active = false, date_updated = CURRENT_TIMESTAMP
-            WHERE id = %s RETURNING id
+            WHERE id = %s AND deleted_at IS NULL RETURNING id
         """, (account_holder_id,))
 
         if not cur.fetchone():
@@ -592,7 +665,7 @@ def deactivate_account(conn, body, event):
         cur.execute("""
                     SELECT pi.estate_id FROM account_holders ah
                     JOIN personal_info pi ON pi.id = ah.personal_info_id
-                    WHERE ah.id = %s
+                    WHERE ah.id = %s AND ah.deleted_at IS NULL
                     """, (account_holder_id,))
 
         result = cur.fetchone()
@@ -607,7 +680,7 @@ def deactivate_account(conn, body, event):
 #     """
 #     Activates an account.
 #     """
-#     payload, error = verify_token(event)
+#     payload, error = verify_token(event, conn)
 #     if error:
 #         return error
     
@@ -655,7 +728,7 @@ def activate_account(conn, body, event):
     """
     Activates an account.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -676,22 +749,32 @@ def activate_account(conn, body, event):
         if not privileges.can_manage_accounts():
             return _error_response(403, "You do not have privileges to manage accounts")
 
+        # Lock the account and identify the resident to notify after approval.
+        cur.execute("""
+            SELECT ah.user_id
+            FROM account_holders ah
+            WHERE ah.id = %s AND ah.deleted_at IS NULL FOR UPDATE
+        """, (account_holder_id,))
+        target = cur.fetchone()
+        if not target:
+            return _error_response(404, "Account not found or deleted.")
+
         # Activate the account
         cur.execute("""
             UPDATE account_holders
             SET is_active = true
-            WHERE id = %s
+            WHERE id = %s AND deleted_at IS NULL
             RETURNING id
         """, (account_holder_id,))
         if not cur.fetchone():
-            return _error_response(404, "Account not found.")
+            return _error_response(404, "Account not found or deleted.")
 
         # Get estate for logging
         cur.execute("""
             SELECT pi.estate_id
             FROM account_holders ah
             JOIN personal_info pi ON pi.id = ah.personal_info_id
-            WHERE ah.id = %s
+            WHERE ah.id = %s AND ah.deleted_at IS NULL
         """, (account_holder_id,))
         result = cur.fetchone()
 
@@ -700,19 +783,20 @@ def activate_account(conn, body, event):
         conn.commit()
         title = "ACCOUNT ACTIVATATED"
         message = f"Welcome Aboard \n Your account is now fully active. We’re glad to have you with us!"
-        notify_user(str(user_id),title,message)
+        notify_user(str(target["user_id"]),title,message)
 
     return _success_response(200, {"message": "Account activated successfully."})
 
 
 def delete_account(conn, body, event):
     """
-    Deletes an account and its related personal info.
+    Soft-deletes an account holder (sets deleted_at; the row and its
+    personal_info, guests, vehicles and logs are all retained).
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
-    
+
     user_id = payload.get("user_id")
     is_admin = payload.get("is_admin")
 
@@ -730,25 +814,18 @@ def delete_account(conn, body, event):
         if not privileges.can_manage_accounts():
             return _error_response(403, "You do not have privileges to manage accounts")
 
-        # Delete the personal info associated with this account
-        cur.execute("""
-            DELETE FROM personal_info
-            USING account_holders
-            WHERE personal_info.id = account_holders.personal_info_id
-            AND account_holders.id = %s
-            RETURNING personal_info.estate_id
-        """, (account_holder_id,))
+        estate_id = privileges.estate_id
 
-        result = cur.fetchone()
+        # Soft delete: flag the account holder, keep everything else.
+        deleted = soft_delete_account_holder(cur, account_holder_id)
+        if not deleted:
+            return _error_response(404, "Account not found or already deleted.")
 
-        if not result:
-            return _error_response(404, "Personal info not found.")
-
-        log(conn, "ACCOUNT_DELETION", f"Account deleted {account_holder_id}", user_id, None, result["estate_id"])
+        log(conn, "ACCOUNT_DELETION", f"Account soft-deleted {account_holder_id}", user_id, account_holder_id, estate_id)
 
         conn.commit()
 
-    return _success_response(200, {"message": "Account and related personal info deleted successfully."})
+    return _success_response(200, {"message": "Account deleted successfully."})
 
 def get_estate_accounts(conn, event):
     """
@@ -756,7 +833,7 @@ def get_estate_accounts(conn, event):
     Only admins or users with MANAGE_ALL or MANAGE_ACCOUNTS privileges in that estate can access this data.
     Supports pagination with optional query params: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -792,7 +869,7 @@ def get_estate_accounts(conn, event):
             return _error_response(403, "You do not have privileges to view accounts in this estate.")
 
         # Count total
-        cur.execute("SELECT COUNT(*) FROM account_holders ah JOIN personal_info pi ON ah.personal_info_id = pi.id WHERE pi.estate_id = %s", (estate_id,))
+        cur.execute("SELECT COUNT(*) FROM account_holders ah JOIN personal_info pi ON ah.personal_info_id = pi.id WHERE pi.estate_id = %s AND ah.deleted_at IS NULL", (estate_id,))
         total = cur.fetchone()["count"]
 
         # Fetch paginated results
@@ -816,7 +893,7 @@ def get_estate_accounts(conn, event):
             JOIN account_types at ON pi.account_type_id = at.id
             JOIN access_groups ag ON pi.access_group_id = ag.id
             JOIN estates es ON pi.estate_id = es.id
-            WHERE pi.estate_id = %s
+            WHERE pi.estate_id = %s AND ah.deleted_at IS NULL
             ORDER BY ah.date_created DESC
             LIMIT %s OFFSET %s
         """, (estate_id, page_size, offset))
@@ -838,7 +915,7 @@ def generate_account_otp(conn, body, event):
     """
     Generates a 6-digit OTP for an account holder. Only the holder, estate managers, or admins can generate.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -855,9 +932,9 @@ def generate_account_otp(conn, body, event):
             SELECT ah.user_id, pi.estate_id
             FROM account_holders ah
             JOIN personal_info pi ON ah.personal_info_id = pi.id
-            WHERE ah.id = %s
+            WHERE ah.id = %s AND ah.deleted_at IS NULL
         """, (account_holder_id,))
-        
+
         account_info = cur.fetchone()
         if not account_info:
             return _error_response(404, "Account holder not found.")
@@ -879,13 +956,13 @@ def generate_account_otp(conn, body, event):
 
         # 2. Generate OTP
         otp = str(random.randint(100000, 999999))
-        otp_generated_at = datetime.utcnow()  # 1 minute expiry
+        otp_generated_at = utc_now()  # aware UTC; stored correctly in timestamp or timestamptz
 
         # 3. Update account holder
         cur.execute("""
             UPDATE account_holders
             SET otp = %s, otp_generated_at = %s
-            WHERE id = %s
+            WHERE id = %s AND deleted_at IS NULL
         """, (otp, otp_generated_at, account_holder_id))
 
         log(conn, "OTP_GENERATION", f"OTP generated for account_holder {account_holder_id}", user_id, account_holder_id, estate_id)
@@ -899,7 +976,7 @@ def verify_account_otp(conn, body, event):
     """
     Verifies a 6-digit OTP for an account holder.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     gate_id = payload.get("gate_id", None)
@@ -923,7 +1000,9 @@ def verify_account_otp(conn, body, event):
             SELECT pi.name, ah.id, ah.user_id, pi.estate_id, ah.otp_generated_at, ah.otp
             FROM account_holders ah
             JOIN personal_info pi ON pi.id = ah.personal_info_id
-            WHERE ah.otp = %s 
+            WHERE ah.otp = %s
+            AND ah.deleted_at IS NULL
+            AND ah.is_active = TRUE
             AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s)
             """,(otp_provided, gate_id,)
         )
@@ -940,7 +1019,7 @@ def verify_account_otp(conn, body, event):
             return _error_response(400, "No OTP generated for this account.")
 
         # Check if expired
-        if (datetime.utcnow() - otp_generated_at).total_seconds() > 60:
+        if (utc_now() - as_utc(otp_generated_at)).total_seconds() > 60:
             return _error_response(400, "OTP has expired.")
 
         # if otp_provided != otp_stored:
@@ -963,7 +1042,7 @@ def verify_account_otp(conn, body, event):
 
 # def create_personal_info_privilege_link(conn, body, event):
 #     # 1.  Authentication / basic validation
-#     payload, error = verify_token(event)
+#     payload, error = verify_token(event, conn)
 #     if error:
 #         return error
 
@@ -1028,7 +1107,7 @@ def verify_account_otp(conn, body, event):
 #         personal_info_id : int                                                                                            
 #         privilege_ids    : list[int]                                                                                      
 #     """                                                                                                                   
-#     payload, error = verify_token(event)                                                                                  
+#     payload, error = verify_token(event, conn)                                                                                  
 #     if error:                                                                                                             
 #         return error                                                                                                      
                                                                                                                            
@@ -1088,7 +1167,7 @@ def verify_account_otp(conn, body, event):
 #     })                                                                                                                    
                   
 # def send_sub_user_otp(conn, body, event):
-#     payload, error = verify_token(event)                                                                                  
+#     payload, error = verify_token(event, conn)                                                                                  
 #     if error:                                                                                                             
 #         return error                                                                                                      
                                                                                                                             
@@ -1111,7 +1190,7 @@ def verify_account_otp(conn, body, event):
 #     })
 
 def update_account(conn, body, event):    
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -1144,19 +1223,21 @@ def update_account(conn, body, event):
                 id_num = COALESCE(%s, p.id_num), 
                 contact = COALESCE(%s, p.contact),
                 access_group_id = COALESCE(%s, p.access_group_id)
-            FROM 
+            FROM
                 account_holders ah_sub -- The account we are editing
-            LEFT JOIN 
-                account_holders ah_owner ON ah_sub.owner_account_holder_id = ah_owner.id -- Find its owner
-            WHERE 
+            LEFT JOIN
+                account_holders ah_owner ON ah_sub.owner_account_holder_id = ah_owner.id
+                                        AND ah_owner.deleted_at IS NULL -- Find its (live) owner
+            WHERE
                 p.id = ah_sub.personal_info_id  -- Link p to ah_sub
             AND ah_sub.id = %s               -- Target the specific account
+            AND ah_sub.deleted_at IS NULL    -- ... which must not be soft-deleted
             AND (
                 ah_sub.user_id = %s           -- CASE 1: Caller is the account's user
                 OR
                 ah_owner.user_id = %s         -- CASE 2: Caller is the account's OWNER's user
                 OR
-                %s = True                     -- CASE 3: Caller is an admin 
+                %s = True                     -- CASE 3: Caller is an admin
                 )
             RETURNING 
                 ah_sub.id AS matched_account_holder_id,

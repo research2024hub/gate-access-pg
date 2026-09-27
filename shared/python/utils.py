@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import requests
 import firebase_admin
@@ -20,6 +20,32 @@ def _error_response(status_code, message):
         "statusCode": status_code,
         "body": json.dumps({"error": message})
     }
+
+
+# ---------------------------------------------------------------------------
+# Datetime helpers  (safe across the TIMESTAMP -> TIMESTAMPTZ migration)
+# ---------------------------------------------------------------------------
+# `datetime.utcnow()` returns a *naive* datetime. psycopg2 returns naive
+# datetimes for `timestamp` columns and *aware* datetimes for `timestamptz`
+# columns. Comparing a naive datetime with an aware one raises TypeError, so
+# any code that compares "now" against a value read from the DB must make both
+# sides aware. Use these two helpers for that; they work whether the column has
+# already been migrated to timestamptz or not.
+
+def utc_now():
+    """Timezone-aware current time in UTC. Use instead of datetime.utcnow()."""
+    return datetime.now(timezone.utc)
+
+
+def as_utc(dt):
+    """Return `dt` as an aware UTC datetime.
+
+    A naive value is assumed to already represent UTC (which is what every
+    timestamp in this system is). `None` passes through unchanged.
+    """
+    if dt is None:
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 def _success_response(status, data):
     """Returns a success response."""
@@ -127,18 +153,22 @@ def generate_presigned_url(filename,bucket_name):
         #ExpiresIn=3600  # URL valid for 1 hour
     )
     
-def log(conn, type, message, actor_user_id=None, target_account_holder_id=None, estate_id=None):
+def log(conn, type, message, actor_user_id=None, target_account_holder_id=None,
+        estate_id=None, license_plate_number=None):
     """
     Creates a log entry for a specific estate.
     Only admins can access this data.
+
+    `license_plate_number` is optional and only set for vehicle entry/exit
+    events; it stays NULL for every other log type.
     """
 
     with conn.cursor() as cur:
         cur.execute("""
-            INSERT INTO logs (estate_id, actor_user_id, target_account_holder_id, type, message)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id, estate_id, actor_user_id, target_account_holder_id, type, message, date_created
-        """, (estate_id, actor_user_id, target_account_holder_id, type, message))
+            INSERT INTO logs (estate_id, actor_user_id, target_account_holder_id, type, message, license_plate_number)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id, estate_id, actor_user_id, target_account_holder_id, type, message, license_plate_number, date_created
+        """, (estate_id, actor_user_id, target_account_holder_id, type, message, license_plate_number))
 
         new_log = cur.fetchone()
 
@@ -157,6 +187,81 @@ def send_gmail(to_email, subject, message):
     server.login(gmail_user, gmail_app_password)
     server.send_message(msg)
     server.quit()
+
+
+# ---------------------------------------------------------------------------
+# Soft-delete helpers
+# ---------------------------------------------------------------------------
+# `users` and `account_holders` are soft-deleted: a non-NULL `deleted_at` means
+# the row is gone. These rows are never hard-deleted, so ON DELETE CASCADE never
+# fires and dependent data (events, guests, reports, ...) is retained. Every
+# query that reads users / account_holders must exclude soft-deleted rows.
+# Paste these fragments into WHERE / JOIN ON clauses (alias assumed `ah` / `u`):
+LIVE_AH = "ah.deleted_at IS NULL"
+LIVE_USER = "u.deleted_at IS NULL"
+
+
+def is_user_live(cur, user_id):
+    """Auth-time check: the user still exists and has not been deactivated.
+
+    Call at the top of any handler that mutates state or returns private data.
+    JWTs are issued with a one-year expiry, so a stale token can easily outlive
+    the account it belongs to.
+    """
+    if not user_id:
+        return False
+    cur.execute(
+        "SELECT 1 FROM users WHERE id = %s AND deleted_at IS NULL AND is_active = TRUE",
+        (user_id,),
+    )
+    return cur.fetchone() is not None
+
+
+def soft_delete_user(cur, user_id):
+    """Soft-delete a user and cascade the flag to their account_holders.
+
+    Returns the users row (id) if it was live and is now deleted, else None.
+    Dependent data (guests, events, reports, logs) is intentionally left intact.
+    Caller must commit.
+    """
+    cur.execute(
+        """
+        UPDATE users SET deleted_at = now(), is_active = false
+        WHERE id = %s AND deleted_at IS NULL
+        RETURNING id
+        """,
+        (user_id,),
+    )
+    row = cur.fetchone()
+    if row:
+        cur.execute(
+            """
+            UPDATE account_holders SET deleted_at = now(), is_active = false
+            WHERE user_id = %s AND deleted_at IS NULL
+            """,
+            (user_id,),
+        )
+    return row
+
+
+def soft_delete_account_holder(cur, account_holder_id):
+    """Soft-delete a single account_holder row (e.g. a sub-account).
+
+    Returns {id, personal_info_id} if it was live, else None. Caller must commit.
+    The linked personal_info is deliberately NOT touched -- it carries history
+    and may be referenced elsewhere.
+    """
+    cur.execute(
+        """
+        UPDATE account_holders SET deleted_at = now(), is_active = false
+        WHERE id = %s AND deleted_at IS NULL
+        RETURNING id, personal_info_id
+        """,
+        (account_holder_id,),
+    )
+    return cur.fetchone()
+
+
 class PrivilegeContext:
     """
     A helper class that encapsulates user privilege information for a specific account holder.
@@ -196,6 +301,7 @@ class PrivilegeContext:
                 JOIN personal_info pi ON ah.personal_info_id = pi.id
                 JOIN estates es ON es.id = pi.estate_id
                 WHERE ah.id = %s
+                  AND ah.deleted_at IS NULL
             ),
             user_privileges AS (
                 SELECT
@@ -222,6 +328,7 @@ class PrivilegeContext:
                 LEFT JOIN privileges pv ON pv.id IN (atpl.privilege_id, pipl.privilege_id)
                 WHERE ah.user_id = %s
                   AND ah.is_active = TRUE
+                  AND ah.deleted_at IS NULL
                   AND pi.estate_id = (SELECT estate_id FROM target_account_holder)
                 GROUP BY ah.id
             )
@@ -465,11 +572,13 @@ class PrivilegeContext:
                 SELECT
                     EXISTS(SELECT 1 FROM personal_info pi
                         JOIN account_holders ah ON ah.personal_info_id = pi.id
-                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS for_myself,
+                        WHERE ah.is_active = TRUE AND ah.deleted_at IS NULL
+                          AND ah.user_id = %s AND pi.id = %s) AS for_myself,
                     EXISTS(SELECT 1 FROM personal_info pi
                         JOIN guests g ON g.personal_info_id = pi.id
                         JOIN account_holders ah ON ah.id = g.creator_id
-                        WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS for_my_guest
+                        WHERE ah.is_active = TRUE AND ah.deleted_at IS NULL
+                          AND ah.user_id = %s AND pi.id = %s) AS for_my_guest
             """, (self.user_id, personal_info_id, self.user_id, personal_info_id))
             result = cur.fetchone()
             return result["for_myself"] or result["for_my_guest"]
@@ -489,7 +598,8 @@ class PrivilegeContext:
         cur.execute("""
             SELECT EXISTS(SELECT 1 FROM personal_info pi
                 JOIN account_holders ah ON ah.personal_info_id = pi.id
-                WHERE ah.is_active = TRUE AND ah.user_id = %s AND pi.id = %s) AS is_owner
+                WHERE ah.is_active = TRUE AND ah.deleted_at IS NULL
+                  AND ah.user_id = %s AND pi.id = %s) AS is_owner
         """, (self.user_id, personal_info_id))
         result = cur.fetchone()
         return result["is_owner"]
@@ -498,7 +608,8 @@ class PrivilegeContext:
         """Check if the user owns the target account holder."""
         cur.execute("""
             SELECT EXISTS(SELECT 1 FROM account_holders
-                WHERE user_id = %s AND id = %s AND is_active = TRUE) AS is_owner
+                WHERE user_id = %s AND id = %s AND is_active = TRUE
+                  AND deleted_at IS NULL) AS is_owner
         """, (self.user_id, target_account_holder_id))
         result = cur.fetchone()
         return result["is_owner"]
@@ -508,7 +619,8 @@ class PrivilegeContext:
         cur.execute("""
             SELECT EXISTS(SELECT 1 FROM events e
                 JOIN account_holders ah ON e.creator_id = ah.id
-                WHERE ah.user_id = %s AND e.id = %s AND ah.is_active = TRUE) AS is_creator
+                WHERE ah.user_id = %s AND e.id = %s AND ah.is_active = TRUE
+                  AND ah.deleted_at IS NULL) AS is_creator
         """, (self.user_id, event_id))
         result = cur.fetchone()
         return result["is_creator"]
@@ -563,7 +675,7 @@ def get_user_privileges_for_vehicle(cur, user_id, vehicle_id, is_admin=False):
         SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
         FROM vehicles v
         JOIN personal_info pi ON v.personal_info_id = pi.id
-        LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
+        LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id AND ah.deleted_at IS NULL
         LEFT JOIN guests g ON pi.id = g.personal_info_id
         WHERE v.id = %s
     """, (vehicle_id,))
@@ -628,6 +740,7 @@ def get_user_privileges_for_gate(cur, user_id, gate_id, is_admin=False):
         WHERE g.id = %s
           AND ah.user_id = %s
           AND ah.is_active = TRUE
+          AND ah.deleted_at IS NULL
           AND pi.estate_id = g.estate_id
         LIMIT 1
     """, (gate_id, user_id))
@@ -661,6 +774,7 @@ def get_user_privileges_for_estate(cur, user_id, estate_id, is_admin=False):
         JOIN personal_info pi ON ah.personal_info_id = pi.id
         WHERE ah.user_id = %s
           AND ah.is_active = TRUE
+          AND ah.deleted_at IS NULL
           AND pi.estate_id = %s
         LIMIT 1
     """, (user_id, estate_id))
@@ -673,6 +787,7 @@ def get_user_privileges_for_estate(cur, user_id, estate_id, is_admin=False):
             FROM account_holders ah
             JOIN personal_info pi ON ah.personal_info_id = pi.id
             WHERE pi.estate_id = %s AND ah.is_active = TRUE
+              AND ah.deleted_at IS NULL
             LIMIT 1
         """, (estate_id,))
         result = cur.fetchone()
@@ -760,6 +875,7 @@ def get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_a
         FROM account_holders ah
         JOIN personal_info pi ON ah.personal_info_id = pi.id
         WHERE ah.id = %s
+          AND ah.deleted_at IS NULL
     """, (account_holder_id,))
 
     result = cur.fetchone()

@@ -1,5 +1,5 @@
 import json
-from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_email
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_email, soft_delete_user, as_utc, utc_now
 from middleware import verify_token, cors_wrap
 from psycopg2.extras import RealDictCursor
 from handlers.auth import send_email_gmail,generate_otp
@@ -14,13 +14,13 @@ def _success_response(status_code: int, body: dict):
 def _error_response(status_code: int, message: str):
     return cors_wrap(_base_error_response(status_code, message))
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key") 
+JWT_SECRET = os.environ["JWT_SECRET"]
 
 def change_user_type(conn, body, event):
     """
     Changes user type. Requires admin authentication.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -39,7 +39,7 @@ def change_user_type(conn, body, event):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             UPDATE users SET is_admin = %s
-            WHERE id = %s RETURNING id
+            WHERE id = %s AND deleted_at IS NULL RETURNING id
         """, (body_is_admin, user_id))
         if not cur.fetchone():
             return _error_response(404, "User not found.")
@@ -59,7 +59,7 @@ def deactivate_user(conn, body, event):
     print("\n---[DEBUG] Starting deactivate_user ---")
 
     # Step 1: Verify Token
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         print("[DEBUG] Token verification failed:", error)
         return error
@@ -86,7 +86,7 @@ def deactivate_user(conn, body, event):
             print("[DEBUG] Executing update query...")
             cur.execute("""
                 UPDATE users SET is_active = false, date_updated = CURRENT_TIMESTAMP
-                WHERE id = %s RETURNING id, is_active
+                WHERE id = %s AND deleted_at IS NULL RETURNING id, is_active
             """, (target_user_id,))
 
             result = cur.fetchone()
@@ -100,7 +100,7 @@ def deactivate_user(conn, body, event):
             cur.execute("""
                 UPDATE account_holders
                 SET is_active = false, date_updated = CURRENT_TIMESTAMP
-                WHERE user_id = %s
+                WHERE user_id = %s AND deleted_at IS NULL
             """, (target_user_id,))
             print("[DEBUG] Associated account_holders deactivated.")
 
@@ -123,7 +123,7 @@ def activate_user(conn, body, event):
     """
     Activates a user account. Requires authentication.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -141,10 +141,10 @@ def activate_user(conn, body, event):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             UPDATE users SET is_active = true, date_updated = CURRENT_TIMESTAMP
-            WHERE id = %s RETURNING id
+            WHERE id = %s AND deleted_at IS NULL RETURNING id
         """, (user_id,))
         if not cur.fetchone():
-            return _error_response(404, "User not found or already active.")
+            return _error_response(404, "User not found, deleted, or already active.")
 
         log(conn, "USER_ACTIVATED", f"User '{user_id}' activated", actor_user_id, None, None)
 
@@ -154,9 +154,11 @@ def activate_user(conn, body, event):
 
 def delete_user(conn, body, event):
     """
-    Deletes a user account. Requires authentication.
+    Soft-deletes a user account (sets deleted_at; never removes the row).
+    Requires admin authentication. Their account_holders are flagged too;
+    guests, events, reports and logs are retained.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -171,17 +173,11 @@ def delete_user(conn, body, event):
         return _error_response(400, "No user id in request body.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
-            DELETE FROM users
-            WHERE id = %s
-            RETURNING id
-        """, (user_id,))
-
-        deleted = cur.fetchone()
+        deleted = soft_delete_user(cur, user_id)
         if not deleted:
-            return _error_response(404, "User not found.")
+            return _error_response(404, "User not found or already deleted.")
 
-        log(conn, "USER_DELETED", f"User '{user_id}' deleted.", actor_user_id, None, None)
+        log(conn, "USER_DELETED", f"User '{user_id}' soft-deleted.", actor_user_id, None, None)
 
         conn.commit()
 
@@ -193,7 +189,7 @@ def get_users(conn, event):
     Returns a paginated list of all users. Only admins can access this endpoint.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -212,13 +208,18 @@ def get_users(conn, event):
 
     offset = (page - 1) * page_size
 
+    # Admins may opt in to seeing soft-deleted accounts: ?include_deleted=true
+    include_deleted = str(query_params.get("include_deleted", "")).lower() == "true"
+    deleted_filter = "" if include_deleted else "WHERE deleted_at IS NULL"
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT COUNT(*) FROM users")
+        cur.execute(f"SELECT COUNT(*) FROM users {deleted_filter}")
         total = cur.fetchone()["count"]
 
-        cur.execute("""
-            SELECT id, email, is_active, is_admin, date_created, date_updated
+        cur.execute(f"""
+            SELECT id, email, is_active, is_admin, deleted_at, date_created, date_updated
             FROM users
+            {deleted_filter}
             ORDER BY date_created DESC
             LIMIT %s OFFSET %s
         """, (page_size, offset))
@@ -240,7 +241,7 @@ def get_own_accounts(conn, event):
     Retrieves the authenticated user's account details with optional pagination.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -258,7 +259,7 @@ def get_own_accounts(conn, event):
     offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT COUNT(*) FROM account_holders WHERE user_id = %s", (user_id,))
+        cur.execute("SELECT COUNT(*) FROM account_holders WHERE user_id = %s AND deleted_at IS NULL", (user_id,))
         total = cur.fetchone()["count"]
 
         cur.execute("""
@@ -270,7 +271,7 @@ def get_own_accounts(conn, event):
             JOIN estates es ON pi.estate_id = es.id
             JOIN account_types at ON pi.account_type_id = at.id
             JOIN access_groups ag ON pi.access_group_id = ag.id
-            WHERE ah.user_id = %s
+            WHERE ah.user_id = %s AND ah.deleted_at IS NULL
             ORDER BY ah.date_created DESC
             LIMIT %s OFFSET %s
         """, (user_id, page_size, offset))
@@ -291,7 +292,7 @@ def get_user_accounts(conn, event):
     Retrieves account details for a specific user (admin only) with optional pagination.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -315,7 +316,7 @@ def get_user_accounts(conn, event):
     offset = (page - 1) * page_size
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT COUNT(*) FROM account_holders WHERE user_id = %s", (user_id,))
+        cur.execute("SELECT COUNT(*) FROM account_holders WHERE user_id = %s AND deleted_at IS NULL", (user_id,))
         total = cur.fetchone()["count"]
 
         cur.execute("""
@@ -326,7 +327,7 @@ def get_user_accounts(conn, event):
             JOIN personal_info pi ON ah.personal_info_id = pi.id
             JOIN estates es ON pi.estate_id = es.id
             JOIN account_types at ON pi.account_type_id = at.id
-            WHERE ah.user_id = %s
+            WHERE ah.user_id = %s AND ah.deleted_at IS NULL
             ORDER BY ah.date_created DESC
             LIMIT %s OFFSET %s
         """, (user_id, page_size, offset))
@@ -343,7 +344,7 @@ def get_user_accounts(conn, event):
     })
 
 def submit_report(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -370,7 +371,7 @@ def submit_report(conn, body, event):
 
         log(conn, "USER_REPORT_SUBMITTED", f"User '{user_id}' submitted report '{report_id}'", user_id, None, None)
 
-        cur.execute("SELECT email FROM users WHERE is_admin = TRUE AND is_active = TRUE")
+        cur.execute("SELECT email FROM users WHERE is_admin = TRUE AND is_active = TRUE AND deleted_at IS NULL")
         admin_emails = [row["email"] for row in cur.fetchall()]
 
         conn.commit()
@@ -382,7 +383,7 @@ def submit_report(conn, body, event):
 
 
 def get_reports(conn, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -406,9 +407,11 @@ def get_reports(conn, event):
 
         cur.execute("""
             SELECT ur.id, ur.subject, ur.description, ur.date_created,
-                   u.id AS user_id, u.email AS reported_by
+                   u.id AS user_id,
+                   COALESCE(u.email, '(deleted user)') AS reported_by,
+                   (u.deleted_at IS NOT NULL) AS reporter_deleted
             FROM user_reports ur
-            JOIN users u ON ur.user_id = u.id
+            LEFT JOIN users u ON ur.user_id = u.id
             ORDER BY ur.date_created DESC
             LIMIT %s OFFSET %s
         """, (page_size, offset))
@@ -426,7 +429,7 @@ def get_reports(conn, event):
 
 
 def update_report_status(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -459,7 +462,7 @@ def update_report_status(conn, body, event):
 
 
 def get_report_status(conn, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -479,10 +482,10 @@ def get_report_status(conn, event):
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
                 SELECT rs.report_id, rs.status, ur.subject, ur.description, ur.date_created,
-                       u.email AS reported_by
+                       COALESCE(u.email, '(deleted user)') AS reported_by
                 FROM report_status rs
                 JOIN user_reports ur ON rs.report_id = ur.id
-                JOIN users u ON ur.user_id = u.id
+                LEFT JOIN users u ON ur.user_id = u.id
                 WHERE rs.report_id = %s
             """, (report_id,))
             row = cur.fetchone()
@@ -510,10 +513,10 @@ def get_report_status(conn, event):
 
         cur.execute("""
             SELECT rs.report_id, rs.status, ur.subject, ur.description, ur.date_created,
-                   u.email AS reported_by
+                   COALESCE(u.email, '(deleted user)') AS reported_by
             FROM report_status rs
             JOIN user_reports ur ON rs.report_id = ur.id
-            JOIN users u ON ur.user_id = u.id
+            LEFT JOIN users u ON ur.user_id = u.id
             WHERE rs.status = %s
             ORDER BY ur.date_created DESC
             LIMIT %s OFFSET %s
@@ -536,7 +539,7 @@ def forgot_password(conn, body):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Look up active user (do not reveal existence to caller)
         cur.execute(
-            "SELECT id FROM users WHERE email = %s AND is_active = TRUE LIMIT 1",
+            "SELECT id FROM users WHERE email = %s AND is_active = TRUE AND deleted_at IS NULL LIMIT 1",
             (email,)
         )
         row = cur.fetchone()
@@ -548,8 +551,8 @@ def forgot_password(conn, body):
         # Generate OTP and expiry
         reset_otp = generate_otp()
         cur.execute(
-            """UPDATE users SET reset_otp = %s, reset_expiry = NOW() + INTERVAL '10 minutes' 
-            WHERE id = %s""",
+            """UPDATE users SET reset_otp = %s, reset_expiry = NOW() + INTERVAL '10 minutes'
+            WHERE id = %s AND deleted_at IS NULL""",
             (reset_otp, user_id)
         )
         conn.commit()
@@ -567,7 +570,7 @@ def forgot_password(conn, body):
 
 def verify_reset_otp(conn, body, event):
     # Verify token  
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -578,9 +581,9 @@ def verify_reset_otp(conn, body, event):
         return _error_response(400, "Missing user_id or OTP.")
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            SELECT reset_otp, reset_expiry 
-            FROM users 
-            WHERE id = %s
+            SELECT reset_otp, reset_expiry
+            FROM users
+            WHERE id = %s AND deleted_at IS NULL
         """, (user_id,))
         row = cur.fetchone()
         print(row)
@@ -588,13 +591,13 @@ def verify_reset_otp(conn, body, event):
             return _error_response(404, "No OTP found for this user.")
         if row["reset_otp"] != input_otp:
             return _error_response(401, "Invalid OTP.")
-        if row["reset_expiry"] < datetime.utcnow():
+        if as_utc(row["reset_expiry"]) < utc_now():
             return _error_response(401, "OTP expired.")
         # Clean up OTP after successful verification
         cur.execute("""
-            UPDATE users 
+            UPDATE users
             SET reset_otp = NULL, reset_expiry = NULL
-            WHERE id = %s
+            WHERE id = %s AND deleted_at IS NULL
         """, (user_id,))
         conn.commit()
 
@@ -602,7 +605,7 @@ def verify_reset_otp(conn, body, event):
 
 
 def reset_password(conn,body,event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -615,7 +618,7 @@ def reset_password(conn,body,event):
         with conn.cursor(cursor_factory=RealDictCursor) as cur:  
             cur.execute("""
             UPDATE users SET password = %s
-            WHERE id = %s
+            WHERE id = %s AND deleted_at IS NULL
             """, (new_hashed_password, user_id))
 
             log(conn, "USER_PASSWORD_CHANGE", f"User '{user_id}' password changed", user_id, None, None)

@@ -2,8 +2,27 @@ import json
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
 
-from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_gate, notify_user, send_email
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_gate, notify_user, send_email, as_utc, utc_now
 from middleware import verify_token, cors_wrap
+
+# A retained vehicle is eligible only while its owner (or guest's inviter)
+# and the associated user remain active. Used by all vehicle access lists.
+LIVE_VEHICLE_OWNER_SQL = """
+    (EXISTS (
+        SELECT 1 FROM account_holders owner
+        JOIN users owner_user ON owner_user.id = owner.user_id
+        WHERE owner.personal_info_id = pi.id
+          AND owner.deleted_at IS NULL AND owner.is_active = TRUE
+          AND owner_user.deleted_at IS NULL AND owner_user.is_active = TRUE
+    ) OR EXISTS (
+        SELECT 1 FROM guests invited_guest
+        JOIN account_holders owner ON owner.id = invited_guest.creator_id
+        JOIN users owner_user ON owner_user.id = owner.user_id
+        WHERE invited_guest.personal_info_id = pi.id
+          AND owner.deleted_at IS NULL AND owner.is_active = TRUE
+          AND owner_user.deleted_at IS NULL AND owner_user.is_active = TRUE
+    ))
+"""
 
 def _success_response(status_code: int, body: dict):
     return cors_wrap(_base_success_response(status_code, body))
@@ -13,7 +32,7 @@ def _error_response(status_code: int, message: str):
     return cors_wrap(_base_error_response(status_code, message)) 
 
 def create_gate(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -64,7 +83,7 @@ def create_gate(conn, body, event):
 
 
 def update_gate(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -118,7 +137,7 @@ def update_gate_controller_heartbeat(conn, event, body):
     This endpoint should be called by the gate controller to signal its heartbeat.
     """
     # Extract gate_id from path parameters (e.g., /gate/heartbeat/{gate_id})
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -151,7 +170,7 @@ def update_gate_controller_heartbeat(conn, event, body):
     return _success_response(200, {"message": "Controller heartbeat updated successfully.", "gate_id": gate_id})
 
 def delete_gate(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -193,7 +212,7 @@ def get_gates(conn, event):
     Supports query parameters: ?page=1&page_size=20
     Only admins are allowed to perform this action.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -240,7 +259,7 @@ def get_gates_by_estate(conn, event):
     Supports query parameters: ?page=1&page_size=20
     Only estate admins or global admins can access this.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -298,7 +317,7 @@ def get_gates_by_estate(conn, event):
 
 
 def get_gate_by_id(conn, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -334,7 +353,7 @@ def get_vehicles_by_gate_no_time_check_by_gate_controller(conn, event):
     Retrieve all vehicles associated with the gate's allowed access groups,
     ignoring time windows.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -346,11 +365,12 @@ def get_vehicles_by_gate_no_time_check_by_gate_controller(conn, event):
 
     # Retrieve vehicles from allowed access groups (ignoring time windows)
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT v.*
             FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
-            WHERE pi.access_group_id IN (
+            WHERE {LIVE_VEHICLE_OWNER_SQL}
+              AND pi.access_group_id IN (
                 SELECT access_group_id
                 FROM gate_access_group_links
                 WHERE gate_id = %s
@@ -365,7 +385,7 @@ def get_vehicles_by_gate_no_time_check(conn, event):
     Retrieve all vehicles associated with the gate's allowed access groups,
     ignoring time windows.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -388,11 +408,12 @@ def get_vehicles_by_gate_no_time_check(conn, event):
         if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to view vehicles for this gate.")
 
-        cur.execute("""
+        cur.execute(f"""
             SELECT v.*
             FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
-            WHERE pi.access_group_id IN (
+            WHERE {LIVE_VEHICLE_OWNER_SQL}
+              AND pi.access_group_id IN (
                 SELECT access_group_id
                 FROM gate_access_group_links
                 WHERE gate_id = %s
@@ -407,7 +428,7 @@ def get_vehicles_by_gate_with_time_check_by_gate_controller(conn, event):
     Retrieve vehicles allowed at a gate, considering the gate's time windows.
     This query supports time windows that cross midnight.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -423,12 +444,13 @@ def get_vehicles_by_gate_with_time_check_by_gate_controller(conn, event):
         # Retrieve vehicles with time window check. The time conditions:
         # - If opening_time <= closing_time: current time must be between them.
         # - If opening_time > closing_time: allowed if current time is >= opening_time OR <= closing_time.
-        cur.execute("""
+        cur.execute(f"""
             SELECT v.*, pi.expiry
             FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
             LEFT JOIN guests g ON g.personal_info_id = pi.id
-            WHERE pi.access_group_id IN (
+            WHERE {LIVE_VEHICLE_OWNER_SQL}
+              AND pi.access_group_id IN (
                 SELECT access_group_id
                 FROM gate_access_group_links ga
                 JOIN gates g2 ON g2.id = ga.gate_id
@@ -453,8 +475,8 @@ def get_vehicles_by_gate_with_time_check_by_gate_controller(conn, event):
                 g.id IS NULL
                 OR
                 (
-                (g.other_info->'entry_window'->>'start')::timestamp <= CURRENT_TIMESTAMP
-                AND (g.other_info->'entry_window'->>'end')::timestamp >= CURRENT_TIMESTAMP
+                (g.other_info->'entry_window'->>'start')::timestamptz <= CURRENT_TIMESTAMP
+                AND (g.other_info->'entry_window'->>'end')::timestamptz >= CURRENT_TIMESTAMP
                 )
             );
         """, (gate_id,))
@@ -469,7 +491,7 @@ def person_arrives_with_vehicle_callback(conn, body, event):
     For account holders: bypasses entry window check.
     Removes 'otp' and 'entry_window' from other_info upon successful guest entry.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -490,22 +512,25 @@ def person_arrives_with_vehicle_callback(conn, body, event):
     if not status or status not in ["entry", "exit"]:
         return _error_response(400, "Missing or invalid 'status' field. Must be 'entry' or 'exit'.")
 
-    now = datetime.now()
+    now = utc_now()
     action_text = "arrival" if status == "entry" else "departure"
     print(f"License plate: {license_plate_number}\nTime of {action_text}: {now.strftime('%A %d %B %Y %H:%M:%S')}")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Retrieve person info based on license plate
         cur.execute(
-            """
+            f"""
             SELECT pi.name, ah.user_id, gah.user_id AS creator_user_id, g.id AS guest_id, g.other_info, g.creator_id,
                    pi.estate_id, ah.id AS account_holder_id
             FROM vehicles v
             JOIN personal_info pi ON pi.id = v.personal_info_id
             LEFT JOIN guests g ON pi.id = g.personal_info_id
             LEFT JOIN account_holders gah ON gah.id = g.creator_id
+                                         AND gah.deleted_at IS NULL
             LEFT JOIN account_holders ah ON pi.id = ah.personal_info_id
-            WHERE v.license_plate_number = %s
+                                        AND ah.deleted_at IS NULL AND ah.is_active = TRUE
+            WHERE {LIVE_VEHICLE_OWNER_SQL}
+              AND v.license_plate_number = %s
               AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s)
               AND (g.id IS NOT NULL OR ah.id IS NOT NULL)
             """,
@@ -535,8 +560,8 @@ def person_arrives_with_vehicle_callback(conn, body, event):
                     return _error_response(400, "No valid entry window found for this guest.")
 
                 try:
-                    start_dt = datetime.fromisoformat(start_str)
-                    end_dt = datetime.fromisoformat(end_str)
+                    start_dt = as_utc(datetime.fromisoformat(start_str.replace("Z", "+00:00")))
+                    end_dt = as_utc(datetime.fromisoformat(end_str.replace("Z", "+00:00")))
                 except ValueError:
                     return _error_response(400, "Invalid date format in entry window.")
 
@@ -572,7 +597,7 @@ def person_arrives_with_vehicle_callback(conn, body, event):
             #     INSERT INTO AccessLog (license_plate_number, event, timestamp))
             #     VALUES (%s, %s, NOW()
             #     RETURNING id"""),(license_plate_number,status)
-            log(conn, log_action, log_message, person_data["creator_user_id"], person_data["creator_id"], person_data["estate_id"])
+            log(conn, log_action, log_message, person_data["creator_user_id"], person_data["creator_id"], person_data["estate_id"], license_plate_number=license_plate_number)
 
         else:
             # Account holder — no OTP or time check, just log the appropriate action
@@ -591,7 +616,7 @@ def person_arrives_with_vehicle_callback(conn, body, event):
             #     INSERT INTO AccessLog (license_plate_number, event, timestamp))
             #     VALUES (%s, %s, NOW()
             #     RETURNING id"""),(license_plate_number,status)
-            log(conn, log_action, log_message, person_data['user_id'], person_data["account_holder_id"], person_data["estate_id"])
+            log(conn, log_action, log_message, person_data['user_id'], person_data["account_holder_id"], person_data["estate_id"], license_plate_number=license_plate_number)
         cur.execute("""
                 INSERT INTO accesslog (license_plate_number, event, gate_id, timestamp)
                 VALUES (%s, %s, %s, NOW())
@@ -617,7 +642,7 @@ def get_vehicles_by_gate_with_time_check(conn, event):
     This query supports time windows that cross midnight.
     Supports pagination via ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -656,7 +681,8 @@ def get_vehicles_by_gate_with_time_check(conn, event):
                 FROM vehicles v
                 JOIN personal_info pi ON v.personal_info_id = pi.id
                 LEFT JOIN guests g ON g.personal_info_id = pi.id
-                WHERE pi.access_group_id IN (
+                WHERE {LIVE_VEHICLE_OWNER_SQL}
+                  AND pi.access_group_id IN (
                     SELECT access_group_id
                     FROM gate_access_group_links ga
                     JOIN gates g2 ON g2.id = ga.gate_id
@@ -674,8 +700,8 @@ def get_vehicles_by_gate_with_time_check(conn, event):
                 AND (
                     g.id IS NULL
                     OR (
-                        (g.other_info->'entry_window'->>'start')::timestamp <= CURRENT_TIMESTAMP
-                        AND (g.other_info->'entry_window'->>'end')::timestamp >= CURRENT_TIMESTAMP
+                        (g.other_info->'entry_window'->>'start')::timestamptz <= CURRENT_TIMESTAMP
+                        AND (g.other_info->'entry_window'->>'end')::timestamptz >= CURRENT_TIMESTAMP
                     )
                 )
             ) AS valid_vehicles
@@ -683,12 +709,13 @@ def get_vehicles_by_gate_with_time_check(conn, event):
         total = cur.fetchone()["count"]
 
         # Fetch paginated results
-        cur.execute("""
+        cur.execute(f"""
             SELECT v.*, pi.expiry
             FROM vehicles v
             JOIN personal_info pi ON v.personal_info_id = pi.id
             LEFT JOIN guests g ON g.personal_info_id = pi.id
-            WHERE pi.access_group_id IN (
+            WHERE {LIVE_VEHICLE_OWNER_SQL}
+              AND pi.access_group_id IN (
                 SELECT access_group_id
                 FROM gate_access_group_links ga
                 JOIN gates g2 ON g2.id = ga.gate_id
@@ -706,8 +733,8 @@ def get_vehicles_by_gate_with_time_check(conn, event):
             AND (
                 g.id IS NULL
                 OR (
-                    (g.other_info->'entry_window'->>'start')::timestamp <= CURRENT_TIMESTAMP
-                    AND (g.other_info->'entry_window'->>'end')::timestamp >= CURRENT_TIMESTAMP
+                    (g.other_info->'entry_window'->>'start')::timestamptz <= CURRENT_TIMESTAMP
+                    AND (g.other_info->'entry_window'->>'end')::timestamptz >= CURRENT_TIMESTAMP
                 )
             )
             ORDER BY v.date_created DESC
@@ -729,7 +756,7 @@ def activate_gate(conn, body, event):
     """
     Activates a gate. Only accessible by global admins or users with MANAGE_GATES/MANAGE_ALL privileges.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -773,7 +800,7 @@ def deactivate_gate(conn, body, event):
     """
     Deactivates a gate. Only accessible by global admins or users with MANAGE_GATES/MANAGE_ALL privileges.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -814,7 +841,7 @@ def deactivate_gate(conn, body, event):
     return _success_response(200, {"message": "Gate deactivated successfully.", "gate_id": gate_id})
 
 def notify_via_email(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error 
     user_id = payload.get("user_id")
@@ -832,12 +859,12 @@ def notify_via_email(conn, body, event):
             g.name,
             array_agg(u.email) FILTER (WHERE u.email IS NOT NULL) AS user_emails
         FROM gates g
-        LEFT JOIN personal_info pi 
+        LEFT JOIN personal_info pi
             ON g.estate_id = pi.estate_id
-        LEFT JOIN account_holders a 
-            ON pi.id = a.personal_info_id
-        LEFT JOIN users u 
-            ON a.user_id = u.id  
+        LEFT JOIN account_holders a
+            ON pi.id = a.personal_info_id AND a.deleted_at IS NULL
+        LEFT JOIN users u
+            ON a.user_id = u.id AND u.deleted_at IS NULL
         WHERE g.name = %s
         GROUP BY 
             g.id, 

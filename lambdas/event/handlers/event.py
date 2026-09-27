@@ -12,7 +12,7 @@ def _success_response(status_code: int, body: dict):
 def _error_response(status_code: int, message: str):
     return cors_wrap(_base_error_response(status_code, message))
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")
+JWT_SECRET = os.environ["JWT_SECRET"]
 INVITE_EXPIRY_HOURS = 24
 INVITE_BASE_URL = "https://gate-access-web.vercel.app/invite"
 
@@ -20,7 +20,7 @@ def generate_event_invite_link(conn, body, event):
     """
     Generates a signed invite link for an event. Only the creator, authorized estate manager, or global admin can generate it.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -44,7 +44,7 @@ def generate_event_invite_link(conn, body, event):
                 es.name AS estate_name,
                 pi.estate_id
             FROM events e
-            JOIN account_holders ah ON e.creator_id = ah.id
+            JOIN account_holders ah ON e.creator_id = ah.id AND ah.deleted_at IS NULL
             JOIN personal_info pi ON ah.personal_info_id = pi.id
             JOIN estates es ON pi.estate_id = es.id
             WHERE e.id = %s
@@ -95,7 +95,7 @@ def create_event(conn, body, event):
     """
     Creates a new event. Only account holders can create events.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -142,9 +142,9 @@ def create_event(conn, body, event):
         invite_url = json.loads(invite_response["body"])["invite_url"]
 
         cur.execute("""
-                    SELECT pi.estate_id FROM account_holders ah 
+                    SELECT pi.estate_id FROM account_holders ah
                     JOIN personal_info pi ON pi.id = ah.personal_info_id
-                    WHERE ah.id = %s
+                    WHERE ah.id = %s AND ah.deleted_at IS NULL
                     """, (creator_id,))
         
         result = cur.fetchone()
@@ -164,7 +164,7 @@ def update_event(conn, body, event):
     """
     Updates an existing event. Only the event creator or an admin can update.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -220,7 +220,7 @@ def update_event(conn, body, event):
         
         cur.execute("""
                     SELECT pi.estate_id FROM events e 
-                    JOIN account_holders ah ON ah.id = e.creator_id
+                    JOIN account_holders ah ON ah.id = e.creator_id AND ah.deleted_at IS NULL
                     JOIN personal_info pi ON pi.id = ah.personal_info_id
                     WHERE e.id = %s
                     """, (event_id,))
@@ -237,7 +237,7 @@ def delete_event(conn, body, event):
     """
     Deletes an event. Only the event creator or an admin can delete it.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -277,7 +277,7 @@ def delete_event(conn, body, event):
         cur.execute("""
             SELECT pi.estate_id, e.name 
             FROM events e 
-            JOIN account_holders ah ON ah.id = e.creator_id
+            JOIN account_holders ah ON ah.id = e.creator_id AND ah.deleted_at IS NULL
             JOIN personal_info pi ON pi.id = ah.personal_info_id
             WHERE e.id = %s
         """, (event_id,))
@@ -303,7 +303,7 @@ def get_event_details(conn, event):
     """
     Retrieves details of a specific event.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -343,7 +343,7 @@ def get_event_details(conn, event):
         cur.execute("""
             SELECT e.id, e.name, e.max_num_of_attendees, e.start_time, e.end_time, ah.id AS creator_id, pi.name AS creator_name
             FROM events e
-            JOIN account_holders ah ON e.creator_id = ah.id
+            JOIN account_holders ah ON e.creator_id = ah.id AND ah.deleted_at IS NULL
             JOIN personal_info pi ON ah.personal_info_id = pi.id
             WHERE e.id = %s
         """, (event_id,))
@@ -359,7 +359,7 @@ def list_events_by_creator(conn, event):
     Lists all events created by a specific account holder, with optional pagination.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -425,7 +425,7 @@ def list_events_by_estate(conn, event):
     Lists all events in a specific estate by filtering via creator_id.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -462,6 +462,7 @@ def list_events_by_estate(conn, event):
                     JOIN privileges pv ON atpl.privilege_id = pv.id
                     WHERE ah.user_id = %s
                       AND ah.is_active = TRUE
+                      AND ah.deleted_at IS NULL
                       AND pi.estate_id = %s
                       AND (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_EVENTS')
                 ) AS has_privileges
@@ -474,7 +475,7 @@ def list_events_by_estate(conn, event):
         cur.execute("""
             SELECT COUNT(*) 
             FROM events e
-            JOIN account_holders ah ON e.creator_id = ah.id
+            JOIN account_holders ah ON e.creator_id = ah.id AND ah.deleted_at IS NULL
             JOIN personal_info pi ON ah.personal_info_id = pi.id
             WHERE pi.estate_id = %s
         """, (estate_id,))
@@ -484,7 +485,7 @@ def list_events_by_estate(conn, event):
         cur.execute("""
             SELECT e.id, e.name, e.max_num_of_attendees, e.start_time, e.end_time, ah.id AS creator_id, pi.name AS creator_name
             FROM events e
-            JOIN account_holders ah ON e.creator_id = ah.id
+            JOIN account_holders ah ON e.creator_id = ah.id AND ah.deleted_at IS NULL
             JOIN personal_info pi ON ah.personal_info_id = pi.id
             WHERE pi.estate_id = %s
             ORDER BY e.start_time DESC

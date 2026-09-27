@@ -3,7 +3,13 @@ phases:
   install:
     runtime-versions:
       python: 3.9
+    commands:
+      - python -m pip install -r tests/requirements.txt
+  pre_build:
+    commands:
+      - python -m pytest tests/unit -q
+      - python scripts/template_deploy.py --check-only
   build:
     commands:
       - sam build
-      - sam deploy --no-confirm-changeset --no-fail-on-empty-changeset --stack-name gate-access-pg-stack --resolve-s3 --capabilities CAPABILITY_IAM
+      - python scripts/template_deploy.py --deploy-only

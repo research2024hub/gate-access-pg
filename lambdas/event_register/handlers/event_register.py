@@ -13,7 +13,7 @@ def _success_response(status_code: int, body: dict):
 def _error_response(status_code: int, message: str):
     return cors_wrap(_base_error_response(status_code, message))
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")
+JWT_SECRET = os.environ["JWT_SECRET"]
 
 def use_invite_token(conn, body, event):
     """
@@ -53,7 +53,7 @@ def use_invite_token(conn, body, event):
             SELECT pi.estate_id
             FROM account_holders ah
             JOIN personal_info pi ON ah.personal_info_id = pi.id
-            WHERE ah.id = %s
+            WHERE ah.id = %s AND ah.deleted_at IS NULL
         """, (account_holder_id,))
         row = cur.fetchone()
         if not row:
@@ -134,7 +134,7 @@ def register_guest_for_event(conn, body, event):
     """
     Registers a guest for an event by creating a new guest dynamically.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -201,7 +201,7 @@ def register_guest_for_event(conn, body, event):
                       AND pi.estate_id = (
                           SELECT pi.estate_id
                           FROM events e 
-                          JOIN account_holders ah ON e.creator_id = ah.id
+                          JOIN account_holders ah ON e.creator_id = ah.id AND ah.deleted_at IS NULL
                           JOIN personal_info pi ON pi.id = ah.personal_info_id
                           WHERE e.id = %s
                       )
@@ -222,7 +222,7 @@ def register_guest_for_event(conn, body, event):
             SELECT pi.estate_id
             FROM personal_info pi
             JOIN account_holders ah ON ah.personal_info_id = pi.id
-            WHERE ah.id = %s
+            WHERE ah.id = %s AND ah.deleted_at IS NULL
         """, (account_holder_id,))
         row = cur.fetchone()
         if not row or not row["estate_id"]:
@@ -281,7 +281,7 @@ def list_event_guests(conn, event):
     Only the event creator or an admin can access this data.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -362,7 +362,7 @@ def remove_guest_from_event(conn, body, event):
     Removes a guest from an event. If the guest is removed, their personal_info is also deleted, 
     which cascades and removes all related records.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -402,7 +402,7 @@ def remove_guest_from_event(conn, body, event):
         
         cur.execute("""
                     SELECT pi.estate_id, e.creator_id, e.name FROM events e 
-                    JOIN account_holders ah ON ah.id = e.creator_id
+                    JOIN account_holders ah ON ah.id = e.creator_id AND ah.deleted_at IS NULL
                     JOIN personal_info pi ON pi.id = ah.personal_info_id
                     WHERE e.id = %s
                     """, (event_id,))

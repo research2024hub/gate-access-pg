@@ -14,7 +14,7 @@ def create_access_group_link(conn, body, event):
     Assigns an access group to a gate after verifying both exist.
     Allows optional opening_time and closing_time, falling back to DB defaults if omitted.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -106,7 +106,7 @@ def update_access_group_link(conn, body, event):
     """
     Updates an access group link to a gate, allowing changes to opening_time and closing_time.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -177,7 +177,7 @@ def remove_access_group_link(conn, body, event):
     """
     Removes an access group from a gate.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -225,7 +225,7 @@ def list_gate_access_groups(conn, event):
     Lists all access groups linked to a gate (returns IDs and names), with pagination.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -294,7 +294,7 @@ def list_access_group_gates(conn, event):
     Lists all gates linked to an access group (returns IDs and names), with pagination.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 

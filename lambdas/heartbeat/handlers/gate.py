@@ -223,8 +223,8 @@ def monitor_heartbeat(conn):
                     array_agg(u.email) FILTER (WHERE u.email IS NOT NULL) AS user_emails
                 FROM gates g
                 LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
-                LEFT JOIN account_holders a ON pi.id = a.personal_info_id
-                LEFT JOIN users u ON a.user_id = u.id  
+                LEFT JOIN account_holders a ON pi.id = a.personal_info_id AND a.deleted_at IS NULL
+                LEFT JOIN users u ON a.user_id = u.id AND u.deleted_at IS NULL
                 GROUP BY g.id, g.last_controller_heartbeat, g.last_alert_sent_at, g.name
             """)
             

@@ -17,7 +17,7 @@ def get_logs_by_estate(conn, event):
     Only admins or users with VIEW_LOGS or MANAGE_ALL privileges can access this data.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -55,12 +55,12 @@ def get_logs_by_estate(conn, event):
         cur.execute("""
             SELECT EXISTS (
                 SELECT 1 FROM users u
-                JOIN account_holders ah ON u.id = ah.user_id
+                JOIN account_holders ah ON u.id = ah.user_id AND ah.deleted_at IS NULL
                 JOIN personal_info pi ON ah.personal_info_id = pi.id
                 JOIN account_types act ON pi.account_type_id = act.id
                 JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                 JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE u.id = %s AND pi.estate_id = %s
+                WHERE u.id = %s AND u.deleted_at IS NULL AND pi.estate_id = %s
                 AND (pv.name = 'MANAGE_ALL' OR pv.name = 'VIEW_LOGS')
             ) AS exists_flag
         """, (user_id, estate_id))
@@ -102,7 +102,7 @@ def get_logs_by_account_holder(conn, event):
     Only the account holder (linked via user_id) or an admin can access this data.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -135,16 +135,16 @@ def get_logs_by_account_holder(conn, event):
         cur.execute("""
             SELECT EXISTS (
                 SELECT 1 FROM users u
-                JOIN account_holders ah ON u.id = ah.user_id
+                JOIN account_holders ah ON u.id = ah.user_id AND ah.deleted_at IS NULL
                 JOIN personal_info pi ON ah.personal_info_id = pi.id
                 JOIN account_types act ON pi.account_type_id = act.id
                 JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                 JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE u.id = %s AND pi.estate_id = ( 
-                    SELECT pi.estate_id 
+                WHERE u.id = %s AND u.deleted_at IS NULL AND pi.estate_id = (
+                    SELECT pi.estate_id
                     FROM account_holders ah
                     JOIN personal_info pi ON ah.personal_info_id = pi.id
-                    WHERE ah.id = %s
+                    WHERE ah.id = %s AND ah.deleted_at IS NULL
                 ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'VIEW_LOGS')
             ) AS exists_flag
         """, (user_id, account_holder_id))
@@ -152,8 +152,8 @@ def get_logs_by_account_holder(conn, event):
         if not (cur.fetchone()["exists_flag"] or is_admin):
             cur.execute("""
                 SELECT EXISTS (
-                    SELECT 1 FROM account_holders 
-                    WHERE user_id = %s AND id = %s
+                    SELECT 1 FROM account_holders
+                    WHERE user_id = %s AND id = %s AND deleted_at IS NULL
                 ) AS exists_flag
             """, (user_id, account_holder_id))
             if not cur.fetchone()["exists_flag"]:
@@ -163,7 +163,7 @@ def get_logs_by_account_holder(conn, event):
         cur.execute("""
             SELECT COUNT(*) FROM logs
             WHERE target_account_holder_id = %s OR actor_user_id = (
-                SELECT user_id FROM account_holders WHERE id = %s
+                SELECT user_id FROM account_holders WHERE id = %s AND deleted_at IS NULL
             )
         """, (account_holder_id, account_holder_id))
         total = cur.fetchone()["count"]
@@ -174,7 +174,7 @@ def get_logs_by_account_holder(conn, event):
             FROM logs
             WHERE (
                 target_account_holder_id = %s OR actor_user_id = (
-                SELECT user_id FROM account_holders WHERE id = %s
+                SELECT user_id FROM account_holders WHERE id = %s AND deleted_at IS NULL
             ) 
             )
             AND date_created BETWEEN %s AND %s
@@ -197,7 +197,7 @@ def get_logs_by_account_holder(conn, event):
 
 
 def search_logs_by_estate(conn, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error: return error
     
     user_id = payload.get("user_id")
@@ -228,12 +228,12 @@ def search_logs_by_estate(conn, event):
         cur.execute("""
             SELECT EXISTS (
                 SELECT 1 FROM users u
-                JOIN account_holders ah ON u.id = ah.user_id
+                JOIN account_holders ah ON u.id = ah.user_id AND ah.deleted_at IS NULL
                 JOIN personal_info pi ON ah.personal_info_id = pi.id
                 JOIN account_types act ON pi.account_type_id = act.id
                 JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                 JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE u.id = %s AND pi.estate_id = %s
+                WHERE u.id = %s AND u.deleted_at IS NULL AND pi.estate_id = %s
                 AND (pv.name = 'MANAGE_ALL' OR pv.name = 'VIEW_LOGS')
             ) AS exists_flag
         """, (user_id, estate_id))
@@ -297,7 +297,7 @@ def search_logs_by_estate(conn, event):
 
 
 def search_logs_by_account_holder(conn, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -329,29 +329,29 @@ def search_logs_by_account_holder(conn, event):
         cur.execute("""
             SELECT EXISTS (
                 SELECT 1 FROM users u
-                JOIN account_holders ah ON u.id = ah.user_id
+                JOIN account_holders ah ON u.id = ah.user_id AND ah.deleted_at IS NULL
                 JOIN personal_info pi ON ah.personal_info_id = pi.id
                 JOIN account_types act ON pi.account_type_id = act.id
                 JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                 JOIN privileges pv ON atpl.privilege_id = pv.id
-                WHERE u.id = %s AND pi.estate_id = ( 
-                    SELECT pi.estate_id 
+                WHERE u.id = %s AND u.deleted_at IS NULL AND pi.estate_id = (
+                    SELECT pi.estate_id
                     FROM account_holders ah
                     JOIN personal_info pi ON ah.personal_info_id = pi.id
-                    WHERE ah.id = %s
+                    WHERE ah.id = %s AND ah.deleted_at IS NULL
                 ) AND (pv.name = 'MANAGE_ALL' OR pv.name = 'VIEW_LOGS')
             ) AS exists_flag
         """, (user_id, account_holder_id))
 
         if not (cur.fetchone()["exists_flag"] or is_admin):
-            cur.execute("SELECT EXISTS (SELECT 1 FROM account_holders WHERE user_id = %s AND id = %s) AS exists_flag", (user_id, account_holder_id))
+            cur.execute("SELECT EXISTS (SELECT 1 FROM account_holders WHERE user_id = %s AND id = %s AND deleted_at IS NULL) AS exists_flag", (user_id, account_holder_id))
             if not cur.fetchone()["exists_flag"]:
                 return _error_response(403, "Access denied.")
 
         # --- 2. Build Dynamic Filters ---
         filter_sql = """
             (target_account_holder_id = %s OR actor_user_id = (
-                SELECT user_id FROM account_holders WHERE id = %s
+                SELECT user_id FROM account_holders WHERE id = %s AND deleted_at IS NULL
             ))
         """
         params = [account_holder_id, account_holder_id]

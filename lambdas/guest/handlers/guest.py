@@ -2,7 +2,7 @@ import json
 import random
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
-from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, send_message, log, get_user_privileges
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, send_message, log, get_user_privileges, as_utc, utc_now
 from middleware import verify_token, cors_wrap
 
 def _success_response(status_code: int, body: dict):
@@ -16,7 +16,7 @@ def create_guest_regular(conn, body, event):
     Registers a new guest under an account holder and creates a corresponding personal_info entry.
     All operations are performed in a single transaction.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -146,7 +146,7 @@ def create_associate(conn, body, event):
     Registers a new associate under an account holder and creates a corresponding personal_info entry.
     All operations are performed in a single transaction.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -282,7 +282,7 @@ def send_otp(conn, body, event):
         - optional 'start'
     """
 
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -315,8 +315,8 @@ def send_otp(conn, body, event):
         if not privileges.can_manage_guests():
             # Verify the guest belongs to the account holder
             cur.execute("""SELECT g.personal_info_id FROM guests g
-                        JOIN account_holders ah ON ah.id = g.creator_id
-                        WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE""", (guest_id, user_id))
+                        JOIN account_holders ah ON ah.id = g.creator_id AND ah.deleted_at IS NULL
+                        WHERE g.id = %s AND ah.user_id = %s AND ah.is_active = TRUE AND ah.deleted_at IS NULL""", (guest_id, user_id))
             row = cur.fetchone()
             if not row:
                 return _error_response(403, "You do not have privileges to send an OTP to this guest.")
@@ -414,7 +414,7 @@ def verify_guest_otp(conn, body, event):
     Verifies a guest's OTP and checks that the current time is within the allowed entry window.
     Removes 'otp' and 'entry_window' from other_info upon successful verification.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -428,7 +428,7 @@ def verify_guest_otp(conn, body, event):
     if not otp:
         return _error_response(400, "Missing required fields: 'otp'.")
 
-    now = datetime.now()
+    now = utc_now()
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Retrieve the guest info based on the provided OTP
@@ -437,7 +437,7 @@ def verify_guest_otp(conn, body, event):
             SELECT pi.name, g.id, g.other_info, pi.estate_id, g.creator_id, ah.user_id AS inviter_user_id
             FROM guests g
             JOIN personal_info pi ON pi.id = g.personal_info_id
-            JOIN account_holders ah ON ah.id = g.creator_id
+            JOIN account_holders ah ON ah.id = g.creator_id AND ah.deleted_at IS NULL
             WHERE g.other_info->>'otp' = %s AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s)
             """,
             (otp, gate_id)
@@ -459,8 +459,8 @@ def verify_guest_otp(conn, body, event):
 
         # Convert the start and end strings to datetime objects
         try:
-            start_dt = datetime.fromisoformat(start_str)
-            end_dt = datetime.fromisoformat(end_str)
+            start_dt = as_utc(datetime.fromisoformat(start_str.replace("Z", "+00:00")))
+            end_dt = as_utc(datetime.fromisoformat(end_str.replace("Z", "+00:00")))
         except ValueError:
             return _error_response(400, "Invalid date format in entry window.")
 
@@ -510,7 +510,7 @@ def update_guest(conn, body, event):
     Uses the same API structure as create_guest_regular for consistency.
     Only allowed by the creator or users with MANAGE_GUESTS privilege.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -768,7 +768,7 @@ def delete_guest(conn, body, event):
     """
     Deletes a guest and their associated personal_info. Only the creator, estate managers, or an admin can delete.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -829,7 +829,7 @@ def get_guest_details(conn, event):
     """
     Retrieves details of a specific guest, including their personal info.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -887,7 +887,7 @@ def get_account_holder_guests(conn, event):
     Lists all guests created by a specific account holder with pagination.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -961,7 +961,7 @@ def get_estate_guests(conn, event):
     Lists all guests created within a specific estate, with pagination.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -993,7 +993,7 @@ def get_estate_guests(conn, event):
                     JOIN account_types act ON pi.account_type_id = act.id
                     JOIN account_type_privilege_links atpl ON act.id = atpl.account_type_id
                     JOIN privileges pv ON atpl.privilege_id = pv.id
-                    WHERE ah.user_id = %s AND pi.estate_id = %s AND ah.is_active = TRUE AND
+                    WHERE ah.user_id = %s AND pi.estate_id = %s AND ah.is_active = TRUE AND ah.deleted_at IS NULL AND
                           (pv.name = 'MANAGE_ALL' OR pv.name = 'MANAGE_GUESTS')
                 ) AS has_privileges
             """, (user_id, estate_id))
@@ -1004,7 +1004,7 @@ def get_estate_guests(conn, event):
         # Total count
         cur.execute("""
             SELECT COUNT(*) FROM guests g
-            JOIN account_holders ah ON ah.id = g.creator_id
+            JOIN account_holders ah ON ah.id = g.creator_id AND ah.deleted_at IS NULL
             JOIN personal_info cpi ON ah.personal_info_id = cpi.id
             WHERE cpi.estate_id = %s
         """, (estate_id,))
@@ -1025,7 +1025,7 @@ def get_estate_guests(conn, event):
                 g.creator_id
             FROM guests g
             JOIN personal_info pi ON g.personal_info_id = pi.id
-            JOIN account_holders ah ON ah.id = g.creator_id
+            JOIN account_holders ah ON ah.id = g.creator_id AND ah.deleted_at IS NULL
             JOIN personal_info cpi ON ah.personal_info_id = cpi.id
             JOIN account_types at ON pi.account_type_id = at.id
             JOIN access_groups ag ON pi.access_group_id = ag.id

@@ -4,13 +4,13 @@ import os
 import json
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
-from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_message, send_email
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_message, send_email, as_utc, utc_now
 from middleware import verify_token, cors_wrap, CORS_HEADERS, verify_google_token
 import random
 import smtplib
 from email.mime.text import MIMEText
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")
+JWT_SECRET = os.environ["JWT_SECRET"]
 FIHANKRA_FEEDBACK_SECRET = os.environ.get("FIHANKRA_FEEDBACK_SECRET")
 
 # ------------------------------------------------------------------
@@ -84,7 +84,7 @@ def send_user_otp(conn, body):
         cur.execute("""
             INSERT INTO pending_users (email, otp, otp_expiry)
             VALUES (%s, %s, NOW() + INTERVAL '10 minutes')
-            ON CONFLICT (email) DO UPDATE 
+            ON CONFLICT (email) DO UPDATE
             SET otp = EXCLUDED.otp,
                 otp_expiry = EXCLUDED.otp_expiry,
                 date_updated = CURRENT_TIMESTAMP
@@ -180,7 +180,7 @@ def register_user(conn, body):
     otp = str(random.randint(100000, 999999))
     print(f"otp:{otp}")
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT 1 FROM users WHERE email = %s  OR  phone_number = %s LIMIT 1;", (email, phone_number))
+        cur.execute("SELECT 1 FROM users WHERE (email = %s OR phone_number = %s) AND deleted_at IS NULL LIMIT 1;", (email, phone_number))
         if cur.fetchone():
             return _error_response(409, "User already exist .")
         cur.execute("""
@@ -252,7 +252,7 @@ def verify_otp(conn, body):
             return _error_response(404, "No pending registration found for this email.")
         if row["otp"] != input_otp:
             return _error_response(401, "Invalid OTP.")
-        if row["otp_expiry"] < datetime.utcnow():
+        if as_utc(row["otp_expiry"]) < utc_now():
             return _error_response(401, "OTP expired.")
         # Create user
         cur.execute("""
@@ -319,7 +319,7 @@ def promote_to_admin(conn, body, event):
     """
     Promotes an existing user to admin. Only callable by an existing admin.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -333,7 +333,7 @@ def promote_to_admin(conn, body, event):
         return _error_response(400, "Missing 'email' or 'phone_number'.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id, is_admin FROM users WHERE email = %s OR phone_number = %s", (email, phone_number))
+        cur.execute("SELECT id, is_admin FROM users WHERE (email = %s OR phone_number = %s) AND deleted_at IS NULL", (email, phone_number))
         user = cur.fetchone()
 
         if not user:
@@ -341,7 +341,7 @@ def promote_to_admin(conn, body, event):
         if user["is_admin"]:
             return _error_response(409, "User is already an admin.")
 
-        cur.execute("UPDATE users SET is_admin = true WHERE id = %s", (user["id"],))
+        cur.execute("UPDATE users SET is_admin = true WHERE id = %s AND deleted_at IS NULL", (user["id"],))
 
         log(conn, "USER_PROMOTED_TO_ADMIN", f"User '{user['id']}' promoted to admin", payload.get("user_id"), None, None)
 
@@ -379,7 +379,7 @@ def refresh_feedback_token(conn, event):
     Mints a fresh fihankra-feedback identity token for an already-logged-in
     admin (global or estate), without requiring a full re-login.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -388,7 +388,7 @@ def refresh_feedback_token(conn, event):
         return _error_response(401, "Invalid token for this operation.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT email, is_admin FROM users WHERE id = %s", (user_id,))
+        cur.execute("SELECT email, is_admin FROM users WHERE id = %s AND deleted_at IS NULL", (user_id,))
         user = cur.fetchone()
 
         if not user:
@@ -400,6 +400,7 @@ def refresh_feedback_token(conn, event):
             JOIN personal_info pi ON pi.id = ah.personal_info_id
             JOIN account_types at ON at.id = pi.account_type_id
             WHERE ah.user_id = %s AND at.name = 'ADMIN'
+              AND ah.deleted_at IS NULL
             LIMIT 1
         """, (user_id,))
         is_estate_admin = cur.fetchone() is not None
@@ -436,7 +437,8 @@ def login_user(conn, body):
             cur.execute("""
                     SELECT id, email, password, is_active, is_admin
                     FROM users
-                    WHERE email = %s OR phone_number = %s
+                    WHERE (email = %s OR phone_number = %s)
+                      AND deleted_at IS NULL
                 """, (email, phone_number))
             user = cur.fetchone()
 
@@ -495,6 +497,7 @@ def login_user(conn, body):
                 JOIN       access_groups         ag  ON ag.id           = pi.access_group_id
                 LEFT JOIN  pending_account_holders pah ON pah.personal_info_id = pi.id
                 WHERE ah.user_id = %s
+                  AND ah.deleted_at IS NULL
 
                 UNION ALL
 
@@ -523,10 +526,12 @@ def login_user(conn, body):
                 JOIN       account_types         at  ON at.id      = pi.account_type_id
                 JOIN       access_groups         ag  ON ag.id      = pi.access_group_id
                 WHERE u.id = %s
+                  AND u.deleted_at IS NULL
                   AND NOT EXISTS (
                         SELECT 1
                         FROM account_holders ah2
                         WHERE ah2.user_id = u.id
+                          AND ah2.deleted_at IS NULL
                   );
             """, (user_id, user_id))
 
@@ -582,7 +587,7 @@ def change_password(conn, body, event):
     """
     Allows an authenticated user to change their password.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -594,7 +599,7 @@ def change_password(conn, body, event):
         return _error_response(400, "Missing 'old_password' or 'new_password'.")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT password FROM users WHERE id = %s", (user_id,))
+        cur.execute("SELECT password FROM users WHERE id = %s AND deleted_at IS NULL", (user_id,))
         row = cur.fetchone()
 
         if not row:
@@ -608,7 +613,7 @@ def change_password(conn, body, event):
 
         cur.execute("""
             UPDATE users SET password = %s
-            WHERE id = %s
+            WHERE id = %s AND deleted_at IS NULL
         """, (new_hashed_password, user_id))
 
         log(conn, "USER_PASSWORD_CHANGE", f"User '{user_id}' password changed", user_id, None, None)

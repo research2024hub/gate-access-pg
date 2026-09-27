@@ -10,7 +10,7 @@ def _error_response(status_code: int, message: str):
     return cors_wrap(_base_error_response(status_code, message))
 
 def create_estate(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -44,7 +44,7 @@ def create_estate(conn, body, event):
 
 
 def update_estate(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -87,7 +87,7 @@ def update_estate(conn, body, event):
 
 
 def delete_estate(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -122,7 +122,7 @@ def get_estates(conn, event):
     Retrieves all estates with optional pagination.
     Supports query parameters: ?page=1&page_size=20
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -165,7 +165,7 @@ def get_estate_by_id(conn, event):
     """
     Retrieves a specific estate by its ID.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 

@@ -10,7 +10,7 @@ def _error_response(status_code: int, message: str):
     return cors_wrap(_base_error_response(status_code, message))
 
 def create_privilege(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -40,7 +40,7 @@ def create_privilege(conn, body, event):
     return _success_response(201, {"message": "Privilege created successfully.", "privilege_id": privilege_id})
 
 def update_privilege(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -73,7 +73,7 @@ def update_privilege(conn, body, event):
     return _success_response(200, {"message": "Privilege updated successfully.", "privilege_id": privilege_id})
 
 def delete_privilege(conn, body, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
 
@@ -110,7 +110,7 @@ def get_privileges(conn, event):
     Supports query parameters: ?page=1&page_size=20
     Only accessible to admins.
     """
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
@@ -154,7 +154,7 @@ def get_privileges(conn, event):
 
 
 def get_privilege_by_id(conn, event):
-    payload, error = verify_token(event)
+    payload, error = verify_token(event, conn)
     if error:
         return error
     
