@@ -1,5 +1,6 @@
+from database import delete_row, insert_row, update_row
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges
 from middleware import verify_token, cors_wrap
 
@@ -29,7 +30,7 @@ def create_vehicle(conn, body, event):
     if not all([personal_info_id, license_plate_number, make, model, color]):
         return _error_response(400, "Missing required fields.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Get account holder from personal_info to establish privilege context
         cur.execute("""
             SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
@@ -68,13 +69,12 @@ def create_vehicle(conn, body, event):
                 return _error_response(409, "This license plate has already been registered at this estate.")
             
         # Insert new vehicle
-        cur.execute("""
+        _write_result = insert_row(cur, """
             INSERT INTO vehicles (personal_info_id, license_plate_number, make, model, color)
             VALUES (%s, %s, %s, %s, %s)
-            RETURNING id
-        """, (personal_info_id, license_plate_number, make, model, color))
+        """, (personal_info_id, license_plate_number, make, model, color), table='vehicles', columns='id')
         
-        vehicle_id = cur.fetchone()["id"]
+        vehicle_id = _write_result["id"]
 
         cur.execute("""
             SELECT COALESCE(ah.id, g.creator_id) AS actor_id, pi.estate_id
@@ -117,7 +117,7 @@ def update_vehicle(conn, body, event):
     if not (vehicle_id and personal_info_id):
         return _error_response(400, "Missing 'vehicle_id' or 'personal_info_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Get vehicle's personal_info_id first
         cur.execute("""
             SELECT personal_info_id FROM vehicles WHERE id = %s
@@ -154,7 +154,7 @@ def update_vehicle(conn, body, event):
             return _error_response(403, "You do not have privileges to update this vehicle.")
 
         # Update vehicle details
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE vehicles
             SET license_plate_number = COALESCE(%s, license_plate_number),
                 make = COALESCE(%s, make),
@@ -162,10 +162,9 @@ def update_vehicle(conn, body, event):
                 color = COALESCE(%s, color),
                 date_updated = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING id
-        """, (license_plate_number, make, model, color, vehicle_id))
+        """, (license_plate_number, make, model, color, vehicle_id), table='vehicles', columns='id', where='id = %s', where_count=1)
 
-        if not cur.fetchone():
+        if not _write_result:
             return _error_response(500, "Failed to update vehicle.")
         
         cur.execute("""
@@ -204,7 +203,7 @@ def delete_vehicle(conn, body, event):
     if not (vehicle_id):
         return _error_response(400, "Missing 'vehicle_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Get vehicle's personal_info_id first
         cur.execute("""
             SELECT personal_info_id FROM vehicles WHERE id = %s
@@ -256,8 +255,9 @@ def delete_vehicle(conn, body, event):
         license_plate_number = result["license_plate_number"]
         
         # Delete vehicle
-        cur.execute("DELETE FROM vehicles WHERE id = %s RETURNING id", (vehicle_id,))
-        if not cur.fetchone():
+        _write_result = delete_row(cur, """DELETE FROM vehicles WHERE id = %s
+        """, (vehicle_id,), table='vehicles', columns='id', where='id = %s', where_count=1)
+        if not _write_result:
             return _error_response(500, "Failed to delete vehicle.")
         
         log(conn, "VEHICLE_DELETION", f"Vehicle plate {license_plate_number} deleted.")#, user_id, actor_id, estate_id)
@@ -284,7 +284,7 @@ def get_vehicle_details(conn, event):
     if not vehicle_id:
         return _error_response(400, "Missing 'vehicle_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Get vehicle's personal_info_id first
         cur.execute("""
             SELECT personal_info_id FROM vehicles WHERE id = %s
@@ -362,7 +362,7 @@ def list_vehicles_by_owner(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Get account holder from personal_info to establish privilege context
         cur.execute("""
             SELECT COALESCE(ah.id, g.creator_id) as account_holder_id
@@ -388,7 +388,7 @@ def list_vehicles_by_owner(conn, event):
             return _error_response(403, "You do not have privileges to view vehicles for this person.")
         
         # Count total
-        cur.execute("SELECT COUNT(*) FROM vehicles WHERE personal_info_id = %s", (personal_info_id,))
+        cur.execute("SELECT COUNT(*) AS count FROM vehicles WHERE personal_info_id = %s", (personal_info_id,))
         total = cur.fetchone()["count"]
 
         # Fetch paginated vehicles

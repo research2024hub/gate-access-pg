@@ -1,4 +1,6 @@
-# gate-access-pg
+# Gate Access API (MySQL)
+
+This version uses MySQL 8.4 with PyMySQL. See [MySQL migration notes](docs/mysql-migration.md) before deploying.
 
 For this API’s database requirements and credential setup, see [deployment instructions](docs/deployment.md).
 

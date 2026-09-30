@@ -1,5 +1,7 @@
+from database import mysql_datetime
+from database import delete_row, insert_row
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 import random
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges
 from middleware import verify_token, cors_wrap
@@ -47,7 +49,7 @@ def use_invite_token(conn, body, event):
     if not all([name, id_type, id_num, contact]):
         return _error_response(400, "Missing guest details: 'name', 'id_type', 'id_num', or 'contact'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Get estate_id from creator
         cur.execute("""
             SELECT pi.estate_id
@@ -68,13 +70,13 @@ def use_invite_token(conn, body, event):
                     SELECT 1
                     FROM guests g
                     JOIN personal_info pi ON pi.id = g.personal_info_id
-                    WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
+                    WHERE JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.otp')) = %s AND pi.estate_id = %s
                 ) AS otp_exists
             """, (otp, estate_id))
             if not cur.fetchone()["otp_exists"]:
                 break
 
-        expiry = datetime.fromisoformat(end_time)
+        expiry = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
 
         other_info = {
             "otp": otp,
@@ -86,7 +88,7 @@ def use_invite_token(conn, body, event):
         }
 
         # 1. Insert into personal_info
-        cur.execute("""
+        _write_result = insert_row(cur, """
             INSERT INTO personal_info (
                 estate_id, name, id_type, id_num, contact, expiry,
                 account_type_id, access_group_id
@@ -96,25 +98,22 @@ def use_invite_token(conn, body, event):
                 (SELECT id FROM account_types WHERE name = 'GUEST'),
                 (SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR')
             )
-            RETURNING id
-        """, (estate_id, name, id_type, id_num, contact, expiry, estate_id))
-        personal_info_id = cur.fetchone()["id"]
+        """, (estate_id, name, id_type, id_num, contact, mysql_datetime(expiry), estate_id), table='personal_info', columns='id')
+        personal_info_id = _write_result["id"]
 
         # 2. Insert into guests
-        cur.execute("""
+        _write_result = insert_row(cur, """
             INSERT INTO guests (personal_info_id, creator_id, other_info)
             VALUES (%s, %s, %s)
-            RETURNING id
-        """, (personal_info_id, account_holder_id, json.dumps(other_info)))
-        guest_id = cur.fetchone()["id"]
+        """, (personal_info_id, account_holder_id, json.dumps(other_info)), table='guests', columns='id')
+        guest_id = _write_result["id"]
 
         # 3. Insert into event_registers
-        cur.execute("""
+        _write_result = insert_row(cur, """
             INSERT INTO event_registers (event_id, guest_id)
             VALUES (%s, %s)
-            RETURNING id
-        """, (event_id, guest_id))
-        register_id = cur.fetchone()["id"]
+        """, (event_id, guest_id), table='event_registers', columns='id')
+        register_id = _write_result["id"]
 
         log(conn, "EVENT_REGISTER_ENTRY_CREATED",
             f"Guest {name} registered for event '{event_name}' via invite")
@@ -153,7 +152,7 @@ def register_guest_for_event(conn, body, event):
     if not all([account_holder_id, event_id, name, id_type, id_num, contact]):
         return _error_response(400, "Missing required fields.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # 1) Confirm the event exists and retrieve start/end times
         cur.execute("""
             SELECT start_time, end_time, name
@@ -197,7 +196,7 @@ def register_guest_for_event(conn, body, event):
                     SELECT 1
                     FROM guests g
                     JOIN personal_info pi ON pi.id = g.personal_info_id
-                    WHERE g.other_info->>'otp' = %s
+                    WHERE JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.otp')) = %s
                       AND pi.estate_id = (
                           SELECT pi.estate_id
                           FROM events e 
@@ -232,7 +231,7 @@ def register_guest_for_event(conn, body, event):
         expiry = event_data["end_time"]
 
         # 5) Create personal_info entry for the guest
-        cur.execute("""
+        _write_result = insert_row(cur, """
             INSERT INTO personal_info (
                 estate_id,
                 name,
@@ -244,25 +243,22 @@ def register_guest_for_event(conn, body, event):
                 access_group_id
             )
             VALUES (%s, %s, %s, %s, %s, %s, (SELECT id FROM account_types WHERE name = 'GUEST'), (SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'))
-            RETURNING id
-        """, (estate_id, name, id_type, id_num, contact, expiry, estate_id))
-        personal_info_id = cur.fetchone()["id"]
+        """, (estate_id, name, id_type, id_num, contact, mysql_datetime(expiry), estate_id), table='personal_info', columns='id')
+        personal_info_id = _write_result["id"]
 
         # 6) Create guest entry with the other_info (JSON)
-        cur.execute("""
+        _write_result = insert_row(cur, """
             INSERT INTO guests (personal_info_id, creator_id, other_info)
             VALUES (%s, %s, %s)
-            RETURNING id
-        """, (personal_info_id, account_holder_id, json.dumps(other_info)))
-        guest_id = cur.fetchone()["id"]
+        """, (personal_info_id, account_holder_id, json.dumps(other_info)), table='guests', columns='id')
+        guest_id = _write_result["id"]
 
         # 7) Register guest for the event in event_registers
-        cur.execute("""
+        _write_result = insert_row(cur, """
             INSERT INTO event_registers (event_id, guest_id)
             VALUES (%s, %s)
-            RETURNING id
-        """, (event_id, guest_id))
-        register_id = cur.fetchone()["id"]
+        """, (event_id, guest_id), table='event_registers', columns='id')
+        register_id = _write_result["id"]
 
         log(conn, "EVENT_REGISTER_ENTRY_CREATED", f"Guest {name} registered for event '{event_data['name']}'.")#, user_id, account_holder_id, estate_id)
         # 8) Commit the transaction
@@ -305,7 +301,7 @@ def list_event_guests(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute("SELECT creator_id FROM events WHERE id = %s", (event_id,))
         event_data = cur.fetchone()
         if not event_data:
@@ -325,7 +321,7 @@ def list_event_guests(conn, event):
 
         # Get total number of guests
         cur.execute("""
-            SELECT COUNT(*) 
+            SELECT COUNT(*) AS count
             FROM event_registers er
             JOIN guests g ON er.guest_id = g.id
             JOIN personal_info pi ON g.personal_info_id = pi.id
@@ -375,7 +371,7 @@ def remove_guest_from_event(conn, body, event):
     if not (event_id and guest_id):
         return _error_response(400, "Missing 'event_id' or 'guest_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute("SELECT creator_id FROM events WHERE id = %s", (event_id,))
         event_data = cur.fetchone()
         if not event_data:
@@ -394,8 +390,9 @@ def remove_guest_from_event(conn, body, event):
             return _error_response(403, "You do not have privileges to remove this event's guests")
 
         # Delete personal_info (which cascades deletion for guest & event_registers)
-        cur.execute("DELETE FROM personal_info WHERE id = (SELECT personal_info_id FROM guests WHERE id = %s) RETURNING id, name", (guest_id,))
-        del_result = cur.fetchone()
+        _write_result = delete_row(cur, """DELETE FROM personal_info WHERE id = (SELECT personal_info_id FROM guests WHERE id = %s)
+        """, (guest_id,), table='personal_info', columns='id, name', where='id = (SELECT personal_info_id FROM guests WHERE id = %s)', where_count=1)
+        del_result = _write_result
         if not del_result :
             return _error_response(500, "Failed to delete guest.")
         deleted_name = del_result['name']

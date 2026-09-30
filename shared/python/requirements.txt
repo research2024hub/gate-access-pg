@@ -1,5 +1,5 @@
 pyjwt
 requests
 firebase-admin==6.4.0
-psycopg2-binary
+PyMySQL[rsa]==1.1.2
 google-auth

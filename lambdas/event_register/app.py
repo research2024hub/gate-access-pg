@@ -1,5 +1,5 @@
 import json
-import psycopg2
+import database
 from handlers.event_register import register_guest_for_event, list_event_guests, remove_guest_from_event, use_invite_token
 import os
 from utils import _error_response as _base_error_response
@@ -14,7 +14,7 @@ def lambda_handler(event, context):
         return _error_response(500, "DATABASE_URL not set")
 
     try:
-        conn = psycopg2.connect(db_url)
+        conn = database.connect(db_url)
 
         # Ensure body is always a valid dictionary
         raw_body = event.get("body", "")

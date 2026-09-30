@@ -1,6 +1,8 @@
+from database import insert_links
+from database import insert_row
 import json
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import database
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_personal_info, get_user_privileges_for_account_holder,send_email, soft_delete_account_holder, as_utc, utc_now
 import random
 from datetime import datetime, timedelta
@@ -34,7 +36,7 @@ def create_sub_account(conn, body, event):
     is_admin       = payload.get("is_admin", False)
 
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor=DictCursor) as cur:
             cur.execute("""
                 SELECT ah.id               AS account_holder_id,
                        ah.user_id         AS parent_user_id,
@@ -80,10 +82,9 @@ def create_sub_account(conn, body, event):
             if cur.fetchone():
                 return _error_response(409, "User already has an account in this estate.")
             try:
-                cur.execute("""
+                _write_result = insert_row(cur, """
                     INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, account_type_id, access_group_id)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id
                 """, (
                     estate_id,
                     name,
@@ -92,16 +93,15 @@ def create_sub_account(conn, body, event):
                     contact,
                     account_type_id,
                     access_group_id
-                ))
-                personal_info_id = cur.fetchone()["id"]
+                ), table='personal_info', columns='id')
+                personal_info_id = _write_result["id"]
 
-                cur.execute("""
+                _write_result = insert_row(cur, """
                     INSERT INTO pending_account_holders (email, owner_account_holder_id, personal_info_id, house_address, otp, otp_generated_at)
-                    VALUES (%s, %s, %s, %s, %s,  NOW() + INTERVAL '30 minutes')
-                    RETURNING id
-                """, (child_email, parent_account_holder_id,personal_info_id, house_address,otp))
-                pending_holder_id = cur.fetchone()["id"]
-            except psycopg2.errors.UndefinedTable as e:
+                    VALUES (%s, %s, %s, %s, %s,  NOW() + INTERVAL 30 MINUTE)
+                """, (child_email, parent_account_holder_id,personal_info_id, house_address,otp), table='pending_account_holders', columns='id')
+                pending_holder_id = _write_result["id"]
+            except database.ProgrammingError as e:
                 # Table not yet migrated – ignore
                 conn.rollback()  # clear error state
                 return _error_response(500, f"Database configuration error: {e}")
@@ -146,7 +146,7 @@ def verify_otp(conn, body, event):
     if not input_otp or not personal_info_id:
         return _error_response(400, "Missing OTP or personal_info_id.")
    
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute("""
             SELECT id, otp, otp_generated_at FROM pending_account_holders WHERE personal_info_id = %s
             """, 
@@ -166,8 +166,7 @@ def verify_otp(conn, body, event):
             INSERT INTO account_holders (personal_info_id, house_address, owner_account_holder_id,  user_id, is_active ) 
             SELECT pah.personal_info_id, pah.house_address, pah.owner_account_holder_id, %s, true       
             FROM pending_account_holders pah 
-            WHERE pah.id = %s 
-            RETURNING id
+            WHERE pah.id = %s
         """, (user_id,pending_holder_id)) # Pass the user_id value as a parameter tuple
         cur.execute("""
         DELETE FROM pending_account_holders WHERE id = %s; """,(pending_holder_id,))
@@ -193,7 +192,7 @@ def create_personal_info_privilege_link(conn, body, event):
     if not personal_info_id or not privilege_id:
         return _error_response(400, "Missing 'personal_info_id' or 'privilege_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # 2. Ensure personal_info exists (and get estate)
         cur.execute("SELECT estate_id FROM personal_info WHERE id = %s", (personal_info_id,))
         row = cur.fetchone()
@@ -213,14 +212,12 @@ def create_personal_info_privilege_link(conn, body, event):
             return _error_response(404, "Privilege not found.")
 
         # 5. Insert link idempotently
-        cur.execute("""
+        _write_result = insert_row(cur, """
             INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)
             VALUES (%s, %s)
-            ON CONFLICT (personal_info_id, privilege_id) DO NOTHING
-            RETURNING personal_info_id, privilege_id
-        """, (personal_info_id, privilege_id))
+        """, (personal_info_id, privilege_id), table='personal_info_privilege_links', columns='personal_info_id, privilege_id', duplicate_ok=True, key_columns=('personal_info_id', 'privilege_id'), key_values=(personal_info_id, privilege_id))
 
-        if not cur.fetchone():
+        if not _write_result:
             return _error_response(409, "Privilege already linked to this personal info.")
 
         # 6. Audit log & commit
@@ -258,7 +255,7 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
     if not personal_info_id or not privilege_ids:                                                                         
         return _error_response(400, "personal_info_id & privilege_ids required")                                          
                                                                                                                            
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:                                                               
+    with conn.cursor(cursor=DictCursor) as cur:
          # 1.  Resolve estate & security-check -------------                                                               
         cur.execute("SELECT estate_id FROM personal_info WHERE id=%s",                                                    
                      (personal_info_id,))                                                                                  
@@ -274,7 +271,7 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
                                                                                                                         
          # 2.  Optional – ensure *each* privilege really exists                                                            
         cur.execute(                                                                                                      
-             "SELECT id FROM privileges WHERE id = ANY(%s)", (privilege_ids,))                                             
+             "SELECT id FROM privileges WHERE id IN (" + ",".join(["%s"] * len(privilege_ids)) + ")" if privilege_ids else "SELECT id FROM privileges WHERE FALSE", tuple(privilege_ids))
         found = {r["id"] for r in cur.fetchall()}                                                                         
         missing = set(privilege_ids) - found                                                                              
         if missing:                                                                                                       
@@ -282,11 +279,11 @@ def assign_selected_privileges_to_personal_info(conn, body, event):
                 404, f"Unknown privilege ids: {sorted(missing)}")                                                         
                                                                                                                            
          # 3.  Bulk insert (idempotent) ---------------------                                                              
-        cur.executemany(                                                                                                  
+        insert_links(cur,
              """                                                                                                           
              INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)                                    
              VALUES (%s, %s)                                                                                               
-             ON CONFLICT (personal_info_id, privilege_id) DO NOTHING                                                       
+
              """,                                                                                                          
              [(personal_info_id, pid) for pid in privilege_ids],                                                           
          )                                                                                                                 
@@ -312,9 +309,9 @@ def send_sub_user_otp(conn, body, event):
     pending_holder_id = body.get("pending_holder_id")
     email = body.get("email")
     otp = str(random.randint(100000, 999999))
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute("""
-            UPDATE pending_account_holders SET otp= %s, otp_generated_at = NOW() + INTERVAL '30 minutes'
+            UPDATE pending_account_holders SET otp= %s, otp_generated_at = NOW() + INTERVAL 30 MINUTE
             WHERE id = %s
         """, (otp, pending_holder_id))
         conn.commit()
@@ -348,7 +345,7 @@ def update_sub_account_privileges(conn, body, event):
     except (TypeError, ValueError):
         return _error_response(400, "privilege_ids must be a list of ints")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Resolve estate for later privilege checks / logging
         cur.execute("SELECT estate_id FROM personal_info WHERE id=%s", (personal_info_id,))
         row = cur.fetchone()
@@ -363,7 +360,7 @@ def update_sub_account_privileges(conn, body, event):
                 return _error_response(403, "User cannot manage sub_user privileges")
 
         # Verify each privilege exists (fail fast if any unknown)
-        cur.execute("SELECT id FROM privileges WHERE id = ANY(%s)", (privilege_ids,))
+        cur.execute("SELECT id FROM privileges WHERE id IN (" + ",".join(["%s"] * len(privilege_ids)) + ")" if privilege_ids else "SELECT id FROM privileges WHERE FALSE", tuple(privilege_ids))
         found_ids = {r["id"] for r in cur.fetchall()}
         missing = set(privilege_ids) - found_ids
         if missing:
@@ -380,11 +377,11 @@ def update_sub_account_privileges(conn, body, event):
 
         # Bulk insert remaining
         if to_insert:
-            cur.executemany(
+            insert_links(cur,
                 """
                 INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)
                 VALUES (%s, %s)
-                ON CONFLICT (personal_info_id, privilege_id) DO NOTHING
+
                 """,
                 [(personal_info_id, pid) for pid in to_insert],
             )
@@ -427,7 +424,7 @@ def delete_sub_account(conn, body, event):
     if not sub_account_holder_id:
         return _error_response(400, "sub_account_holder_id required")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Fetch owner relationship & estate for security checks & logging
         cur.execute(
             """
@@ -498,7 +495,7 @@ def get_sub_accounts(conn, event):
     sub_accounts = []
     total_items = 0
     # 2. EXECUTION: Run the query
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         try:
         # This query finds all sub-accounts (ah_sub) whose owner (ah_owner)
         # has a user_id matching the caller.
@@ -531,7 +528,7 @@ def get_sub_accounts(conn, event):
             """,(user_id, estate_id,limit, offset))
             sub_accounts = cur.fetchall()
             
-        except (Exception, psycopg2.DatabaseError) as e:
+        except (Exception, database.DatabaseError) as e:
             conn.rollback()
             print(f"Database error while fetching sub-accounts: {e}") # For your logs
             return _error_response(500, "An error occurred while fetching sub-accounts.")

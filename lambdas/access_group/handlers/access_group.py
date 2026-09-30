@@ -1,5 +1,6 @@
+from database import delete_row, insert_row, update_row
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_access_group
 from middleware import verify_token, cors_wrap
 
@@ -23,7 +24,7 @@ def create_access_group(conn, body, event):
     if not all([name, estate_id]):
         return _error_response(400, "Missing 'estate_id' or 'name'.")
         
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
 
@@ -33,12 +34,11 @@ def create_access_group(conn, body, event):
         if not privileges.can_manage_access_groups():
             return _error_response(403, "You do not have privileges to manage access groups")
 
-        cur.execute("""
+        _write_result = insert_row(cur, """
             INSERT INTO access_groups (estate_id, name)
             VALUES (%s, %s)
-            RETURNING id
-        """, (estate_id, name.upper()))
-        access_group_id = cur.fetchone()["id"]
+        """, (estate_id, name.upper()), table='access_groups', columns='id')
+        access_group_id = _write_result["id"]
 
         log(conn, "ACCESS_GROUP_CREATION", f"Access group {access_group_id} [{name.upper()}] created", user_id, None, estate_id)
 
@@ -61,7 +61,7 @@ def update_access_group(conn, body, event):
     if not (access_group_id and name):
         return _error_response(400, "Missing 'id' or 'name'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_access_group(cur, user_id, access_group_id, is_admin)
 
@@ -71,14 +71,13 @@ def update_access_group(conn, body, event):
         if not privileges.can_manage_access_groups():
             return _error_response(403, "You do not have privileges to manage access groups")
 
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE access_groups
             SET name = %s
             WHERE id = %s
-            RETURNING estate_id
-        """, (name.upper(), access_group_id))
+        """, (name.upper(), access_group_id), table='access_groups', columns='estate_id', where='id = %s', where_count=1)
 
-        result = cur.fetchone()
+        result = _write_result
 
         if not result:
             return _error_response(404, "Access Group not found.")
@@ -102,7 +101,7 @@ def delete_access_group(conn, body, event):
     if not access_group_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_access_group(cur, user_id, access_group_id, is_admin)
 
@@ -112,11 +111,11 @@ def delete_access_group(conn, body, event):
         if not privileges.can_manage_access_groups():
             return _error_response(403, "You do not have privileges to manage access groups")
 
-        cur.execute("""
-            DELETE FROM access_groups WHERE id = %s RETURNING name, estate_id
-        """, (access_group_id,))
+        _write_result = delete_row(cur, """
+            DELETE FROM access_groups WHERE id = %s
+        """, (access_group_id,), table='access_groups', columns='name, estate_id', where='id = %s', where_count=1)
 
-        result = cur.fetchone()
+        result = _write_result
         if not result:
             return _error_response(404, "Access Group not found.")
 
@@ -148,9 +147,9 @@ def get_access_groups(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Get total count
-        cur.execute("SELECT COUNT(*) FROM access_groups")
+        cur.execute("SELECT COUNT(*) AS count FROM access_groups")
         total_count = cur.fetchone()["count"]
 
         # Get paginated records
@@ -186,7 +185,7 @@ def get_access_group_by_id(conn, event):
     if not is_admin:
         return _error_response(403, "Access denied. Only admins can delete estates.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute("""
             SELECT id, name, date_created, date_updated
             FROM access_groups WHERE id = %s
@@ -221,7 +220,7 @@ def get_access_groups_by_estate(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
 
@@ -232,7 +231,7 @@ def get_access_groups_by_estate(conn, event):
             return _error_response(403, "You do not have privileges to manage access groups.")
 
         # Count total access groups
-        cur.execute("SELECT COUNT(*) FROM access_groups WHERE estate_id = %s", (estate_id,))
+        cur.execute("SELECT COUNT(*) AS count FROM access_groups WHERE estate_id = %s", (estate_id,))
         total = cur.fetchone()["count"]
 
         # Fetch paginated access groups

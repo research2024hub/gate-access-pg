@@ -1,5 +1,6 @@
+from database import delete_row, insert_row, update_row
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from datetime import datetime
 
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate, get_user_privileges_for_gate, notify_user, send_email, as_utc, utc_now
@@ -47,7 +48,7 @@ def create_gate(conn, body, event):
     if not name or not estate_id:
         return _error_response(400, "Missing 'name' or 'estate_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
 
@@ -59,19 +60,17 @@ def create_gate(conn, body, event):
 
         # Insert gate with optional opening_time and closing_time
         if (opening_time and closing_time):
-            cur.execute("""
+            _write_result = insert_row(cur, """
                 INSERT INTO gates (name, estate_id, opening_time, closing_time)
                 VALUES (%s, %s, %s, %s)
-                RETURNING id
-            """, (name, estate_id, opening_time, closing_time))
+            """, (name, estate_id, opening_time, closing_time), table='gates', columns='id')
         else:
-            cur.execute("""
+            _write_result = insert_row(cur, """
                 INSERT INTO gates (name, estate_id)
                 VALUES (%s, %s)
-                RETURNING id
-            """, (name, estate_id))
+            """, (name, estate_id), table='gates', columns='id')
 
-        gate_id = cur.fetchone()["id"]
+        gate_id = _write_result["id"]
 
         log(conn, "GATE_CREATION", 
             f"Gate '{gate_id}' [{name}] created with opening_time={opening_time} and closing_time={closing_time}", 
@@ -98,7 +97,7 @@ def update_gate(conn, body, event):
     if not gate_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -108,17 +107,16 @@ def update_gate(conn, body, event):
         if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to manage gates")
 
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE gates
             SET 
                 name = COALESCE(%s, name),
                 opening_time = COALESCE(%s, opening_time),
                 closing_time = COALESCE(%s, closing_time)
             WHERE id = %s
-            RETURNING estate_id, name
-        """, (name, opening_time, closing_time, gate_id))
+        """, (name, opening_time, closing_time, gate_id), table='gates', columns='estate_id, name', where='id = %s', where_count=1)
 
-        result = cur.fetchone()
+        result = _write_result
         if not result:
             return _error_response(404, "Gate not found.")
 
@@ -149,17 +147,16 @@ def update_gate_controller_heartbeat(conn, event, body):
     if not (gate_iid and device_type == "GATE"):
         return _error_response(401, "Unauthorized.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check user privileges
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE gates
             SET last_controller_heartbeat = CURRENT_TIMESTAMP,
             snr = COALESCE(%s, snr), 
             rssi = COALESCE(%s, rssi)
             WHERE id = %s
-            RETURNING name, estate_id;
-        """, (SNR, RSSI, gate_id,))
-        row = cur.fetchone()
+        """, (SNR, RSSI, gate_id,), table='gates', columns='name, estate_id', where='id = %s', where_count=1)
+        row = _write_result
         if not row:
             return _error_response(404, "Gate not found.")
 
@@ -181,7 +178,7 @@ def delete_gate(conn, body, event):
     if not gate_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -191,11 +188,11 @@ def delete_gate(conn, body, event):
         if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to manage gates")
 
-        cur.execute("""
-            DELETE FROM gates WHERE id = %s RETURNING name, estate_id
-        """, (gate_id,))
+        _write_result = delete_row(cur, """
+            DELETE FROM gates WHERE id = %s
+        """, (gate_id,), table='gates', columns='name, estate_id', where='id = %s', where_count=1)
 
-        result = cur.fetchone()
+        result = _write_result
         if not result:
             return _error_response(404, "Gate not found.")
 
@@ -231,8 +228,8 @@ def get_gates(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT COUNT(*) FROM gates")
+    with conn.cursor(cursor=DictCursor) as cur:
+        cur.execute("SELECT COUNT(*) AS count FROM gates")
         total = cur.fetchone()["count"]
 
         cur.execute("""
@@ -281,7 +278,7 @@ def get_gates_by_estate(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
 
@@ -292,7 +289,7 @@ def get_gates_by_estate(conn, event):
             return _error_response(403, "You do not have privileges to retrieve gates from this estate.")
 
         # Count total for pagination
-        cur.execute("SELECT COUNT(*) FROM gates WHERE estate_id = %s", (estate_id,))
+        cur.execute("SELECT COUNT(*) AS count FROM gates WHERE estate_id = %s", (estate_id,))
         total = cur.fetchone()["count"]
 
         # Retrieve paginated gates
@@ -328,7 +325,7 @@ def get_gate_by_id(conn, event):
     if not gate_id:
         return _error_response(400, "Missing gate ID.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -364,7 +361,7 @@ def get_vehicles_by_gate_no_time_check_by_gate_controller(conn, event):
         return _error_response(401, "Unauthorized.")
 
     # Retrieve vehicles from allowed access groups (ignoring time windows)
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute(f"""
             SELECT v.*
             FROM vehicles v
@@ -398,7 +395,7 @@ def get_vehicles_by_gate_no_time_check(conn, event):
         return _error_response(400, "Missing gate id in path parameters.")
 
     # Check user privileges
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -439,7 +436,7 @@ def get_vehicles_by_gate_with_time_check_by_gate_controller(conn, event):
         return _error_response(401, "Unauthorized.")
 
     # Check user privileges
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
 
         # Retrieve vehicles with time window check. The time conditions:
         # - If opening_time <= closing_time: current time must be between them.
@@ -475,8 +472,8 @@ def get_vehicles_by_gate_with_time_check_by_gate_controller(conn, event):
                 g.id IS NULL
                 OR
                 (
-                (g.other_info->'entry_window'->>'start')::timestamptz <= CURRENT_TIMESTAMP
-                AND (g.other_info->'entry_window'->>'end')::timestamptz >= CURRENT_TIMESTAMP
+                CONVERT_TZ(CAST(REPLACE(REGEXP_REPLACE(JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.start')), '(Z|[+-][0-9]{{2}}:[0-9]{{2}})$', ''), 'T', ' ') AS DATETIME(6)), CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.start')) REGEXP '[+-][0-9]{{2}}:[0-9]{{2}}$' THEN RIGHT(JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.start')), 6) ELSE '+00:00' END, '+00:00') <= CURRENT_TIMESTAMP
+                AND CONVERT_TZ(CAST(REPLACE(REGEXP_REPLACE(JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.end')), '(Z|[+-][0-9]{{2}}:[0-9]{{2}})$', ''), 'T', ' ') AS DATETIME(6)), CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.end')) REGEXP '[+-][0-9]{{2}}:[0-9]{{2}}$' THEN RIGHT(JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.end')), 6) ELSE '+00:00' END, '+00:00') >= CURRENT_TIMESTAMP
                 )
             );
         """, (gate_id,))
@@ -516,7 +513,7 @@ def person_arrives_with_vehicle_callback(conn, body, event):
     action_text = "arrival" if status == "entry" else "departure"
     print(f"License plate: {license_plate_number}\nTime of {action_text}: {now.strftime('%A %d %B %Y %H:%M:%S')}")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Retrieve person info based on license plate
         cur.execute(
             f"""
@@ -582,21 +579,13 @@ def person_arrives_with_vehicle_callback(conn, body, event):
                 log_message = f"Guest {person_data['name']} exited with vehicle license plate {license_plate_number}  on {formatted_now}" 
                 notify_user(str(person_data['creator_user_id']), title,log_message)
             # Update guest record
-            cur.execute(
-                """
+            _write_result = update_row(cur, """
                 UPDATE guests
                 SET status = %s, other_info = %s
                 WHERE id = %s
-                RETURNING id
-                """,
-                (guest_status, json.dumps(other_info), person_data["guest_id"])
-            )
-            if not cur.fetchone():
+            """, (guest_status, json.dumps(other_info), person_data["guest_id"]), table='guests', columns='id', where='id = %s', where_count=1)
+            if not _write_result:
                 return _error_response(400, "Guest could not be updated.")
-            # cur.execute("""
-            #     INSERT INTO AccessLog (license_plate_number, event, timestamp))
-            #     VALUES (%s, %s, NOW()
-            #     RETURNING id"""),(license_plate_number,status)
             log(conn, log_action, log_message, person_data["creator_user_id"], person_data["creator_id"], person_data["estate_id"], license_plate_number=license_plate_number)
 
         else:
@@ -612,15 +601,11 @@ def person_arrives_with_vehicle_callback(conn, body, event):
                 log_message = f"{person_data['name']} exited with vehicle license plate {license_plate_number} on {formatted_now}"
                 message = f"{person_data['name']}: You exited with vehicle license plate  {license_plate_number}  on {formatted_now}"
                 notify_user(str(person_data['user_id']), title, message)
-            # cur.execute("""
-            #     INSERT INTO AccessLog (license_plate_number, event, timestamp))
-            #     VALUES (%s, %s, NOW()
-            #     RETURNING id"""),(license_plate_number,status)
             log(conn, log_action, log_message, person_data['user_id'], person_data["account_holder_id"], person_data["estate_id"], license_plate_number=license_plate_number)
         cur.execute("""
                 INSERT INTO accesslog (license_plate_number, event, gate_id, timestamp)
                 VALUES (%s, %s, %s, NOW())
-                RETURNING id""",(license_plate_number,status,gate_id))
+        """, (license_plate_number,status,gate_id))
         conn.commit()
 
     action_message = "Gate opened for vehicle entry" if status == "entry" else "Gate opened for vehicle exit"
@@ -664,7 +649,7 @@ def get_vehicles_by_gate_with_time_check(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -676,7 +661,7 @@ def get_vehicles_by_gate_with_time_check(conn, event):
 
         # Count total
         cur.execute(f"""
-            SELECT COUNT(*) FROM (
+            SELECT COUNT(*) AS count FROM (
                 SELECT v.id
                 FROM vehicles v
                 JOIN personal_info pi ON v.personal_info_id = pi.id
@@ -700,8 +685,8 @@ def get_vehicles_by_gate_with_time_check(conn, event):
                 AND (
                     g.id IS NULL
                     OR (
-                        (g.other_info->'entry_window'->>'start')::timestamptz <= CURRENT_TIMESTAMP
-                        AND (g.other_info->'entry_window'->>'end')::timestamptz >= CURRENT_TIMESTAMP
+                        CONVERT_TZ(CAST(REPLACE(REGEXP_REPLACE(JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.start')), '(Z|[+-][0-9]{{2}}:[0-9]{{2}})$', ''), 'T', ' ') AS DATETIME(6)), CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.start')) REGEXP '[+-][0-9]{{2}}:[0-9]{{2}}$' THEN RIGHT(JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.start')), 6) ELSE '+00:00' END, '+00:00') <= CURRENT_TIMESTAMP
+                        AND CONVERT_TZ(CAST(REPLACE(REGEXP_REPLACE(JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.end')), '(Z|[+-][0-9]{{2}}:[0-9]{{2}})$', ''), 'T', ' ') AS DATETIME(6)), CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.end')) REGEXP '[+-][0-9]{{2}}:[0-9]{{2}}$' THEN RIGHT(JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.end')), 6) ELSE '+00:00' END, '+00:00') >= CURRENT_TIMESTAMP
                     )
                 )
             ) AS valid_vehicles
@@ -733,8 +718,8 @@ def get_vehicles_by_gate_with_time_check(conn, event):
             AND (
                 g.id IS NULL
                 OR (
-                    (g.other_info->'entry_window'->>'start')::timestamptz <= CURRENT_TIMESTAMP
-                    AND (g.other_info->'entry_window'->>'end')::timestamptz >= CURRENT_TIMESTAMP
+                    CONVERT_TZ(CAST(REPLACE(REGEXP_REPLACE(JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.start')), '(Z|[+-][0-9]{{2}}:[0-9]{{2}})$', ''), 'T', ' ') AS DATETIME(6)), CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.start')) REGEXP '[+-][0-9]{{2}}:[0-9]{{2}}$' THEN RIGHT(JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.start')), 6) ELSE '+00:00' END, '+00:00') <= CURRENT_TIMESTAMP
+                    AND CONVERT_TZ(CAST(REPLACE(REGEXP_REPLACE(JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.end')), '(Z|[+-][0-9]{{2}}:[0-9]{{2}})$', ''), 'T', ' ') AS DATETIME(6)), CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.end')) REGEXP '[+-][0-9]{{2}}:[0-9]{{2}}$' THEN RIGHT(JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.entry_window.end')), 6) ELSE '+00:00' END, '+00:00') >= CURRENT_TIMESTAMP
                 )
             )
             ORDER BY v.date_created DESC
@@ -767,7 +752,7 @@ def activate_gate(conn, body, event):
     if not gate_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -777,14 +762,13 @@ def activate_gate(conn, body, event):
         if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to manage gates")
 
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE gates
             SET active = true, date_updated = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING estate_id, name
-        """, (gate_id,))
+        """, (gate_id,), table='gates', columns='estate_id, name', where='id = %s', where_count=1)
 
-        result = cur.fetchone()
+        result = _write_result
         if not result:
             return _error_response(404, "Gate not found.")
 
@@ -811,7 +795,7 @@ def deactivate_gate(conn, body, event):
     if not gate_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -821,14 +805,13 @@ def deactivate_gate(conn, body, event):
         if not privileges.can_manage_gates():
             return _error_response(403, "You do not have privileges to manage gates")
 
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE gates
             SET active = false, date_updated = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING estate_id, name
-        """, (gate_id,))
+        """, (gate_id,), table='gates', columns='estate_id, name', where='id = %s', where_count=1)
 
-        result = cur.fetchone()
+        result = _write_result
         if not result:
             return _error_response(404, "Gate not found.")
 
@@ -852,12 +835,12 @@ def notify_via_email(conn, body, event):
     message = body.get("message")
     gate_name = body.get("gate_name")
     title = "Gate Access System Update"
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute("""
         SELECT 
             g.id, 
             g.name,
-            array_agg(u.email) FILTER (WHERE u.email IS NOT NULL) AS user_emails
+            JSON_ARRAYAGG(u.email) AS user_emails
         FROM gates g
         LEFT JOIN personal_info pi
             ON g.estate_id = pi.estate_id
@@ -872,9 +855,9 @@ def notify_via_email(conn, body, event):
         """, (gate_name,))
 
         row = cur.fetchone()
-        if not row or not row["user_emails"]:
+        if not row or not any(row["user_emails"] or []):
             return _error_response(404, f"No users found for gate {gate_name}")
-        user_emails_list = row["user_emails"]
+        user_emails_list = [email for email in (row["user_emails"] or []) if email]
         
         for email in user_emails_list:
             if email: # Safety check to skip empty emails

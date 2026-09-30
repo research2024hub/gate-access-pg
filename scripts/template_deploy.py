@@ -24,15 +24,18 @@ def load_environment(path, environ):
         environment = dict(environ)
         for name, variable in PARAMETERS.items():
             fields = {key.value: value for key, value in parameters[name].value}
-            default = fields["Default"]
-            if not isinstance(default, yaml.ScalarNode) or default.tag != "tag:yaml.org,2002:str":
-                raise ValueError()
-            value = default.value
+            default = fields.get("Default")
+            if default is None and variable == "DATABASE_URL":
+                value = environ.get(variable, "")
+            else:
+                if not isinstance(default, yaml.ScalarNode) or default.tag != "tag:yaml.org,2002:str":
+                    raise ValueError()
+                value = (environ.get(variable) or default.value) if variable == "DATABASE_URL" else default.value
             if not value or any(char in value for char in "\r\n\x00"):
                 raise ValueError()
-            # The template is the credential source for this deployment path.
+            # The MySQL endpoint may come from the environment; other values use the template.
             environment[variable] = value
-        if not environment["DATABASE_URL"].startswith(("postgresql://", "postgres://")):
+        if not environment["DATABASE_URL"].startswith(("mysql://", "mysql+pymysql://")):
             raise ValueError()
         return environment
     except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError):

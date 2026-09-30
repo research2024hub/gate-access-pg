@@ -1,6 +1,8 @@
+from database import mysql_datetime
+from database import delete_row, insert_row, update_row
 import json
 import random
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from datetime import datetime
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, send_message, log, get_user_privileges, as_utc, utc_now
 from middleware import verify_token, cors_wrap
@@ -53,7 +55,7 @@ def create_guest_regular(conn, body, event):
         return _error_response(400, "If license plate is provided, make, model, and color are required.")
 
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor=DictCursor) as cur:
             # Check privileges using helper
             privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
 
@@ -67,12 +69,11 @@ def create_guest_regular(conn, body, event):
             estate_name = privileges.estate_name
 
             # Create personal_info entry
-            cur.execute("""
+            _write_result = insert_row(cur, """
                 INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, expiry, account_type_id, access_group_id)
                 VALUES (%s, %s, %s, %s, %s, %s, (SELECT id FROM account_types WHERE name = 'GUEST'), (SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'))
-                RETURNING id
-            """, (estate_id, name, id_type, id_num, contact, expiry, estate_id))
-            personal_info_id = cur.fetchone()["id"]
+            """, (estate_id, name, id_type, id_num, contact, mysql_datetime(expiry), estate_id), table='personal_info', columns='id')
+            personal_info_id = _write_result["id"]
 
             # Handle vehicle creation if license plate is provided
             if license_plate_number:
@@ -82,13 +83,12 @@ def create_guest_regular(conn, body, event):
                     return _error_response(403, "You do not have privileges to create a vehicle for this guest.")
 
                 # Create vehicle (removed duplicate license plate check)
-                cur.execute("""
+                _write_result = insert_row(cur, """
                     INSERT INTO vehicles (personal_info_id, license_plate_number, make, model, color)
                     VALUES (%s, %s, %s, %s, %s)
-                    RETURNING id
-                """, (personal_info_id, license_plate_number, make, model, color))
+                """, (personal_info_id, license_plate_number, make, model, color), table='vehicles', columns='id')
 
-                vehicle_id = cur.fetchone()["id"]
+                vehicle_id = _write_result["id"]
                 other_info["purpose"] = "visit_with_car"
                 other_info["vehicle_id"] = vehicle_id
             else:
@@ -99,7 +99,7 @@ def create_guest_regular(conn, body, event):
                                 SELECT EXISTS (
                                     SELECT 1 FROM guests g
                                     JOIN personal_info pi ON pi.id = g.personal_info_id
-                                    WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
+                                    WHERE JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.otp')) = %s AND pi.estate_id = %s
                                 ) AS otp_match
                                 """, (otp, estate_id))
                     if not cur.fetchone()["otp_match"]:
@@ -108,19 +108,18 @@ def create_guest_regular(conn, body, event):
                 other_info["purpose"] = "visit"
 
             # Create guest entry
-            cur.execute("""
+            _write_result = insert_row(cur, """
                 INSERT INTO guests (personal_info_id, creator_id, other_info)
                 VALUES (%s, %s, %s)
-                RETURNING id
-            """, (personal_info_id, account_holder_id, json.dumps(other_info)))
-            guest_id = cur.fetchone()["id"]
+            """, (personal_info_id, account_holder_id, json.dumps(other_info)), table='guests', columns='id')
+            guest_id = _write_result["id"]
 
             log(conn, "GUEST_CREATION", f"Guest {name} created.")#, user_id, account_holder_id, estate_id)
 
             conn.commit()
 
-            expiry_date_readable = datetime.fromisoformat(expiry).strftime("%A, %d %B %Y at %H:%M")
-            start_date_readable = datetime.fromisoformat(start).strftime("%A, %d %B %Y at %H:%M")
+            expiry_date_readable = datetime.fromisoformat(expiry.replace("Z", "+00:00")).strftime("%A, %d %B %Y at %H:%M")
+            start_date_readable = datetime.fromisoformat(start.replace("Z", "+00:00")).strftime("%A, %d %B %Y at %H:%M")
 
             phone_number = contact.lstrip('+')
             if license_plate_number:
@@ -184,7 +183,7 @@ def create_associate(conn, body, event):
         return _error_response(400, "If license plate is provided, make, model, and color are required.")
 
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor=DictCursor) as cur:
             # Check privileges using helper
             privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
 
@@ -198,12 +197,11 @@ def create_associate(conn, body, event):
             estate_name = privileges.estate_name
 
             # Create personal_info entry
-            cur.execute("""
+            _write_result = insert_row(cur, """
                 INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, expiry, account_type_id, access_group_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, (SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'))
-                RETURNING id
-            """, (estate_id, name, id_type, id_num, contact, expiry, account_type_id, estate_id))
-            personal_info_id = cur.fetchone()["id"]
+            """, (estate_id, name, id_type, id_num, contact, mysql_datetime(expiry), account_type_id, estate_id), table='personal_info', columns='id')
+            personal_info_id = _write_result["id"]
 
             # Handle vehicle creation if license plate is provided
             if license_plate_number:
@@ -213,13 +211,12 @@ def create_associate(conn, body, event):
                     return _error_response(403, "You do not have privileges to create a vehicle for this associate.")
 
                 # Create vehicle (removed duplicate license plate check)
-                cur.execute("""
+                _write_result = insert_row(cur, """
                     INSERT INTO vehicles (personal_info_id, license_plate_number, make, model, color)
                     VALUES (%s, %s, %s, %s, %s)
-                    RETURNING id
-                """, (personal_info_id, license_plate_number, make, model, color))
+                """, (personal_info_id, license_plate_number, make, model, color), table='vehicles', columns='id')
 
-                vehicle_id = cur.fetchone()["id"]
+                vehicle_id = _write_result["id"]
                 other_info["purpose"] = "visit_with_car"
                 other_info["vehicle_id"] = vehicle_id
             else:
@@ -230,7 +227,7 @@ def create_associate(conn, body, event):
                                 SELECT EXISTS (
                                     SELECT 1 FROM guests g
                                     JOIN personal_info pi ON pi.id = g.personal_info_id
-                                    WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
+                                    WHERE JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.otp')) = %s AND pi.estate_id = %s
                                 ) AS otp_match
                                 """, (otp, estate_id))
                     if not cur.fetchone()["otp_match"]:
@@ -239,19 +236,18 @@ def create_associate(conn, body, event):
                 other_info["purpose"] = "visit"
 
             # Create guest entry
-            cur.execute("""
+            _write_result = insert_row(cur, """
                 INSERT INTO guests (personal_info_id, creator_id, other_info)
                 VALUES (%s, %s, %s)
-                RETURNING id
-            """, (personal_info_id, account_holder_id, json.dumps(other_info)))
-            guest_id = cur.fetchone()["id"]
+            """, (personal_info_id, account_holder_id, json.dumps(other_info)), table='guests', columns='id')
+            guest_id = _write_result["id"]
 
             log(conn, "GUEST_CREATION", f"Guest {name} created.")#, user_id, account_holder_id, estate_id)
 
             conn.commit()
 
-            expiry_date_readable = datetime.fromisoformat(expiry).strftime("%A, %d %B %Y %H:%M:%S")
-            start_date_readable = datetime.fromisoformat(start).strftime("%A, %d %B %Y %H:%M:%S")
+            expiry_date_readable = datetime.fromisoformat(expiry.replace("Z", "+00:00")).strftime("%A, %d %B %Y %H:%M:%S")
+            start_date_readable = datetime.fromisoformat(start.replace("Z", "+00:00")).strftime("%A, %d %B %Y %H:%M:%S")
 
             phone_number = contact.lstrip('+')
             if license_plate_number:
@@ -305,7 +301,7 @@ def send_otp(conn, body, event):
     # Default 'start' to now if not provided
     start = start if start else datetime.now().isoformat()
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using helper
         privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
 
@@ -353,7 +349,7 @@ def send_otp(conn, body, event):
                     SELECT 1
                     FROM guests g
                     JOIN personal_info pi ON pi.id = g.personal_info_id
-                    WHERE g.other_info->>'otp' = %s
+                    WHERE JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.otp')) = %s
                       AND pi.estate_id = %s
                 ) AS otp_exists
             """, (otp, estate_id))
@@ -368,13 +364,12 @@ def send_otp(conn, body, event):
         }
 
         # 5) Update the guests table with the new other_info
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE guests
             SET other_info = %s
             WHERE id = %s
-            RETURNING id
-        """, (json.dumps(existing_info), guest_id))
-        updated_row = cur.fetchone()
+        """, (json.dumps(existing_info), guest_id), table='guests', columns='id', where='id = %s', where_count=1)
+        updated_row = _write_result
         if not updated_row:
             return _error_response(400, "Failed to update OTP for the guest.")
         
@@ -386,10 +381,10 @@ def send_otp(conn, body, event):
         # Strip leading '+', if present
         phone_number = contact.lstrip('+')
         # Nicely format the start & expiry times
-        start_date_readable = datetime.fromisoformat(start).strftime(
+        start_date_readable = datetime.fromisoformat(start.replace("Z", "+00:00")).strftime(
             "%A, %d %B %Y %H:%M:%S"
         )
-        expiry_date_readable = datetime.fromisoformat(expiry).strftime(
+        expiry_date_readable = datetime.fromisoformat(expiry.replace("Z", "+00:00")).strftime(
             "%A, %d %B %Y %H:%M:%S"
         )
 
@@ -430,7 +425,7 @@ def verify_guest_otp(conn, body, event):
 
     now = utc_now()
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Retrieve the guest info based on the provided OTP
         cur.execute(
             """
@@ -438,7 +433,7 @@ def verify_guest_otp(conn, body, event):
             FROM guests g
             JOIN personal_info pi ON pi.id = g.personal_info_id
             JOIN account_holders ah ON ah.id = g.creator_id AND ah.deleted_at IS NULL
-            WHERE g.other_info->>'otp' = %s AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s)
+            WHERE JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.otp')) = %s AND pi.estate_id = (SELECT estate_id FROM gates WHERE id = %s)
             """,
             (otp, gate_id)
         )
@@ -473,17 +468,13 @@ def verify_guest_otp(conn, body, event):
         other_info.pop('entry_window', None)
 
         # Update the guest status and other_info
-        cur.execute(
-            """
+        _write_result = update_row(cur, """
             UPDATE guests
             SET other_info = %s
             WHERE id = %s
-            RETURNING id
-            """,
-            (json.dumps(other_info), guest_data["id"])
-        )
+        """, (json.dumps(other_info), guest_data["id"]), table='guests', columns='id', where='id = %s', where_count=1)
 
-        updated_row = cur.fetchone()
+        updated_row = _write_result
         if not updated_row:
             return _error_response(400, "Guest does not exist or could not be updated.")
         
@@ -556,7 +547,7 @@ def update_guest(conn, body, event):
         return _error_response(400, "If license plate is provided, make, model, and color are required.")
 
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor=DictCursor) as cur:
             # First get the guest's creator (account_holder_id), personal_info_id, and existing vehicle info
             cur.execute("""
                 SELECT g.creator_id, g.personal_info_id, g.other_info,
@@ -628,12 +619,11 @@ def update_guest(conn, body, event):
                     vehicle_id = existing_vehicle_id
                 else:
                     # CREATE NEW VEHICLE (same as create_guest_regular)
-                    cur.execute("""
+                    _write_result = insert_row(cur, """
                         INSERT INTO vehicles (personal_info_id, license_plate_number, make, model, color)
                         VALUES (%s, %s, %s, %s, %s)
-                        RETURNING id
-                    """, (personal_info_id, license_plate_number, make, model, color))
-                    vehicle_id = cur.fetchone()["id"]
+                    """, (personal_info_id, license_plate_number, make, model, color), table='vehicles', columns='id')
+                    vehicle_id = _write_result["id"]
 
                 # Set vehicle-related other_info (same as create_guest_regular)
                 updated_other_info["purpose"] = "visit_with_car"
@@ -657,7 +647,7 @@ def update_guest(conn, body, event):
                         SELECT EXISTS (
                             SELECT 1 FROM guests g
                             JOIN personal_info pi ON pi.id = g.personal_info_id
-                            WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
+                            WHERE JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.otp')) = %s AND pi.estate_id = %s
                         ) AS otp_match
                     """, (otp, estate_id))
                     if not cur.fetchone()["otp_match"]:
@@ -676,7 +666,7 @@ def update_guest(conn, body, event):
                             SELECT EXISTS (
                                 SELECT 1 FROM guests g
                                 JOIN personal_info pi ON pi.id = g.personal_info_id
-                                WHERE g.other_info->>'otp' = %s AND pi.estate_id = %s
+                                WHERE JSON_UNQUOTE(JSON_EXTRACT(g.other_info, '$.otp')) = %s AND pi.estate_id = %s
                             ) AS otp_match
                         """, (otp, estate_id))
                         if not cur.fetchone()["otp_match"]:
@@ -685,20 +675,19 @@ def update_guest(conn, body, event):
                     updated_other_info["purpose"] = "visit"
 
             # Update guest table
-            cur.execute("""
+            _write_result = update_row(cur, """
                 UPDATE guests
                 SET other_info = %s
                 WHERE id = %s
-                RETURNING creator_id
-            """, (json.dumps(updated_other_info), guest_id))
+            """, (json.dumps(updated_other_info), guest_id), table='guests', columns='creator_id', where='id = %s', where_count=1)
 
-            guest_data = cur.fetchone()
+            guest_data = _write_result
             if not guest_data:
                 return _error_response(404, "Guest not found.")
 
             # Update personal_info table
             # Note: access_group_id is not updated - guests always stay in 'REGULAR' access group
-            cur.execute("""
+            _write_result = update_row(cur, """
                 UPDATE personal_info
                 SET name = COALESCE(%s, name),
                     id_type = COALESCE(%s, id_type),
@@ -706,10 +695,9 @@ def update_guest(conn, body, event):
                     contact = COALESCE(%s, contact),
                     expiry = COALESCE(%s, expiry)
                 WHERE id = %s
-                RETURNING estate_id
-            """, (name, id_type, id_num, contact, expiry, personal_info_id))
+            """, (name, id_type, id_num, contact, mysql_datetime(expiry), personal_info_id), table='personal_info', columns='estate_id', where='id = %s', where_count=1)
 
-            guest_info_data = cur.fetchone()
+            guest_info_data = _write_result
 
             # Get final contact info (use updated contact or existing)
             final_contact = contact if contact else current_contact
@@ -727,8 +715,8 @@ def update_guest(conn, body, event):
                     current_expiry = entry_window.get("end")
 
                     if current_start and current_expiry:
-                        expiry_date_readable = datetime.fromisoformat(current_expiry).strftime("%A, %d %B %Y %H:%M:%S")
-                        start_date_readable = datetime.fromisoformat(current_start).strftime("%A, %d %B %Y %H:%M:%S")
+                        expiry_date_readable = datetime.fromisoformat(current_expiry.replace("Z", "+00:00")).strftime("%A, %d %B %Y %H:%M:%S")
+                        start_date_readable = datetime.fromisoformat(current_start.replace("Z", "+00:00")).strftime("%A, %d %B %Y %H:%M:%S")
 
                         phone_number = final_contact.lstrip('+')
 
@@ -779,7 +767,7 @@ def delete_guest(conn, body, event):
     if not guest_id:
         return _error_response(400, "Missing 'guest_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # First get the guest's creator (account_holder_id) and personal_info_id
         cur.execute("""
             SELECT g.creator_id, g.personal_info_id
@@ -806,12 +794,11 @@ def delete_guest(conn, body, event):
             return _error_response(403, "You do not have privileges to delete this guest.")
 
         # Delete personal_info (guests table has ON DELETE CASCADE)
-        cur.execute("""
+        _write_result = delete_row(cur, """
             DELETE FROM personal_info
             WHERE id = %s
-            RETURNING name, estate_id
-        """, (personal_info_id,))
-        result = cur.fetchone()
+        """, (personal_info_id,), table='personal_info', columns='name, estate_id', where='id = %s', where_count=1)
+        result = _write_result
         if not result:
             return _error_response(404, "Personal info not found.")
 
@@ -842,7 +829,7 @@ def get_guest_details(conn, event):
     if not guest_id:
         return _error_response(400, "Missing 'guest_id'.")
     
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # First get the guest's creator (account_holder_id)
         cur.execute("""
             SELECT g.creator_id
@@ -909,7 +896,7 @@ def get_account_holder_guests(conn, event):
     
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using helper
         privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin)
 
@@ -921,7 +908,7 @@ def get_account_holder_guests(conn, event):
             return _error_response(403, "You do not have privileges to view this guest list.")
 
         # Count total guests
-        cur.execute("SELECT COUNT(*) FROM guests WHERE creator_id = %s", (account_holder_id,))
+        cur.execute("SELECT COUNT(*) AS count FROM guests WHERE creator_id = %s", (account_holder_id,))
         total = cur.fetchone()["count"]
 
         # Fetch guests paginated
@@ -983,7 +970,7 @@ def get_estate_guests(conn, event):
     
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges - simplified query for estate-level access
         if not is_admin:
             cur.execute("""
@@ -1003,7 +990,7 @@ def get_estate_guests(conn, event):
 
         # Total count
         cur.execute("""
-            SELECT COUNT(*) FROM guests g
+            SELECT COUNT(*) AS count FROM guests g
             JOIN account_holders ah ON ah.id = g.creator_id AND ah.deleted_at IS NULL
             JOIN personal_info cpi ON ah.personal_info_id = cpi.id
             WHERE cpi.estate_id = %s

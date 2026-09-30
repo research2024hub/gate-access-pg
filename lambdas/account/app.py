@@ -1,5 +1,5 @@
 import json
-import psycopg2
+import database
 from handlers.account import (
     signup, signupAdmin,
     change_account_type, deactivate_account, activate_account, delete_account, 
@@ -23,7 +23,7 @@ def lambda_handler(event, context):
         return _error_response(500, "DATABASE_URL not set")
 
     try:
-        conn = psycopg2.connect(db_url)
+        conn = database.connect(db_url)
 
         raw_body = event.get("body", "")
         body = json.loads(raw_body) if raw_body else {}

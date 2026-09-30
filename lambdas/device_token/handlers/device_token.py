@@ -2,7 +2,7 @@ import bcrypt
 import jwt
 import os
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from datetime import datetime, timedelta
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_gate
 from middleware import verify_token, cors_wrap
@@ -38,7 +38,7 @@ def generate_gate_controller_token(conn, body, event):
     user_id = payload.get("user_id")
 
     # If caller is not a global admin, check estate admin privileges.
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, payload.get("user_id"), gate_id, is_admin)
 
@@ -91,7 +91,7 @@ def generate_tablet_token(conn, body, event):
     is_admin = payload.get("is_admin", False)
     user_id = payload.get("user_id")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 

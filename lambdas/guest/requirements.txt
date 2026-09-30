@@ -1,1 +1,1 @@
-psycopg2-binary
+PyMySQL[rsa]==1.1.2

@@ -15,7 +15,7 @@ def template(tmp_path):
     path = tmp_path / 'template.yaml'
     path.write_text('''Parameters:
   DatabaseUrl:
-    Default: "postgresql://test:password@localhost/db"
+    Default: "mysql://test:password@localhost/db"
   JwtSecret:
     Default: 'signing-test'
   FeedbackSecret:
@@ -59,3 +59,24 @@ def test_malformed_template_error_does_not_expose_values(template):
     with pytest.raises(ValueError) as exc:
         deploy.load_environment(template, {})
     assert 'private-secret' not in str(exc.value)
+
+
+def test_blank_database_default_uses_environment(template):
+    template.write_text(template.read_text().replace('mysql://test:password@localhost/db', ''))
+    result = deploy.load_environment(template, {'DATABASE_URL': 'mysql://test:password@localhost/new_db'})
+    assert result['DATABASE_URL'].endswith('/new_db')
+    with pytest.raises(ValueError):
+        deploy.load_environment(template, {})
+
+
+def test_postgres_environment_url_is_rejected(template):
+    with pytest.raises(ValueError):
+        deploy.load_environment(template, {'DATABASE_URL': 'postgresql://test:password@localhost/db'})
+
+
+def test_required_database_parameter_without_default(template):
+    template.write_text(template.read_text().replace('    Default: "mysql://test:password@localhost/db"\n', '    Type: String\n    MinLength: 1\n'))
+    result = deploy.load_environment(template, {'DATABASE_URL': 'mysql://test:password@localhost/db'})
+    assert result['DATABASE_URL'] == 'mysql://test:password@localhost/db'
+    with pytest.raises(ValueError):
+        deploy.load_environment(template, {})

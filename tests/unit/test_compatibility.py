@@ -1,4 +1,4 @@
-"""Regression coverage without contacting AWS, PostgreSQL, or notification services."""
+"""Regression coverage without contacting AWS, MySQL, or notification services."""
 import importlib.util
 import json
 import sqlite3
@@ -80,7 +80,7 @@ def test_guest_otp_entry_windows(modules, monkeypatch, start, end, expected):
     cur.fetchone.side_effect = [
         {"id": 1, "name": "Guest", "inviter_user_id": 1,
          "other_info": {"otp": "123456", "entry_window": {"start": start, "end": end}}},
-        {"id": 1},
+        {"id": 1}, {"id": 1},
     ]
     response = guest.verify_guest_otp(conn, {"otp": "123456"}, {})
     assert response["statusCode"] == expected
@@ -99,6 +99,14 @@ class SQLiteCursor:
 
     def execute(self, sql, params=()):
         self.cursor.execute(sql.replace("%s", "?").replace("FOR UPDATE", ""), params)
+
+    @property
+    def rowcount(self):
+        return self.cursor.rowcount
+
+    @property
+    def lastrowid(self):
+        return self.cursor.lastrowid
 
     def fetchall(self):
         return [dict(row) for row in self.cursor.fetchall()]
@@ -147,27 +155,20 @@ def test_controller_vehicle_list_excludes_inactive_owners(
         db.close()
 
 
-@pytest.mark.parametrize("revision,valid", [
-    ("2047cc35125e", True), ("80651478bdd9", True), ("9a900bb97a92", False),
-    ("unreviewed-future-revision", False),
-])
-def test_deployment_blocks_incompatible_database(modules, revision, valid):
+@pytest.mark.parametrize("version", ["5.7.44", "8.0.40", "10.11.6-MariaDB"])
+def test_deployment_blocks_incompatible_database(modules, version):
     check = load_module("test_db_check", "scripts/check_database.py")
     conn = MagicMock()
-    conn.cursor.return_value.__enter__.return_value.fetchall.return_value = [(revision,)]
-    if valid:
+    conn.cursor.return_value.__enter__.return_value.fetchone.return_value = (version,)
+    with pytest.raises(ValueError):
         check.check_database(conn)
-    else:
-        with pytest.raises(ValueError):
-            check.check_database(conn)
-    conn.set_session.assert_called_once_with(readonly=True)
 
 
-def test_deployment_rejects_stamped_database_with_missing_columns(modules):
+def test_deployment_rejects_database_with_missing_columns(modules):
     check = load_module("test_missing_schema", "scripts/check_database.py")
     conn = MagicMock()
     cur = conn.cursor.return_value.__enter__.return_value
-    cur.fetchall.return_value = [("80651478bdd9",)]
+    cur.fetchone.return_value = ("8.4.8",)
     cur.execute.side_effect = [None, None, None, RuntimeError("missing log column")]
     with pytest.raises(RuntimeError, match="missing log column"):
         check.check_database(conn)
@@ -182,11 +183,11 @@ def test_deployment_requires_environment_configuration(modules, monkeypatch, cap
 
 def test_deployment_config_uses_environment_credentials():
     deploy = load_module("test_deploy_config", "scripts/deploy.py")
-    env = {"DATABASE_URL": "postgresql://test:p%40ss@localhost/db?sslmode=require",
+    env = {"DATABASE_URL": "mysql://test:p%40ss@localhost/db?ssl_disabled=true",
            "JWT_SECRET": 'test with "quotes"', "FIHANKRA_FEEDBACK_SECRET": "feedback-test"}
     config = deploy.deployment_config(env)
     params = config["default"]["deploy"]["parameters"]
-    assert 'DatabaseUrl="postgresql://test:p%40ss@localhost/db?sslmode=require"' in params["parameter_overrides"]
+    assert 'DatabaseUrl="mysql://test:p%40ss@localhost/db?ssl_disabled=true"' in params["parameter_overrides"]
     assert 'JwtSecret="test with \\"quotes\\""' in params["parameter_overrides"]
     assert params["stack_name"] == "gate-access-pg-stack"
     with pytest.raises(ValueError, match="JWT_SECRET"):
@@ -222,8 +223,8 @@ def test_deploy_keeps_credentials_out_of_arguments_and_output(monkeypatch, tmp_p
 
 @pytest.fixture
 def signup_db():
-    # Execute the real handler SQL against a minimal relational schema. PostgreSQL
-    # trigger/concurrency behavior is covered separately via UniqueViolation below.
+    # Execute the real handler SQL against a minimal relational schema. MySQL
+    # trigger/concurrency behavior is covered separately via duplicate-key errors below.
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row
     db.create_function("now", 0, lambda: "2026-09-27T00:00:00Z")
@@ -316,7 +317,7 @@ def test_signup_concurrent_duplicate_rolls_back(modules, monkeypatch, handler_na
 
     def execute(sql, params=()):
         if f"INSERT INTO {conflict_table}" in sql:
-            raise account.psycopg2.errors.UniqueViolation("private database detail")
+            raise account.database.IntegrityError(1062, "private database detail")
 
     cur.execute.side_effect = execute
     response = getattr(account, handler_name)(conn, dict(
@@ -416,3 +417,226 @@ def test_reregistration_audit_failure_rolls_back(modules, monkeypatch, signup_db
     row = db.execute("SELECT * FROM account_holders").fetchone()
     assert row["deleted_at"] is not None and not row["is_active"]
     conn.rollback.assert_called_once()
+
+
+@pytest.mark.parametrize('problem', [None, 'engine', 'auto_id', 'unique_key'])
+def test_mysql_schema_contract(modules, problem):
+    check = load_module('test_mysql_check', 'scripts/check_database.py')
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = ('8.4.8',)
+    engines = [(table, 'InnoDB') for table in check.REQUIRED_COLUMNS]
+    auto_ids = [(table,) for table in check.AUTO_ID_TABLES]
+    indexes = [(table, 'unique_test', column) for table, columns in check.UNIQUE_KEYS.items() for column in columns]
+    if problem == 'engine':
+        engines[0] = (engines[0][0], 'MyISAM')
+    if problem == 'auto_id':
+        auto_ids.pop()
+    if problem == 'unique_key':
+        indexes.pop()
+    cur.fetchall.side_effect = [engines, auto_ids, indexes]
+    if problem:
+        with pytest.raises(ValueError):
+            check.check_database(conn)
+    else:
+        check.check_database(conn)
+    conn.rollback.assert_called_once()
+    conn.commit.assert_not_called()
+    assert any(call.args[0] == 'START TRANSACTION READ ONLY' for call in cur.execute.call_args_list)
+
+
+def test_gate_usage_preserves_ordered_timestamps_and_counts(modules):
+    dashboard = load_module('test_mysql_dashboard', 'lambdas/gate/handlers/dashboard_handlers.py')
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.side_effect = [
+        [{'license_plate_number': 'A', 'event': 'entry', 'timestamp': datetime(2026, 1, 1, 9)},
+         {'license_plate_number': 'A', 'event': 'entry', 'timestamp': datetime(2026, 1, 1, 10)}],
+        [{'event': 'entry', 'total': 2}],
+    ]
+    response = dashboard.get_gate_usage(conn, {'queryStringParameters': {
+        'gate_id': '1', 'start_date': '2026-01-01', 'end_date': '2026-01-02'}})
+    result = json.loads(response['body'])['gate_events']
+    assert result['totals'] == {'entry': 2, 'exit': 0}
+    assert result['events'] == [{'license_plate_number': 'A', 'event': 'entry', 'event_count': 2,
+                                'timestamps': ['2026-01-01 09:00:00', '2026-01-01 10:00:00']}]
+
+
+@pytest.mark.parametrize('grant,active,deleted,expected', [
+    ('role', True, False, True),
+    ('personal', True, False, True),
+    (None, True, False, False),
+    ('unrelated', True, False, False),
+    ('role', False, False, False),
+    ('role', True, True, False),
+])
+def test_privilege_aggregation_executes_real_cte(modules, grant, active, deleted, expected):
+    utils, _, _ = modules
+    db = sqlite3.connect(':memory:')
+    db.row_factory = sqlite3.Row
+    db.executescript('''
+        CREATE TABLE estates (id INTEGER, name TEXT);
+        CREATE TABLE personal_info (id INTEGER, estate_id INTEGER, account_type_id INTEGER);
+        CREATE TABLE account_holders (id INTEGER, user_id INTEGER, personal_info_id INTEGER,
+                                     is_active BOOLEAN, deleted_at TEXT);
+        CREATE TABLE account_types (id INTEGER);
+        CREATE TABLE account_type_privilege_links (account_type_id INTEGER, privilege_id INTEGER);
+        CREATE TABLE personal_info_privilege_links (personal_info_id INTEGER, privilege_id INTEGER);
+        CREATE TABLE privileges (id INTEGER, name TEXT);
+        INSERT INTO estates VALUES (1, 'Test estate');
+        INSERT INTO account_types VALUES (1);
+        INSERT INTO personal_info VALUES (1, 1, 1), (2, 1, 1);
+        INSERT INTO account_holders VALUES (10, 100, 1, TRUE, NULL);
+        INSERT INTO privileges VALUES (1, 'CREATE_GUESTS'), (2, 'VIEW_LOGS');
+    ''')
+    db.execute('INSERT INTO account_holders VALUES (20, 200, 2, ?, ?)',
+               (active, 'removed' if deleted else None))
+    if grant == 'role':
+        db.executescript('INSERT INTO account_type_privilege_links VALUES (1, 1), (1, 2);')
+    elif grant == 'personal':
+        db.executescript('INSERT INTO personal_info_privilege_links VALUES (2, 1), (2, 2);')
+    elif grant == 'unrelated':
+        db.execute('INSERT INTO account_type_privilege_links VALUES (1, 2)')
+    try:
+        privileges = utils.PrivilegeContext(SQLiteCursor(db), 200, 10)
+        assert privileges.is_valid
+        assert bool(privileges.can_create_guests()) is expected
+        assert not privileges.can_manage_all()
+        assert not privileges.can_manage_accounts()
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize('registered', [True, False])
+def test_resend_otp_preserves_registration_and_never_inserts(modules, monkeypatch, registered):
+    monkeypatch.setitem(sys.modules, 'bcrypt', MagicMock())
+    auth = load_module('test_resend_auth', 'lambdas/user/handlers/auth.py')
+    monkeypatch.setattr(auth, 'generate_otp', lambda: '001234')
+    monkeypatch.setattr(auth, 'create_token', MagicMock(return_value='test-token'))
+    monkeypatch.setattr(auth, 'send_email', MagicMock(return_value=True))
+    db = sqlite3.connect(':memory:')
+    db.row_factory = sqlite3.Row
+    db.execute('''CREATE TABLE pending_users (
+        id INTEGER PRIMARY KEY, email TEXT UNIQUE, password TEXT NOT NULL,
+        phone_number TEXT, otp TEXT NOT NULL, otp_expiry TEXT NOT NULL, date_updated TEXT)''')
+    if registered:
+        db.execute('INSERT INTO pending_users VALUES (7, ?, ?, ?, ?, ?, NULL)',
+                   ('test@example.com', 'existing-password-hash', '+233000', 'old', 'expired'))
+    db.commit()
+
+    class ResendCursor(SQLiteCursor):
+        def execute(self, sql, params=()):
+            assert not sql.lstrip().upper().startswith('INSERT')
+            super().execute(sql.replace('NOW() + INTERVAL 10 MINUTE', "datetime('now', '+10 minutes')"), params)
+
+    conn = MagicMock()
+    conn.cursor.side_effect = lambda **kwargs: ResendCursor(db)
+    conn.commit.side_effect = db.commit
+    conn.rollback.side_effect = db.rollback
+    try:
+        response = auth.send_user_otp(conn, {'email': 'test@example.com'})
+        if registered:
+            assert response['statusCode'] == 200
+            row = dict(db.execute('SELECT * FROM pending_users').fetchone())
+            assert (row['id'], row['password'], row['phone_number']) == (7, 'existing-password-hash', '+233000')
+            assert row['otp'] == '001234' and row['otp_expiry'] != 'expired'
+            assert row['date_updated'] is not None
+            conn.commit.assert_called_once()
+            auth.send_email.assert_called_once()
+            assert not db.in_transaction
+        else:
+            assert response['statusCode'] == 404
+            assert db.execute('SELECT COUNT(*) FROM pending_users').fetchone()[0] == 0
+            conn.rollback.assert_called_once()
+            conn.commit.assert_not_called()
+            auth.send_email.assert_not_called()
+            auth.create_token.assert_not_called()
+    finally:
+        db.close()
+
+
+def test_resend_otp_does_not_notify_after_failed_write(modules, monkeypatch):
+    monkeypatch.setitem(sys.modules, 'bcrypt', MagicMock())
+    auth = load_module('test_resend_failure', 'lambdas/user/handlers/auth.py')
+    monkeypatch.setattr(auth, 'send_email', MagicMock())
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = {'id': 7}
+    cur.execute.side_effect = [None, RuntimeError('write failed')]
+    with pytest.raises(RuntimeError, match='write failed'):
+        auth.send_user_otp(conn, {'email': 'test@example.com'})
+    conn.commit.assert_not_called()
+    auth.send_email.assert_not_called()
+
+
+@pytest.mark.parametrize('case,expected', [
+    ('missing', 401), ('invalid', 401), ('expired', 401),
+    ('otp', 401), ('controller', 401), ('regular', 403),
+    ('demoted', 403), ('inactive', 401), ('deleted', 401),
+    ('admin', 201),
+])
+def test_admin_registration_requires_current_global_admin(modules, monkeypatch, case, expected):
+    _, _, jwt = modules
+    monkeypatch.setitem(sys.modules, 'bcrypt', MagicMock())
+    auth = load_module('test_admin_auth', 'lambdas/user/handlers/auth.py')
+    monkeypatch.setattr(auth, 'log', MagicMock())
+    auth.bcrypt.hashpw.return_value = b'test-password-hash'
+    jwt.decode.return_value = {'user_id': 1, 'is_admin': case != 'regular'}
+    if case in ('invalid', 'expired'):
+        jwt.decode.side_effect = (jwt.InvalidTokenError if case == 'invalid'
+                                  else jwt.ExpiredSignatureError)()
+    elif case == 'otp':
+        jwt.decode.return_value = {'email': 'owner@example.com'}
+    elif case == 'controller':
+        jwt.decode.return_value = {'gate_id': 1, 'type': 'GATE'}
+    event = {'headers': {} if case == 'missing' else {'Authorization': 'Bearer token'}}
+    db = sqlite3.connect(':memory:')
+    db.row_factory = sqlite3.Row
+    db.executescript('''
+        CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT, password TEXT,
+                            phone_number TEXT, is_admin BOOLEAN,
+                            is_active BOOLEAN DEFAULT TRUE, deleted_at TEXT);
+        CREATE TABLE pending_users (email TEXT, password TEXT, phone_number TEXT,
+                                    otp TEXT, otp_expiry TEXT);
+    ''')
+    db.execute('INSERT INTO users (id, is_admin, is_active, deleted_at) VALUES (1, ?, ?, ?)',
+               (case not in ('regular', 'demoted'), case != 'inactive',
+                '2026-01-01' if case == 'deleted' else None))
+    db.commit()
+    conn = MagicMock()
+    conn.cursor.side_effect = lambda *args, **kwargs: SQLiteCursor(db)
+    conn.commit.side_effect = db.commit
+    conn.rollback.side_effect = db.rollback
+    try:
+        response = auth.register_admin_user(conn, {
+            'email': 'new-admin@example.com', 'password': 'test-password',
+            'passkey': 'legacy-passkeys-do-not-authorize',
+        }, event)
+        assert response['statusCode'] == expected
+        if expected == 201:
+            row = db.execute('SELECT * FROM users WHERE id != 1').fetchone()
+            assert row['is_admin'] == 1 and row['password'] == 'test-password-hash'
+            assert auth.log.call_args.args[3] == 1
+            conn.commit.assert_called_once()
+        else:
+            assert db.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 1
+            auth.bcrypt.hashpw.assert_not_called()
+            auth.log.assert_not_called()
+            conn.commit.assert_not_called()
+    finally:
+        db.close()
+
+
+def test_admin_registration_route_passes_request_for_authentication(monkeypatch):
+    for name in ('handlers', 'handlers.auth', 'handlers.user', 'middleware', 'utils'):
+        monkeypatch.setitem(sys.modules, name, MagicMock())
+    monkeypatch.setenv('DATABASE_URL', 'test-only')
+    app = load_module('test_user_admin_route', 'lambdas/user/app.py')
+    monkeypatch.setattr(app.database, 'connect', MagicMock())
+    app.register_admin_user.return_value = {'statusCode': 401}
+    event = {'path': '/user/register-admin', 'httpMethod': 'POST',
+             'body': '{"email":"new@example.com"}', 'headers': {}}
+    assert app.lambda_handler(event, None)['statusCode'] == 401
+    conn = app.database.connect.return_value
+    app.register_admin_user.assert_called_once_with(conn, {'email': 'new@example.com'}, event)
+    conn.close.assert_called_once()

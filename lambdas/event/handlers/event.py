@@ -1,5 +1,7 @@
+from database import mysql_datetime
+from database import delete_row, insert_row, update_row
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges
 from middleware import verify_token, cors_wrap
 from datetime import datetime, timedelta
@@ -31,7 +33,7 @@ def generate_event_invite_link(conn, body, event):
     if not event_id:
         return _error_response(400, "Missing 'event_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # 1. Get event details
         cur.execute("""
             SELECT 
@@ -111,7 +113,7 @@ def create_event(conn, body, event):
     if not all([creator_id, name, max_num_of_attendees, start_time, end_time]):
         return _error_response(400, "Missing required fields.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using helper
         privileges = get_user_privileges(cur, user_id, creator_id, is_admin)
 
@@ -123,13 +125,12 @@ def create_event(conn, body, event):
             return _error_response(403, "You do not have privileges to create an event for this account")
 
         # Insert new event
-        cur.execute("""
+        _write_result = insert_row(cur, """
             INSERT INTO events (creator_id, name, max_num_of_attendees, start_time, end_time)
             VALUES (%s, %s, %s, %s, %s)
-            RETURNING id
-        """, (creator_id, name, max_num_of_attendees, start_time, end_time))
+        """, (creator_id, name, max_num_of_attendees, mysql_datetime(start_time), mysql_datetime(end_time)), table='events', columns='id')
         
-        event_id = cur.fetchone()["id"]
+        event_id = _write_result["id"]
 
         # Generate invite link
         invite_response = generate_event_invite_link(
@@ -180,7 +181,7 @@ def update_event(conn, body, event):
     if not (event_id):
         return _error_response(400, "Missing 'event_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Get event creator to establish privilege context
         cur.execute("""
             SELECT e.creator_id
@@ -205,17 +206,16 @@ def update_event(conn, body, event):
             return _error_response(403, "You do not have privileges to manage this event")
 
         # Update event details
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE events
             SET name = COALESCE(%s, name),
                 max_num_of_attendees = COALESCE(%s, max_num_of_attendees),
                 start_time = COALESCE(%s, start_time),
                 end_time = COALESCE(%s, end_time)
             WHERE id = %s
-            RETURNING id
-        """, (name, max_num_of_attendees, start_time, end_time, event_id))
+        """, (name, max_num_of_attendees, mysql_datetime(start_time), mysql_datetime(end_time), event_id), table='events', columns='id', where='id = %s', where_count=1)
 
-        if not cur.fetchone():
+        if not _write_result:
             return _error_response(500, "Failed to update event.")
         
         cur.execute("""
@@ -249,7 +249,7 @@ def delete_event(conn, body, event):
     if not (event_id):
         return _error_response(400, "Missing 'event_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # 1. Get event creator to establish privilege context
         cur.execute("""
             SELECT e.creator_id
@@ -287,8 +287,9 @@ def delete_event(conn, body, event):
             return _error_response(404, "Event not found.")
 
         # 3. Now delete the event
-        cur.execute("DELETE FROM events WHERE id = %s RETURNING id", (event_id,))
-        if not cur.fetchone():
+        _write_result = delete_row(cur, """DELETE FROM events WHERE id = %s
+        """, (event_id,), table='events', columns='id', where='id = %s', where_count=1)
+        if not _write_result:
             return _error_response(500, "Failed to delete event.")
 
         # 4. Log deletion
@@ -316,7 +317,7 @@ def get_event_details(conn, event):
     if not event_id:
         return _error_response(400, "Missing 'event_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Get event creator to establish privilege context
         cur.execute("""
             SELECT e.creator_id
@@ -383,7 +384,7 @@ def list_events_by_creator(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using helper
         privileges = get_user_privileges(cur, user_id, creator_id, is_admin)
 
@@ -395,7 +396,7 @@ def list_events_by_creator(conn, event):
             return _error_response(403, "You do not have privileges to retrieve events for this account")
 
         # Count total
-        cur.execute("SELECT COUNT(*) FROM events WHERE creator_id = %s", (creator_id,))
+        cur.execute("SELECT COUNT(*) AS count FROM events WHERE creator_id = %s", (creator_id,))
         total = cur.fetchone()["count"]
 
         # Fetch paginated results
@@ -449,7 +450,7 @@ def list_events_by_estate(conn, event):
     
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # For estate-wide listing, we need to check if user has manage_events privilege
         # This is an estate-level operation, not ownership-based
         if not is_admin:
@@ -473,7 +474,7 @@ def list_events_by_estate(conn, event):
 
         # Count total
         cur.execute("""
-            SELECT COUNT(*) 
+            SELECT COUNT(*) AS count
             FROM events e
             JOIN account_holders ah ON e.creator_id = ah.id AND ah.deleted_at IS NULL
             JOIN personal_info pi ON ah.personal_info_id = pi.id

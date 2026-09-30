@@ -27,8 +27,8 @@ def load_environment(path):
             raise ValueError(f"{name} must be a single-line value.")
     if "YOUR_URL_ENCODED_PASSWORD" in config["DATABASE_URL"]:
         raise ValueError("Replace the password placeholder in DATABASE_URL.")
-    if not config["DATABASE_URL"].startswith(("postgresql://", "postgres://")):
-        raise ValueError("DATABASE_URL must use postgresql:// or postgres://.")
+    if not config["DATABASE_URL"].startswith(("mysql://", "mysql+pymysql://")):
+        raise ValueError("DATABASE_URL must use mysql:// or mysql+pymysql://.")
     environment = os.environ.copy()
     environment.update({name: config[name] for name in REQUIRED})
     environment["AWS_DEFAULT_REGION"] = config["AWS_REGION"]

@@ -1,3 +1,4 @@
 pytest>=7,<9
-psycopg2-binary
+PyMySQL[rsa]==1.1.2
 PyYAML>=6,<7
+sqlglot==30.20.0

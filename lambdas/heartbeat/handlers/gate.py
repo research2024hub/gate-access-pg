@@ -1,5 +1,5 @@
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_gmail, send_email
 from middleware import verify_token, cors_wrap
 import time
@@ -42,7 +42,7 @@ def send_email_gmail(subject,message):
 #     print("started")
 #     try:
 #         # Query all heartbeat records
-#         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#         with conn.cursor(cursor=DictCursor) as cur:
 #             cur.execute("SELECT id, last_controller_heartbeat FROM gates")
 #             rows = cur.fetchall()
             
@@ -59,7 +59,7 @@ def send_email_gmail(subject,message):
 #                 print("Checking device id:", device_id)
                 
 #                 if last_heartbeat:
-#                     # Convert PostgreSQL datetime to epoch seconds
+#                     # Convert MySQL datetime to epoch seconds
 #                     time_diff = current_time - int(last_heartbeat.timestamp())
 #                     print(f"Time difference is {time_diff}")
                     
@@ -114,7 +114,7 @@ def format_downtime(seconds):
 #     print("started")
 #     try:
 #         # Pass the factory here so 'rows' become dictionaries
-#         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#         with conn.cursor(cursor=DictCursor) as cur:
             
 #             # Query the necessary columns
 #             cur.execute("""
@@ -209,18 +209,15 @@ def format_downtime(seconds):
 def monitor_heartbeat(conn):
     print("started")
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor=DictCursor) as cur:
             
-            # --- FIXED SQL QUERY ---
-            # 1. We use GROUP BY so we get exactly ONE row per device (Gate).
-            # 2. We use 'array_agg' to combine all user emails for that gate into a list.
             cur.execute("""
               SELECT 
                     g.id, 
                     g.last_controller_heartbeat, 
                     g.last_alert_sent_at,
                     g.name,
-                    array_agg(u.email) FILTER (WHERE u.email IS NOT NULL) AS user_emails
+                    JSON_ARRAYAGG(u.email) AS user_emails
                 FROM gates g
                 LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
                 LEFT JOIN account_holders a ON pi.id = a.personal_info_id AND a.deleted_at IS NULL
@@ -240,7 +237,7 @@ def monitor_heartbeat(conn):
                 print("last alert at",last_alert)
                 name = row['name']
                 # This is now a LIST of emails: ['user1@gmail.com', 'user2@yahoo.com']
-                user_emails_list = row['user_emails']
+                user_emails_list = [email for email in (row['user_emails'] or []) if email]
 
                 print(f"Checking device: {device_id}")
 
@@ -337,7 +334,7 @@ def get_camera_downtime(conn):
         ORDER BY device_timestamp ASC
     """
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute(sql, (start_dt))
         records = cur.fetchall()
 
@@ -443,12 +440,12 @@ def parse_ts(ts):
                            
 # def process_messages(conn):
 #     try:
-#         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#         with conn.cursor(cursor=DictCursor) as cur:
 #     # get messages older than 1 hour
 #             cur.execute("""
 #                 SELECT message, topic, date_created
 #                 FROM messagedb
-#                 WHERE date_created <= NOW() - INTERVAL '1 hour'
+#                 WHERE date_created <= NOW() - INTERVAL 1 HOUR
 #                 ORDER BY date_created DESC
 #                 LIMIT 1;        
 #             """)
@@ -467,7 +464,7 @@ def parse_ts(ts):
 #                     g.last_controller_heartbeat,
 #                     g.last_alert_sent_at,
 #                     g.name,
-#                     array_agg(u.email) FILTER (WHERE u.email IS NOT NULL) AS user_emails
+#                     JSON_ARRAYAGG(u.email) AS user_emails
 #                 FROM gates g
 #                 LEFT JOIN personal_info pi ON g.estate_id = pi.estate_id
 #                 LEFT JOIN account_holders a ON pi.id = a.personal_info_id

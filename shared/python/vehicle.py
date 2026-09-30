@@ -1,19 +1,20 @@
+from database import insert_row
 import json
 import os
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from utils import _error_response, _success_response, process_db_results, log
 # from middleware import verify_token
-import psycopg2
+import database
 
 
 
 def get_db_conn():
     """Create and return a DB connection from DATABASE_URL env var."""
-    db_url = "postgresql://itc:082001@54.246.247.31/gate_access"         #os.environ.get("DATABASE_URL")
+    db_url = os.environ.get("DATABASE_URL")
     if not db_url:
         # raise RuntimeError("DATABASE_URL not set")
         return _error_response(500, "DATABASE_URL not set")
-    return psycopg2.connect(db_url)
+    return database.connect(db_url)
 
 def create_vehicle(body,is_admin):
     """
@@ -37,7 +38,7 @@ def create_vehicle(body,is_admin):
     conn = None
     try:
         conn = get_db_conn()
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor=DictCursor) as cur:
             cur.execute("""
                         SELECT EXISTS (
                             SELECT 1 FROM account_holders ah
@@ -80,13 +81,12 @@ def create_vehicle(body,is_admin):
                     return _error_response(403, "You do not have privileges to create a vehicle for this person.")
 
             # Insert new vehicle (removed duplicate license plate check)
-            cur.execute("""
+            _write_result = insert_row(cur, """
                 INSERT INTO vehicles (personal_info_id, license_plate_number, make, model, color)
                 VALUES (%s, %s, %s, %s, %s)
-                RETURNING id
-            """, (personal_info_id, license_plate_number, make, model, color))
+            """, (personal_info_id, license_plate_number, make, model, color), table='vehicles', columns='id')
             
-            vehicle_id = cur.fetchone()["id"]
+            vehicle_id = _write_result["id"]
 
             cur.execute("""
                 SELECT COALESCE(ah.id, g.creator_id) AS actor_id, pi.estate_id

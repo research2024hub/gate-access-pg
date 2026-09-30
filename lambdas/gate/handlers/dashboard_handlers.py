@@ -1,4 +1,5 @@
 from __future__ import annotations
+from database import insert_row
 
 import json
 import logging
@@ -7,7 +8,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 import time
 import boto3
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, log, send_gmail # project-level helpers
 from middleware import verify_token, cors_wrap
 THRESHOLD_SECONDS = 600
@@ -45,7 +46,7 @@ def _error_response(status_code: int, message: str):
 # logger.setLevel(logging.INFO)
 
 # ----------------------------------------------------------------------------
-# Temporary in-memory store (to be removed once all endpoints use PostgreSQL)
+# Temporary in-memory store (to be removed once all endpoints use MySQL)
 # ----------------------------------------------------------------------------
 _METRICS_DATA: List[Dict[str, Any]] = []
 
@@ -117,9 +118,8 @@ def ingest_system_metrics(conn, body, event):
     #     migration, the handler will still succeed but log a warning.
     # ---------------------------------------------------------------------
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """
+        with conn.cursor(cursor=DictCursor) as cur:
+            _write_result = insert_row(cur, """
                 INSERT INTO system_metrics (
                     gate_id,
                     device_timestamp,
@@ -133,9 +133,7 @@ def ingest_system_metrics(conn, body, event):
                     received_at
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                RETURNING id
-                """,
-                (
+            """, (
                     gate_id,
                     device_ts,
                     body.get("temperature_celsius"),
@@ -145,9 +143,8 @@ def ingest_system_metrics(conn, body, event):
                     body.get("storage_used_gb"),
                     body.get("storage_total_gb"),
                     json.dumps(body.get("offline_camera_ids") or []),
-                ),
-            )
-            metric_id = cur.fetchone()["id"]
+                ), table='system_metrics', columns='id')
+            metric_id = _write_result["id"]
             conn.commit()
     except Exception as exc:
         print("Failed to save system metrics: %s", exc)
@@ -185,7 +182,7 @@ def get_latest_system_metrics(conn, event):
     except ValueError:
         return _error_response(400, "invalid_gate_id: gate_id must be integer")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute(
             """
             SELECT *
@@ -266,7 +263,7 @@ def get_temperature_trend(conn, event):
         params.append(gate_id)
     sql += " ORDER BY device_timestamp ASC"
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute(sql, params)
         rows = cur.fetchall()
 
@@ -328,7 +325,7 @@ def get_storage_trend(conn, event):
         params.append(gate_id)
     sql += " ORDER BY device_timestamp ASC"
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute(sql, params)
         rows = cur.fetchall()
 
@@ -415,7 +412,7 @@ def get_camera_downtime(conn, event):
         "ORDER BY device_timestamp ASC"
     )
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute(sql, (gate_id_int, start_dt, end_dt))
         records = cur.fetchall()
 
@@ -497,21 +494,28 @@ def get_gate_usage(conn, event):
 
     sql = ("""
        SELECT
-        license_plate_number, event, COUNT(*) AS event_count,
-        ARRAY_AGG(timestamp::TEXT ORDER BY timestamp) AS timestamps
+        license_plate_number, event, timestamp
         FROM accesslog
         WHERE gate_id = %s AND timestamp BETWEEN %s AND %s 
-        GROUP BY license_plate_number, event
-        ORDER BY license_plate_number, event; """
+        ORDER BY license_plate_number, event, timestamp; """
     )
     count_sql = (""" SELECT event, COUNT(*) AS total
         FROM accesslog
         WHERE gate_id = %s AND timestamp BETWEEN %s AND %s 
         GROUP BY event """)
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute(sql, (gate_id_int, start_dt, end_dt))
-        records = cur.fetchall()
+        grouped = {}
+        for row in cur.fetchall():
+            key = (row["license_plate_number"], row["event"])
+            record = grouped.setdefault(key, {
+                "license_plate_number": key[0], "event": key[1],
+                "event_count": 0, "timestamps": [],
+            })
+            record["event_count"] += 1
+            record["timestamps"].append(str(row["timestamp"]))
+        records = list(grouped.values())
         cur.execute(count_sql, (gate_id_int, start_dt, end_dt))
         num = cur.fetchall()
         
@@ -540,7 +544,7 @@ def alert_user(conn, body, event):
         return _error_response(403, "Access denied. Only admins can perform this action.")
     message = body.get(message)
     subject = "System Status Update"
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
             # We fetch the gate info AND the email in one go
             query = """
                 SELECT 
@@ -724,7 +728,7 @@ def get_videos(conn, event):
 #     now = datetime.now(timezone.utc)
     
 #     # 1. Get metrics for the last 15 mins
-#     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#     with conn.cursor(cursor=DictCursor) as cur:
 #         cur.execute("""
 #             SELECT device_timestamp, offline_camera_ids ,last_alert
 #             FROM system_metrics 

@@ -1,5 +1,6 @@
+from database import delete_row, insert_row
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log
 from middleware import verify_token, cors_wrap
 
@@ -29,7 +30,7 @@ def create_privilege_link(conn, body, event):
     if not account_type_id or not privilege_id:
         return _error_response(400, "Missing 'account_type_id' or 'privilege_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Verify account_type_id exists
         cur.execute("SELECT id FROM account_types WHERE id = %s", (account_type_id,))
         if not cur.fetchone():
@@ -41,14 +42,12 @@ def create_privilege_link(conn, body, event):
             return _error_response(404, "Privilege not found.")
 
         # Insert only if both exist
-        cur.execute("""
+        _write_result = insert_row(cur, """
             INSERT INTO account_type_privilege_links (account_type_id, privilege_id)
             VALUES (%s, %s)
-            ON CONFLICT (account_type_id, privilege_id) DO NOTHING
-            RETURNING account_type_id, privilege_id
-        """, (account_type_id, privilege_id))
+        """, (account_type_id, privilege_id), table='account_type_privilege_links', columns='account_type_id, privilege_id', duplicate_ok=True, key_columns=('account_type_id', 'privilege_id'), key_values=(account_type_id, privilege_id))
 
-        if not cur.fetchone():
+        if not _write_result:
             return _error_response(409, "Privilege already assigned to this account type.")
         
         log(conn, "ACCOUNT_TYPE_PRIVILEGE_LINK_CREATION", f"Link between privilege '{privilege_id}' and account type '{account_type_id}' created", user_id, None, None)
@@ -79,13 +78,12 @@ def remove_privilege_link(conn, body, event):
     if not account_type_id or not privilege_id:
         return _error_response(400, "Missing 'account_type_id' or 'privilege_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = delete_row(cur, """
             DELETE FROM account_type_privilege_links
             WHERE account_type_id = %s AND privilege_id = %s
-            RETURNING account_type_id, privilege_id
-        """, (account_type_id, privilege_id))
-        if not cur.fetchone():
+        """, (account_type_id, privilege_id), table='account_type_privilege_links', columns='account_type_id, privilege_id', where='account_type_id = %s AND privilege_id = %s', where_count=2)
+        if not _write_result:
             return _error_response(404, "Privilege link not found.")
         
         log(conn, "ACCOUNT_TYPE_PRIVILEGE_LINK_REMOVAL", f"Link between privilege '{privilege_id}' and account type '{account_type_id}' removed", user_id, None, None)
@@ -124,9 +122,9 @@ def list_account_type_privileges(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM account_type_privilege_links
+            SELECT COUNT(*) AS count FROM account_type_privilege_links
             WHERE account_type_id = %s
         """, (account_type_id,))
         total = cur.fetchone()["count"]

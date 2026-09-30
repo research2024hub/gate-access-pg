@@ -19,7 +19,7 @@ def deploy():
 def config(tmp_path):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({
-        "DATABASE_URL": "postgresql://test:password@localhost/db?sslmode=require",
+        "DATABASE_URL": "mysql://test:password@localhost/db?ssl_disabled=true",
         "JWT_SECRET": "private-test-key",
         "FIHANKRA_FEEDBACK_SECRET": "private-feedback-key",
         "GATE_STACK_NAME": "existing-api-stack",
@@ -31,8 +31,8 @@ def config(tmp_path):
 @pytest.mark.parametrize("field,value", [
     ("GATE_STACK_NAME", ""),
     ("JWT_SECRET", None),
-    ("DATABASE_URL", "postgresql://user:YOUR_URL_ENCODED_PASSWORD@localhost/db"),
-    ("DATABASE_URL", "postgresql+psycopg2://user:password@localhost/db"),
+    ("DATABASE_URL", "mysql://user:YOUR_URL_ENCODED_PASSWORD@localhost/db"),
+    ("DATABASE_URL", "postgresql://user:password@localhost/db"),
 ])
 def test_invalid_config_stops_before_running_commands(deploy, config, monkeypatch, field, value):
     data = json.loads(config.read_text())

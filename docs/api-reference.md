@@ -66,9 +66,9 @@ Base path `/user/...`, implemented in `lambdas/user/` (`app.py` dispatches to `h
 
 **Success response**: `200` — `{ "message": "...", "token": "<otp-token>", "email result": <send_email result> }`. The token embeds the email and is required to complete `verify_otp`.
 
-**Error responses**: `400` if `email` missing.
+**Error responses**: `400` if `email` is missing; `404` if no pending registration exists for the email. Call `/user/register` first.
 
-Generates a 6-digit OTP, stores it in `pending_users` (10-minute expiry), and emails it to the address.
+Resends a 6-digit OTP for an existing pending registration. The handler locks the row, updates the OTP and its 10-minute expiry, and commits before emailing it. The existing password hash and phone number are preserved. It never creates a passwordless registration.
 
 ### POST /user/verify_otp
 
@@ -1743,8 +1743,8 @@ Like `/log/account_holder/{account_holder_id}` but supports free-text filtering,
 - **Auth**: Same as `/log/account_holder/{account_holder_id}` — admin, `MANAGE_ALL`/`VIEW_LOGS` in the account holder's estate, or the account holder themselves.
 - **Path param**: `account_holder_id` (required)
 - **Query params** (all optional):
-  - `plate` — substring matched (`ILIKE %value%`) against the log `message`
-  - `name` — substring matched (`ILIKE %value%`) against the log `message`
+  - `plate` — substring matched (`LOWER(message) LIKE LOWER(%value%)`) against the log `message`
+  - `name` — substring matched (`LOWER(message) LIKE LOWER(%value%)`) against the log `message`
   - `start_date`, `end_date` — ISO-8601; if both given, filters `date_created BETWEEN`; malformed values return `400`
   - `page` (default `1`), `page_size` (default `20`) — no explicit min/max validation beyond `int()` parsing succeeding
 - **Success response**: `200` `{"account_holder_id": ..., "logs": [...], "pagination": {"page", "page_size", "total", "pages"}}`
@@ -1761,8 +1761,8 @@ Like `/log/estate/{estate_id}` but supports free-text filtering, and treats the 
 - **Auth**: Requires Bearer JWT. Caller must be admin or hold `MANAGE_ALL`/`VIEW_LOGS` for the estate.
 - **Path param**: `estate_id` (required)
 - **Query params** (all optional):
-  - `plate` — substring matched (`ILIKE %value%`) against the log `message`
-  - `name` — substring matched (`ILIKE %value%`) against the log `message`
+  - `plate` — substring matched (`LOWER(message) LIKE LOWER(%value%)`) against the log `message`
+  - `name` — substring matched (`LOWER(message) LIKE LOWER(%value%)`) against the log `message`
   - `start_date`, `end_date` — ISO-8601; if both given, filters `date_created BETWEEN`; malformed values return `400`
   - `page` (default `1`), `page_size` (default `20`) — no explicit min/max validation beyond `int()` parsing succeeding
 - Results always exclude `type = 'GATE_CONTROLLER_HEARTBEAT'` logs.
@@ -1790,7 +1790,7 @@ Assigns a privilege to an account type, after confirming both referenced rows ex
   - `400` — missing `account_type_id` or `privilege_id`
   - `403` — caller is not admin (`"Access denied. Only admins can assign privileges."`)
   - `404` — `account_type_id` not found (`"Account type not found."`), or `privilege_id` not found (`"Privilege not found."`)
-  - `409` — the link already exists (insert uses `ON CONFLICT (account_type_id, privilege_id) DO NOTHING`, and a no-op insert is treated as a conflict: `"Privilege already assigned to this account type."`)
+  - `409` — the link already exists (a MySQL duplicate-key error is treated as a conflict: `"Privilege already assigned to this account type."`)
   - `401` — missing/invalid/expired token
   - `500` — unhandled exception
 
@@ -1843,7 +1843,7 @@ Links an access group to a gate, optionally with custom `opening_time`/`closing_
   - `400` — missing `gate_id`/`access_group_id`; or gate and access group belong to different estates (`"Estate mismatch: gate and access group belong to different estates."`)
   - `404` — gate not found, or access group not found
   - `403` — caller has no account holder in the gate's estate, or lacks `MANAGE_ALL`/`MANAGE_ACCESS` (`"You do not have privileges to manage access group links."`)
-  - `409` — link already exists (`ON CONFLICT ... DO NOTHING` treated as conflict: `"Access group already linked to this gate."`)
+  - `409` — link already exists (a MySQL duplicate-key error is treated as a conflict: `"Access group already linked to this gate."`)
   - `401` — missing/invalid/expired token
   - `500` — unhandled exception
 

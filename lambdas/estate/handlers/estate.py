@@ -1,5 +1,6 @@
+from database import delete_row, insert_row, update_row
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate
 from middleware import verify_token, cors_wrap
 
@@ -26,13 +27,12 @@ def create_estate(conn, body, event):
     if not name or not location_coordinates:
         return _error_response(400, "Missing 'name' or 'location_coordinates'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = insert_row(cur, """
             INSERT INTO estates (name, location_coordinates)
             VALUES (%s, %s)
-            RETURNING id
-        """, (name, location_coordinates))
-        estate_id = cur.fetchone()["id"]
+        """, (name, location_coordinates), table='estates', columns='id')
+        estate_id = _write_result["id"]
 
         # A TRIGGER AUTOMATICALLY ADDS A DEFAULT ACCESS GROUP FOR THE ESTATE, CALLED 'REGULAR'
 
@@ -58,7 +58,7 @@ def update_estate(conn, body, event):
     if not estate_id or not (name or location_coordinates):
         return _error_response(400, "Missing 'id' or update fields ('name' or 'location_coordinates').")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
 
@@ -68,15 +68,14 @@ def update_estate(conn, body, event):
         if not privileges.can_manage_all():
             return _error_response(403, "You do not have privileges to manage this estate")
         
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE estates
             SET name = COALESCE(%s, name),
                 location_coordinates = COALESCE(%s, location_coordinates),
                 date_updated = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING id
-        """, (name, location_coordinates, estate_id))
-        if not cur.fetchone():
+        """, (name, location_coordinates, estate_id), table='estates', columns='id', where='id = %s', where_count=1)
+        if not _write_result:
             return _error_response(404, "Estate not found.")
         
         log(conn, "ESTATE_UPDATE", f"Estate '{estate_id}' [{name}] updated", user_id, None, estate_id)
@@ -101,12 +100,12 @@ def delete_estate(conn, body, event):
     if not estate_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
-            DELETE FROM estates WHERE id = %s RETURNING name
-        """, (estate_id,))
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = delete_row(cur, """
+            DELETE FROM estates WHERE id = %s
+        """, (estate_id,), table='estates', columns='name', where='id = %s', where_count=1)
 
-        result = cur.fetchone()
+        result = _write_result
         if not result:
             return _error_response(404, "Estate not found.")
 
@@ -137,8 +136,8 @@ def get_estates(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT COUNT(*) FROM estates")
+    with conn.cursor(cursor=DictCursor) as cur:
+        cur.execute("SELECT COUNT(*) AS count FROM estates")
         total = cur.fetchone()["count"]
 
         cur.execute("""
@@ -173,7 +172,7 @@ def get_estate_by_id(conn, event):
     if not estate_id:
         return _error_response(400, "Missing estate ID.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute("""
             SELECT id, name, location_coordinates, date_created, date_updated
             FROM estates WHERE id = %s

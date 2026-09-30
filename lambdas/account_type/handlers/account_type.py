@@ -1,5 +1,6 @@
+from database import delete_row, insert_row, update_row
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log
 from middleware import verify_token, cors_wrap
 
@@ -25,14 +26,13 @@ def create_account_type(conn, body, event):
     if not name:
         return _error_response(400, "Missing 'name'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = insert_row(cur, """
             INSERT INTO account_types (name)
             VALUES (%s)
-            RETURNING id
-        """, (name,))
+        """, (name,), table='account_types', columns='id')
 
-        account_type_id = cur.fetchone()["id"]
+        account_type_id = _write_result["id"]
 
         log(conn, "ACCOUNT_TYPE_CREATED", f"Account type '{name}' created", user_id, None, None)
 
@@ -58,14 +58,13 @@ def update_account_type(conn, body, event):
     if not account_type_id or not name:
         return _error_response(400, "Missing 'id' or 'name'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = update_row(cur, """
             UPDATE account_types
             SET name = %s, date_updated = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING id
-        """, (name, account_type_id))
-        if not cur.fetchone():
+        """, (name, account_type_id), table='account_types', columns='id', where='id = %s', where_count=1)
+        if not _write_result:
             return _error_response(404, "Account Type not found.")
         
         log(conn, "ACCOUNT_TYPE_UPDATED", f"Account type '{name}' updated", user_id, None, None)
@@ -90,12 +89,12 @@ def delete_account_type(conn, body, event):
     if not account_type_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
-            DELETE FROM account_types WHERE id = %s RETURNING name
-        """, (account_type_id,))
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = delete_row(cur, """
+            DELETE FROM account_types WHERE id = %s
+        """, (account_type_id,), table='account_types', columns='name', where='id = %s', where_count=1)
 
-        result = cur.fetchone()
+        result = _write_result
         if not result:
             return _error_response(404, "Account Type not found.")
 
@@ -126,8 +125,8 @@ def get_account_types(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT COUNT(*) FROM account_types")
+    with conn.cursor(cursor=DictCursor) as cur:
+        cur.execute("SELECT COUNT(*) AS count FROM account_types")
         total = cur.fetchone()["count"]
 
         cur.execute("""
@@ -159,7 +158,7 @@ def get_account_type_by_id(conn, event):
     if not account_type_id:
         return _error_response(400, "Missing account type ID.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute("""
             SELECT id, name, date_created, date_updated
             FROM account_types WHERE id = %s

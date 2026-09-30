@@ -1,9 +1,10 @@
+from database import delete_row, insert_row, update_row
 import boto3
 import base64
 from datetime import datetime
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, log, notify_user, generate_presigned_url
 from middleware import verify_token, cors_wrap
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 
 def _success_response(status_code: int, body: dict):
     return cors_wrap(_base_success_response(status_code, body))
@@ -120,7 +121,7 @@ def match_guest_face(conn, body, event):
 
         face_id_to_delete = None
 
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor=DictCursor) as cur:
             for match in face_matches:
                 face_id = match['Face']['FaceId']
                 confidence = match['Face']['Confidence']
@@ -146,27 +147,22 @@ def match_guest_face(conn, body, event):
                 return _error_response(404, "Face not found or guest access has expired.")
 
             # Delete the face from our 'faces' table
-            cur.execute(
-            """
+            _write_result = update_row(cur, """
                 UPDATE guests
                 SET status = 'CHECKED_OUT'
                 WHERE id = (SELECT guest_id FROM faces WHERE id = %s)
-                RETURNING id
-            """,
-            (face_id_to_delete,)
-            )
+            """, (face_id_to_delete,), table='guests', columns='id', where='id = (SELECT guest_id FROM faces WHERE id = %s)', where_count=1)
 
-            updated_guest = cur.fetchone()
+            updated_guest = _write_result
             if not updated_guest:
                 return _error_response(400, "Guest does not exist or could not be updated.")
         
-            cur.execute("""
+            _write_result = delete_row(cur, """
                 DELETE FROM faces
                 WHERE id = %s
-                RETURNING id, guest_id
-            """, (face_id_to_delete,))
+            """, (face_id_to_delete,), table='faces', columns='id, guest_id', where='id = %s', where_count=1)
 
-            row = cur.fetchone()
+            row = _write_result
             if not row:
                 # Means the face was not actually in DB or was already deleted
                 return _error_response(404, "Face not found in DB.")
@@ -236,7 +232,7 @@ def save_guest_face(conn, body, event):
         image_url =  generate_presigned_url(object_name, bucket_name)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor=DictCursor) as cur:
             # First check if guest exists and hasn't expired
             cur.execute("""
                 SELECT EXISTS (
@@ -252,20 +248,15 @@ def save_guest_face(conn, body, event):
             cur.execute("""
                         INSERT INTO faces (id, guest_id)
                         VALUES (%s, %s)
-                        RETURNING id
-                        """, (face_id, guest_id))
+            """, (face_id, guest_id))
 
-            cur.execute(
-                """
+            _write_result = update_row(cur, """
                     UPDATE guests
                     SET status = 'CHECKED_IN'
                     WHERE id = (SELECT guest_id FROM faces WHERE id = %s)
-                    RETURNING id
-                """,
-            (face_id,)
-            )
+            """, (face_id,), table='guests', columns='id', where='id = (SELECT guest_id FROM faces WHERE id = %s)', where_count=1)
 
-            updated_guest = cur.fetchone()
+            updated_guest = _write_result
             if not updated_guest:
                 return _error_response(400, "Guest does not exist or could not be updated.")   
 

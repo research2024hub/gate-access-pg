@@ -1,5 +1,5 @@
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results
 from middleware import verify_token, cors_wrap
 from datetime import datetime
@@ -50,7 +50,7 @@ def get_logs_by_estate(conn, event):
     
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Privilege check
         cur.execute("""
             SELECT EXISTS (
@@ -69,7 +69,7 @@ def get_logs_by_estate(conn, event):
             return _error_response(403, "You do not have privileges to retrieve logs for this estate.")
         
         # Total count
-        cur.execute("SELECT COUNT(*) FROM logs WHERE estate_id = %s", (estate_id,))
+        cur.execute("SELECT COUNT(*) AS count FROM logs WHERE estate_id = %s", (estate_id,))
         total = cur.fetchone()["count"]
 
         # Paginated log retrieval
@@ -130,7 +130,7 @@ def get_logs_by_account_holder(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Privilege check
         cur.execute("""
             SELECT EXISTS (
@@ -161,7 +161,7 @@ def get_logs_by_account_holder(conn, event):
 
         # Count total logs for pagination
         cur.execute("""
-            SELECT COUNT(*) FROM logs
+            SELECT COUNT(*) AS count FROM logs
             WHERE target_account_holder_id = %s OR actor_user_id = (
                 SELECT user_id FROM account_holders WHERE id = %s AND deleted_at IS NULL
             )
@@ -223,7 +223,7 @@ def search_logs_by_estate(conn, event):
     
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Privilege check
         cur.execute("""
             SELECT EXISTS (
@@ -258,19 +258,19 @@ def search_logs_by_estate(conn, event):
 
         # Add Search by Plate (inside message)
         if search_plate:
-            filters.append("message ILIKE %s")
+            filters.append("LOWER(message) LIKE LOWER(%s)")
             params.append(f"%{search_plate}%")
 
         # Add Search by Name (inside message)
         if search_name:
-            filters.append("message ILIKE %s")
+            filters.append("LOWER(message) LIKE LOWER(%s)")
             params.append(f"%{search_name}%")
 
         # Finalize the WHERE clause
         where_clause = " WHERE " + " AND ".join(filters)
 
         # 1. Total Count for Pagination (with filters)
-        cur.execute(f"SELECT COUNT(*) FROM logs {where_clause}", tuple(params))
+        cur.execute(f"SELECT COUNT(*) AS count FROM logs {where_clause}", tuple(params))
         total = cur.fetchone()["count"]
 
         # 2. Paginated Results
@@ -324,7 +324,7 @@ def search_logs_by_account_holder(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # --- 1. Privilege Check (Remains the same) ---
         cur.execute("""
             SELECT EXISTS (
@@ -369,16 +369,16 @@ def search_logs_by_account_holder(conn, event):
 
         # Add Name Search
         if search_name:
-            filter_sql += " AND message ILIKE %s"
+            filter_sql += " AND LOWER(message) LIKE LOWER(%s)"
             params.append(f"%{search_name}%")
 
         # Add Plate Search
         if search_plate:
-            filter_sql += " AND message ILIKE %s"
+            filter_sql += " AND LOWER(message) LIKE LOWER(%s)"
             params.append(f"%{search_plate}%")
 
         # --- 3. Execute Count and Fetch ---
-        cur.execute(f"SELECT COUNT(*) FROM logs WHERE {filter_sql}", tuple(params))
+        cur.execute(f"SELECT COUNT(*) AS count FROM logs WHERE {filter_sql}", tuple(params))
         total = cur.fetchone()["count"]
 
         fetch_sql = f"""

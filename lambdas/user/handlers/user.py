@@ -1,7 +1,8 @@
+from database import insert_row, update_row
 import json
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_email, soft_delete_user, as_utc, utc_now
 from middleware import verify_token, cors_wrap
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from handlers.auth import send_email_gmail,generate_otp
 import bcrypt
 import jwt
@@ -36,12 +37,12 @@ def change_user_type(conn, body, event):
     if not user_id:
         return _error_response(400, "No user id in request body.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = update_row(cur, """
             UPDATE users SET is_admin = %s
-            WHERE id = %s AND deleted_at IS NULL RETURNING id
-        """, (body_is_admin, user_id))
-        if not cur.fetchone():
+            WHERE id = %s AND deleted_at IS NULL
+        """, (body_is_admin, user_id), table='users', columns='id', where='id = %s AND deleted_at IS NULL', where_count=1)
+        if not _write_result:
             return _error_response(404, "User not found.")
 
         log(conn, "USER_TYPE_CHANGE", f"User '{user_id}' type changed", user_id, None, None)
@@ -82,14 +83,14 @@ def deactivate_user(conn, body, event):
 
     # Step 3: Try DB update
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor=DictCursor) as cur:
             print("[DEBUG] Executing update query...")
-            cur.execute("""
+            _write_result = update_row(cur, """
                 UPDATE users SET is_active = false, date_updated = CURRENT_TIMESTAMP
-                WHERE id = %s AND deleted_at IS NULL RETURNING id, is_active
-            """, (target_user_id,))
+                WHERE id = %s AND deleted_at IS NULL
+            """, (target_user_id,), table='users', columns='id, is_active', where='id = %s AND deleted_at IS NULL', where_count=1)
 
-            result = cur.fetchone()
+            result = _write_result
             print("[DEBUG] Update result:", result)
 
             if not result:
@@ -138,12 +139,12 @@ def activate_user(conn, body, event):
     if not user_id:
         return _error_response(400, "No user id in request body.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = update_row(cur, """
             UPDATE users SET is_active = true, date_updated = CURRENT_TIMESTAMP
-            WHERE id = %s AND deleted_at IS NULL RETURNING id
-        """, (user_id,))
-        if not cur.fetchone():
+            WHERE id = %s AND deleted_at IS NULL
+        """, (user_id,), table='users', columns='id', where='id = %s AND deleted_at IS NULL', where_count=1)
+        if not _write_result:
             return _error_response(404, "User not found, deleted, or already active.")
 
         log(conn, "USER_ACTIVATED", f"User '{user_id}' activated", actor_user_id, None, None)
@@ -172,7 +173,7 @@ def delete_user(conn, body, event):
     if not user_id:
         return _error_response(400, "No user id in request body.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         deleted = soft_delete_user(cur, user_id)
         if not deleted:
             return _error_response(404, "User not found or already deleted.")
@@ -212,8 +213,8 @@ def get_users(conn, event):
     include_deleted = str(query_params.get("include_deleted", "")).lower() == "true"
     deleted_filter = "" if include_deleted else "WHERE deleted_at IS NULL"
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(f"SELECT COUNT(*) FROM users {deleted_filter}")
+    with conn.cursor(cursor=DictCursor) as cur:
+        cur.execute(f"SELECT COUNT(*) AS count FROM users {deleted_filter}")
         total = cur.fetchone()["count"]
 
         cur.execute(f"""
@@ -258,8 +259,8 @@ def get_own_accounts(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT COUNT(*) FROM account_holders WHERE user_id = %s AND deleted_at IS NULL", (user_id,))
+    with conn.cursor(cursor=DictCursor) as cur:
+        cur.execute("SELECT COUNT(*) AS count FROM account_holders WHERE user_id = %s AND deleted_at IS NULL", (user_id,))
         total = cur.fetchone()["count"]
 
         cur.execute("""
@@ -315,8 +316,8 @@ def get_user_accounts(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT COUNT(*) FROM account_holders WHERE user_id = %s AND deleted_at IS NULL", (user_id,))
+    with conn.cursor(cursor=DictCursor) as cur:
+        cur.execute("SELECT COUNT(*) AS count FROM account_holders WHERE user_id = %s AND deleted_at IS NULL", (user_id,))
         total = cur.fetchone()["count"]
 
         cur.execute("""
@@ -355,14 +356,13 @@ def submit_report(conn, body, event):
     if not subject or not description:
         return _error_response(400, "Both 'subject' and 'description' are required.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = insert_row(cur, """
             INSERT INTO user_reports (user_id, subject, description)
             VALUES (%s, %s, %s)
-            RETURNING id
-        """, (user_id, subject, description))
+        """, (user_id, subject, description), table='user_reports', columns='id')
 
-        report_id = cur.fetchone()["id"]
+        report_id = _write_result["id"]
 
         cur.execute("""
             INSERT INTO report_status (report_id, status)
@@ -401,8 +401,8 @@ def get_reports(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT COUNT(*) FROM user_reports")
+    with conn.cursor(cursor=DictCursor) as cur:
+        cur.execute("SELECT COUNT(*) AS count FROM user_reports")
         total = cur.fetchone()["count"]
 
         cur.execute("""
@@ -445,14 +445,13 @@ def update_report_status(conn, body, event):
     if status not in allowed_statuses:
         return _error_response(400, "Invalid status. Must be 'resolved', 'inprogress', or 'unresolved'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = update_row(cur, """
             UPDATE report_status SET status = %s
             WHERE report_id = %s
-            RETURNING report_id
-        """, (status, report_id))
+        """, (status, report_id), table='report_status', columns='report_id', where='report_id = %s', where_count=1, key_columns=('report_id',))
 
-        if not cur.fetchone():
+        if not _write_result:
             return _error_response(404, "Report not found.")
 
         log(conn, "REPORT_STATUS_UPDATED", f"Report '{report_id}' status set to '{status}'", payload.get("user_id"), None, None)
@@ -479,7 +478,7 @@ def get_report_status(conn, event):
         return _error_response(400, "Provide either a 'report_id' in the path or a 'status' query parameter.")
 
     if report_id:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor=DictCursor) as cur:
             cur.execute("""
                 SELECT rs.report_id, rs.status, ur.subject, ur.description, ur.date_created,
                        COALESCE(u.email, '(deleted user)') AS reported_by
@@ -507,8 +506,8 @@ def get_report_status(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT COUNT(*) FROM report_status WHERE status = %s", (status_filter,))
+    with conn.cursor(cursor=DictCursor) as cur:
+        cur.execute("SELECT COUNT(*) AS count FROM report_status WHERE status = %s", (status_filter,))
         total = cur.fetchone()["count"]
 
         cur.execute("""
@@ -536,7 +535,7 @@ def get_report_status(conn, event):
 
 def forgot_password(conn, body):
     email = body.get("email")
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Look up active user (do not reveal existence to caller)
         cur.execute(
             "SELECT id FROM users WHERE email = %s AND is_active = TRUE AND deleted_at IS NULL LIMIT 1",
@@ -551,7 +550,7 @@ def forgot_password(conn, body):
         # Generate OTP and expiry
         reset_otp = generate_otp()
         cur.execute(
-            """UPDATE users SET reset_otp = %s, reset_expiry = NOW() + INTERVAL '10 minutes'
+            """UPDATE users SET reset_otp = %s, reset_expiry = NOW() + INTERVAL 10 MINUTE
             WHERE id = %s AND deleted_at IS NULL""",
             (reset_otp, user_id)
         )
@@ -579,7 +578,7 @@ def verify_reset_otp(conn, body, event):
     input_otp =str(body.get("reset_otp"))
     if not user_id or not input_otp:
         return _error_response(400, "Missing user_id or OTP.")
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute("""
             SELECT reset_otp, reset_expiry
             FROM users
@@ -615,7 +614,7 @@ def reset_password(conn,body,event):
     confirm_password = body["confirm_password"]
     if new_password == confirm_password:
         new_hashed_password = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:  
+        with conn.cursor(cursor=DictCursor) as cur:
             cur.execute("""
             UPDATE users SET password = %s
             WHERE id = %s AND deleted_at IS NULL

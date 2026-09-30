@@ -1,10 +1,11 @@
+from database import insert_row, update_row
 from datetime import datetime, timezone
 import json
 import requests
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import messaging
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 import boto3
 import smtplib
 from email.mime.text import MIMEText
@@ -22,15 +23,6 @@ def _error_response(status_code, message):
     }
 
 
-# ---------------------------------------------------------------------------
-# Datetime helpers  (safe across the TIMESTAMP -> TIMESTAMPTZ migration)
-# ---------------------------------------------------------------------------
-# `datetime.utcnow()` returns a *naive* datetime. psycopg2 returns naive
-# datetimes for `timestamp` columns and *aware* datetimes for `timestamptz`
-# columns. Comparing a naive datetime with an aware one raises TypeError, so
-# any code that compares "now" against a value read from the DB must make both
-# sides aware. Use these two helpers for that; they work whether the column has
-# already been migrated to timestamptz or not.
 
 def utc_now():
     """Timezone-aware current time in UTC. Use instead of datetime.utcnow()."""
@@ -60,7 +52,7 @@ def process_db_results(results):
     Handles datetime serialization and ensures all data is JSON-friendly.
 
     Args:
-        results (list): List of dictionaries (RealDictCursor) or tuples from DB query.
+        results (list): List of dictionaries (DictCursor) or tuples from DB query.
 
     Returns:
         list: A processed list where datetime fields are converted to strings.
@@ -68,7 +60,7 @@ def process_db_results(results):
     processed_results = []
 
     for row in results:
-        # Ensure we handle both dict-based (RealDictCursor) and tuple-based results
+        # Ensure we handle both dict-based (DictCursor) and tuple-based results
         if isinstance(row, dict):
             processed_row = {
                 key: (value.isoformat() if isinstance(value, datetime) else value)
@@ -163,14 +155,13 @@ def log(conn, type, message, actor_user_id=None, target_account_holder_id=None,
     events; it stays NULL for every other log type.
     """
 
-    with conn.cursor() as cur:
-        cur.execute("""
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = insert_row(cur, """
             INSERT INTO logs (estate_id, actor_user_id, target_account_holder_id, type, message, license_plate_number)
             VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, estate_id, actor_user_id, target_account_holder_id, type, message, license_plate_number, date_created
-        """, (estate_id, actor_user_id, target_account_holder_id, type, message, license_plate_number))
+        """, (estate_id, actor_user_id, target_account_holder_id, type, message, license_plate_number), table='logs', columns='id, estate_id, actor_user_id, target_account_holder_id, type, message, license_plate_number, date_created')
 
-        new_log = cur.fetchone()
+        new_log = _write_result
 
     return _success_response(201, {"log": process_db_results([new_log])})
 
@@ -224,15 +215,11 @@ def soft_delete_user(cur, user_id):
     Dependent data (guests, events, reports, logs) is intentionally left intact.
     Caller must commit.
     """
-    cur.execute(
-        """
+    _write_result = update_row(cur, """
         UPDATE users SET deleted_at = now(), is_active = false
         WHERE id = %s AND deleted_at IS NULL
-        RETURNING id
-        """,
-        (user_id,),
-    )
-    row = cur.fetchone()
+    """, (user_id,), table='users', columns='id', where='id = %s AND deleted_at IS NULL', where_count=1)
+    row = _write_result
     if row:
         cur.execute(
             """
@@ -251,15 +238,11 @@ def soft_delete_account_holder(cur, account_holder_id):
     The linked personal_info is deliberately NOT touched -- it carries history
     and may be referenced elsewhere.
     """
-    cur.execute(
-        """
+    _write_result = update_row(cur, """
         UPDATE account_holders SET deleted_at = now(), is_active = false
         WHERE id = %s AND deleted_at IS NULL
-        RETURNING id, personal_info_id
-        """,
-        (account_holder_id,),
-    )
-    return cur.fetchone()
+    """, (account_holder_id,), table='account_holders', columns='id, personal_info_id', where='id = %s AND deleted_at IS NULL', where_count=1)
+    return _write_result
 
 
 class PrivilegeContext:
@@ -306,20 +289,20 @@ class PrivilegeContext:
             user_privileges AS (
                 SELECT
                     ah.id as user_account_holder_id,
-                    bool_or(pv.name = 'MANAGE_ALL') as can_manage_all,
-                    bool_or(pv.name = 'MANAGE_GUESTS') as can_manage_guests,
-                    bool_or(pv.name = 'CREATE_GUESTS') as can_create_guests,
-                    bool_or(pv.name = 'MANAGE_VEHICLES') as can_manage_vehicles,
-                    bool_or(pv.name = 'CREATE_VEHICLES') as can_create_vehicles,
-                    bool_or(pv.name = 'MANAGE_GATES') as can_manage_gates,
-                    bool_or(pv.name = 'MANAGE_ACCOUNTS') as can_manage_accounts,
-                    bool_or(pv.name = 'MANAGE_EVENTS') as can_manage_events,
-                    bool_or(pv.name = 'CREATE_EVENTS') as can_create_events,
-                    bool_or(pv.name = 'MANAGE_ACCESS') as can_manage_access,
-                    bool_or(pv.name = 'MANAGE_DEVICES') as can_manage_devices,
-                    bool_or(pv.name = 'VIEW_LOGS') as can_view_logs,
-                    bool_or(pv.name = 'MANAGE_SUB_USERS') as can_manage_sub_users,
-                    bool_or(pv.name = 'CREATE_SUB_USERS') as can_create_sub_users
+                    MAX(pv.name = 'MANAGE_ALL') as can_manage_all,
+                    MAX(pv.name = 'MANAGE_GUESTS') as can_manage_guests,
+                    MAX(pv.name = 'CREATE_GUESTS') as can_create_guests,
+                    MAX(pv.name = 'MANAGE_VEHICLES') as can_manage_vehicles,
+                    MAX(pv.name = 'CREATE_VEHICLES') as can_create_vehicles,
+                    MAX(pv.name = 'MANAGE_GATES') as can_manage_gates,
+                    MAX(pv.name = 'MANAGE_ACCOUNTS') as can_manage_accounts,
+                    MAX(pv.name = 'MANAGE_EVENTS') as can_manage_events,
+                    MAX(pv.name = 'CREATE_EVENTS') as can_create_events,
+                    MAX(pv.name = 'MANAGE_ACCESS') as can_manage_access,
+                    MAX(pv.name = 'MANAGE_DEVICES') as can_manage_devices,
+                    MAX(pv.name = 'VIEW_LOGS') as can_view_logs,
+                    MAX(pv.name = 'MANAGE_SUB_USERS') as can_manage_sub_users,
+                    MAX(pv.name = 'CREATE_SUB_USERS') as can_create_sub_users
                 FROM account_holders ah
                 JOIN personal_info pi ON ah.personal_info_id = pi.id
                 LEFT JOIN account_types act ON pi.account_type_id = act.id

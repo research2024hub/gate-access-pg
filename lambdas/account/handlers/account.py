@@ -1,6 +1,7 @@
+from database import insert_row, update_row
 import json
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import database
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_estate,get_user_privileges_for_personal_info,get_user_privileges_for_account_holder,send_gmail, notify_user, get_user_privileges, soft_delete_account_holder, as_utc, utc_now
 import random
 from datetime import datetime, timedelta
@@ -61,7 +62,7 @@ def signup(conn, body, event=None):
         return _error_response(400, f"Missing required fields: {', '.join(missing)}.")
 
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor=DictCursor) as cur:
             # Prevent duplicate signup in the same estate.
             cur.execute("""
                 SELECT id FROM account_holders
@@ -89,13 +90,13 @@ def signup(conn, body, event=None):
                         or holders[0]["owner_account_holder_id"] is not None):
                     return _signup_conflict()
                 account_holder_id = holders[0]["id"]
-                cur.execute("""
+                _write_result = update_row(cur, """
                     UPDATE account_holders
                     SET deleted_at = NULL, is_active = false, house_address = %s,
                         otp = NULL, otp_generated_at = NULL, date_updated = CURRENT_TIMESTAMP
-                    WHERE id = %s AND deleted_at IS NOT NULL RETURNING id
-                """, (house_address, account_holder_id))
-                if not cur.fetchone():
+                    WHERE id = %s AND deleted_at IS NOT NULL
+                """, (house_address, account_holder_id), table='account_holders', columns='id', where='id = %s AND deleted_at IS NOT NULL', where_count=1)
+                if not _write_result:
                     return _signup_conflict()
                 log(conn, "ACCOUNT_REREGISTRATION", "Returning resident awaiting administrator approval",
                     user_id, account_holder_id, estate_id)
@@ -123,10 +124,9 @@ def signup(conn, body, event=None):
             access_group_id = row["id"]
 
             # Insert into personal_info
-            cur.execute("""
+            _write_result = insert_row(cur, """
                 INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, account_type_id, access_group_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
             """, (
                 estate_id,
                 body.get("name"),
@@ -135,20 +135,19 @@ def signup(conn, body, event=None):
                 body.get("contact"),
                 account_type_id,
                 access_group_id
-            ))
+            ), table='personal_info', columns='id')
 
-            personal_info = cur.fetchone()
+            personal_info = _write_result
             if not personal_info:
                 return _error_response(500, "Failed to create personal info.")
             personal_info_id = personal_info["id"]
 
             # Insert into account_holders
-            cur.execute("""
+            _write_result = insert_row(cur, """
                 INSERT INTO account_holders (user_id, personal_info_id, house_address)
                 VALUES (%s, %s, %s)
-                RETURNING id
-            """, (user_id, personal_info_id, house_address))
-            account_holder = cur.fetchone()
+            """, (user_id, personal_info_id, house_address), table='account_holders', columns='id')
+            account_holder = _write_result
             if not account_holder:
                 return _error_response(500, "Failed to create account holder.")
             account_holder_id = account_holder["id"]
@@ -169,9 +168,11 @@ def signup(conn, body, event=None):
             }
         })
 
-    except psycopg2.errors.UniqueViolation:
+    except database.IntegrityError as exc:
         # A concurrent signup can pass the prechecks; the database is authoritative.
         conn.rollback()
+        if exc.args[0] != 1062:
+            return _error_response(500, "Unable to create account.")
         return _signup_conflict()
     except Exception as e:
         conn.rollback()
@@ -198,7 +199,7 @@ def signup(conn, body, event=None):
 #         return _error_response(400, "Missing required fields: 'user_id', 'estate_id', or 'house_address'.")
 
 #     try:
-#         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#         with conn.cursor(cursor=DictCursor) as cur:
             
 #             cur.execute("""
 #                     SELECT EXISTS (
@@ -225,35 +226,12 @@ def signup(conn, body, event=None):
 #             if cur.fetchone():
 #                 return _error_response(409, "User already has an account in this estate.")
 
-#             # Insert into personal_info.
-#             cur.execute("""
-#                 INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, account_type_id, access_group_id)
-#                 VALUES (%s, %s, %s, %s, %s, (SELECT id FROM account_types WHERE name='USER_A'), (SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'))
-#                 RETURNING id
-#             """, (
-#                 estate_id,
-#                 body.get("name"),
-#                 body.get("id_type"),
-#                 body.get("id_num"),
-#                 body.get("contact"),
-#                 estate_id
-#             ))
 
 #             personal_info_row = cur.fetchone()
 #             if not personal_info_row:
 #                 return _error_response(500, "Failed to create personal info.")
 #             personal_info_id = personal_info_row["id"]
 
-#             # Create account holder entry.
-#             cur.execute("""
-#                 INSERT INTO account_holders (user_id, personal_info_id, house_address)
-#                 VALUES (%s, %s, %s)
-#                 RETURNING id
-#             """, (user_id, personal_info_id, house_address))
-#             account_holder_row = cur.fetchone()
-#             if not account_holder_row:
-#                 return _error_response(500, "Failed to create account holder.")
-#             account_holder_id = account_holder_row["id"]
 
 #             log(conn, "REGULAR_ACCOUNT_CREATION", "Resident account created", user_id, account_holder_id, estate_id,)
 
@@ -288,7 +266,7 @@ def signupAdmin(conn, body):
         return _error_response(400, "Missing required fields: 'user_id', 'estate_id', or 'house_address'.")
 
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor=DictCursor) as cur:
             # Ensure user exists.
             # cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
             # if not cur.fetchone():
@@ -312,10 +290,9 @@ def signupAdmin(conn, body):
                 return _signup_conflict()
 
             # Insert into personal_info.
-            cur.execute("""
+            _write_result = insert_row(cur, """
                 INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, account_type_id, access_group_id)
                 VALUES (%s, %s, %s, %s, %s, (SELECT id FROM account_types WHERE name='ADMIN'), (SELECT id FROM access_groups WHERE estate_id = %s AND name = 'REGULAR'))
-                RETURNING id
             """, (
                 estate_id,
                 body.get("name"),
@@ -323,20 +300,19 @@ def signupAdmin(conn, body):
                 body.get("id_num"),
                 body.get("contact"),
                 estate_id
-            ))
+            ), table='personal_info', columns='id')
 
-            personal_info_row = cur.fetchone()
+            personal_info_row = _write_result
             if not personal_info_row:
                 return _error_response(500, "Failed to create personal info.")
             personal_info_id = personal_info_row["id"]
 
             # Create account holder entry.
-            cur.execute("""
+            _write_result = insert_row(cur, """
                 INSERT INTO account_holders (user_id, personal_info_id, house_address, is_active)
                 VALUES (%s, %s, %s, true)
-                RETURNING id
-            """, (user_id, personal_info_id, house_address))
-            account_holder_row = cur.fetchone()
+            """, (user_id, personal_info_id, house_address), table='account_holders', columns='id')
+            account_holder_row = _write_result
             if not account_holder_row:
                 return _error_response(500, "Failed to create account holder.")
             account_holder_id = account_holder_row["id"]
@@ -356,8 +332,10 @@ def signupAdmin(conn, body):
             }
         })
     
-    except psycopg2.errors.UniqueViolation:
+    except database.IntegrityError as exc:
         conn.rollback()
+        if exc.args[0] != 1062:
+            return _error_response(500, "Unable to create account.")
         return _signup_conflict()
     except Exception as e:
         conn.rollback()
@@ -391,7 +369,7 @@ def signupAdmin(conn, body):
 #     is_admin       = payload.get("is_admin", False)
 
 #     try:
-#         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#         with conn.cursor(cursor=DictCursor) as cur:
 #             # ------------------------------------------------------------------
 #             # 2.  Fetch parent account information & privileges check
 #             # ------------------------------------------------------------------
@@ -454,35 +432,7 @@ def signupAdmin(conn, body):
 #                 return _error_response(409, "User already has an account in this estate.")
 #             #Assign priviledges to user later(call the function)
             
-#             # ------------------------------------------------------------------
-#             # 4.  Insert personal_info & account_holder for the child
-#             # ------------------------------------------------------------------
-#             try:
-#                 cur.execute("""
-#                     INSERT INTO personal_info (estate_id, name, id_type, id_num, contact, account_type_id, access_group_id)
-#                     VALUES (%s, %s, %s, %s, %s, %s, %s)
-#                     RETURNING id
-#                 """, (
-#                     estate_id,
-#                     name,
-#                     id_type,
-#                     id_num,
-#                     contact,
-#                     account_type_id,
-#                     access_group_id
-#                 ))
-#                 personal_info_id = cur.fetchone()["id"]
 
-#                 cur.execute("""
-#                     INSERT INTO pending_account_holders (owner_account_holder_id,personal_info_id, house_address, otp, otp_generated_at)
-#                     VALUES (%s, %s, %s, %s,  NOW() + INTERVAL '30 minutes')
-#                     RETURNING id
-#                 """, (parent_account_holder_id,personal_info_id, house_address,otp))
-#                 pending_holder_id = cur.fetchone()["id"]
-#             except psycopg2.errors.UndefinedTable as e:
-#                 # Table not yet migrated – ignore
-#                 conn.rollback()  # clear error state
-#                 return _error_response(500, f"Database configuration error: {e}")
             
 #             subject = 'ACCESS ACCOUNT'
 #             message = (
@@ -527,7 +477,7 @@ def signupAdmin(conn, body):
 #     if not input_otp or not personal_info_id:
 #         return _error_response(400, "Missing OTP or personal_info_id.")
    
-#     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#     with conn.cursor(cursor=DictCursor) as cur:
 #         cur.execute("""
 #             SELECT id, otp, otp_generated_at FROM pending_account_holders WHERE personal_info_id = %s
 #             """, 
@@ -550,15 +500,6 @@ def signupAdmin(conn, body):
 #        # Assuming 'user_id_value' is the Python variable holding the user ID
 # # And assuming you want to copy specific columns from pending_account_holders
 
-#         cur.execute("""
-#             INSERT INTO account_holders (personal_info_id, house_address, owner_account_holder_id,  user_id, is_active ) 
-#             SELECT pah.personal_info_id, pah.house_address, pah.owner_account_holder_id, %s, true       
-#             FROM pending_account_holders pah 
-#             WHERE pah.id = %s 
-#             RETURNING id
-#         """, (user_id,pending_holder_id)) # Pass the user_id value as a parameter tuple
-#         cur.execute("""
-#         DELETE FROM pending_account_holders WHERE pending_holder_id = %s; """,(pending_holder_id,))
     
 #         log(conn, "SUB_USER_REGISTRATION", f"Household Member '{name}' registered", user_id, None, None)
 
@@ -584,7 +525,7 @@ def change_account_type(conn, body, event):
     if not personal_info_id or not account_type_id:
         return _error_response(400, "Missing 'personal_info_id' or 'account_type_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # cur.execute("""
         #                 SELECT estate_id FROM personal_info
         #                 JOIN account_holders ah ON ah.personal_info
@@ -606,13 +547,13 @@ def change_account_type(conn, body, event):
             return _error_response(404, "Account type not found.")
 
         # Proceed to update the account type in personal_info
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE personal_info
             SET account_type_id = %s, date_updated = CURRENT_TIMESTAMP
-            WHERE id = %s RETURNING id
-        """, (account_type_id, personal_info_id))
+            WHERE id = %s
+        """, (account_type_id, personal_info_id), table='personal_info', columns='id', where='id = %s', where_count=1)
 
-        if not cur.fetchone():
+        if not _write_result:
             return _error_response(404, "Personal info not found.")
 
         cur.execute("""
@@ -644,7 +585,7 @@ def deactivate_account(conn, body, event):
     if not account_holder_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin)
 
@@ -654,12 +595,12 @@ def deactivate_account(conn, body, event):
         if not privileges.can_manage_accounts():
             return _error_response(403, "You do not have privileges to manage accounts")
 
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE account_holders SET is_active = false, date_updated = CURRENT_TIMESTAMP
-            WHERE id = %s AND deleted_at IS NULL RETURNING id
-        """, (account_holder_id,))
+            WHERE id = %s AND deleted_at IS NULL
+        """, (account_holder_id,), table='account_holders', columns='id', where='id = %s AND deleted_at IS NULL', where_count=1)
 
-        if not cur.fetchone():
+        if not _write_result:
             return _error_response(404, "Account not found or already deactivated.")
 
         cur.execute("""
@@ -702,10 +643,6 @@ def deactivate_account(conn, body, event):
 #         if not (is_owner):
 #             return _error_response(403, "You cannot activate this account")
         
-#         cur.execute("""
-#             UPDATE account_holders SET is_active = true
-#             WHERE id = %s RETURNING id
-#         """, (account_holder_id,))
 
 #         if not cur.fetchone():
 #             return _error_response(404, "Account not found.")
@@ -738,7 +675,7 @@ def activate_account(conn, body, event):
     if not account_holder_id:
         return _error_response(400, "Missing 'account_holder_id'")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         # privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin=is_admin)
         privileges = get_user_privileges(cur, user_id, account_holder_id, is_admin=is_admin)
@@ -760,13 +697,12 @@ def activate_account(conn, body, event):
             return _error_response(404, "Account not found or deleted.")
 
         # Activate the account
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE account_holders
             SET is_active = true
             WHERE id = %s AND deleted_at IS NULL
-            RETURNING id
-        """, (account_holder_id,))
-        if not cur.fetchone():
+        """, (account_holder_id,), table='account_holders', columns='id', where='id = %s AND deleted_at IS NULL', where_count=1)
+        if not _write_result:
             return _error_response(404, "Account not found or deleted.")
 
         # Get estate for logging
@@ -804,7 +740,7 @@ def delete_account(conn, body, event):
     if not account_holder_id:
         return _error_response(400, "Missing 'account_holder_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_account_holder(cur, user_id, account_holder_id, is_admin)
 
@@ -858,7 +794,7 @@ def get_estate_accounts(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_estate(cur, user_id, estate_id, is_admin)
 
@@ -869,7 +805,7 @@ def get_estate_accounts(conn, event):
             return _error_response(403, "You do not have privileges to view accounts in this estate.")
 
         # Count total
-        cur.execute("SELECT COUNT(*) FROM account_holders ah JOIN personal_info pi ON ah.personal_info_id = pi.id WHERE pi.estate_id = %s AND ah.deleted_at IS NULL", (estate_id,))
+        cur.execute("SELECT COUNT(*) AS count FROM account_holders ah JOIN personal_info pi ON ah.personal_info_id = pi.id WHERE pi.estate_id = %s AND ah.deleted_at IS NULL", (estate_id,))
         total = cur.fetchone()["count"]
 
         # Fetch paginated results
@@ -926,7 +862,7 @@ def generate_account_otp(conn, body, event):
     if not account_holder_id:
         return _error_response(400, "Missing 'account_holder_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # 1. Verify privileges
         cur.execute("""
             SELECT ah.user_id, pi.estate_id
@@ -990,7 +926,7 @@ def verify_account_otp(conn, body, event):
     # if not account_holder_id or not otp_provided:
     #     return _error_response(400, "Missing 'account_holder_id' or 'otp'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # 1. Get current OTP
         # cur.execute("""
         #     SELECT otp, otp_generated_at FROM account_holders WHERE id = %s
@@ -1055,7 +991,7 @@ def verify_account_otp(conn, body, event):
 #     if not personal_info_id or not privilege_id:
 #         return _error_response(400, "Missing 'personal_info_id' or 'privilege_id'.")
 
-#     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#     with conn.cursor(cursor=DictCursor) as cur:
 #         # 2. Ensure personal_info exists (and get estate)
 #         cur.execute("SELECT estate_id FROM personal_info WHERE id = %s", (personal_info_id,))
 #         row = cur.fetchone()
@@ -1074,13 +1010,6 @@ def verify_account_otp(conn, body, event):
 #         if not cur.fetchone():
 #             return _error_response(404, "Privilege not found.")
 
-#         # 5. Insert link idempotently
-#         cur.execute("""
-#             INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)
-#             VALUES (%s, %s)
-#             ON CONFLICT (personal_info_id, privilege_id) DO NOTHING
-#             RETURNING personal_info_id, privilege_id
-#         """, (personal_info_id, privilege_id))
 
 #         if not cur.fetchone():
 #             return _error_response(409, "Privilege already linked to this personal info.")
@@ -1120,7 +1049,7 @@ def verify_account_otp(conn, body, event):
 #     if not personal_info_id or not privilege_ids:                                                                         
 #         return _error_response(400, "personal_info_id & privilege_ids required")                                          
                                                                                                                            
-#     with conn.cursor(cursor_factory=RealDictCursor) as cur:                                                               
+#     with conn.cursor(cursor=DictCursor) as cur:
 #          # 1.  Resolve estate & security-check -------------                                                               
 #         cur.execute("SELECT estate_id FROM personal_info WHERE id=%s",                                                    
 #                      (personal_info_id,))                                                                                  
@@ -1134,24 +1063,7 @@ def verify_account_otp(conn, body, event):
 #         if not (pc and pc.can_manage_sub_users()):                                                                     
 #             return _error_response(403, "user cannot manage sub_user")                                                    
                                                                                                                         
-#          # 2.  Optional – ensure *each* privilege really exists                                                            
-#         cur.execute(                                                                                                      
-#              "SELECT id FROM privileges WHERE id = ANY(%s)", (privilege_ids,))                                             
-#         found = {r["id"] for r in cur.fetchall()}                                                                         
-#         missing = set(privilege_ids) - found                                                                              
-#         if missing:                                                                                                       
-#             return _error_response(                                                                                       
-#                 404, f"Unknown privilege ids: {sorted(missing)}")                                                         
                                                                                                                            
-#          # 3.  Bulk insert (idempotent) ---------------------                                                              
-#         cur.executemany(                                                                                                  
-#              """                                                                                                           
-#              INSERT INTO personal_info_privilege_links (personal_info_id, privilege_id)                                    
-#              VALUES (%s, %s)                                                                                               
-#              ON CONFLICT (personal_info_id, privilege_id) DO NOTHING                                                       
-#              """,                                                                                                          
-#              [(personal_info_id, pid) for pid in privilege_ids],                                                           
-#          )                                                                                                                 
                                                                                                                            
 #         log(conn,                                                                                                         
 #             "PERSONAL_INFO_PRIVILEGE_BULK_LINK",                                                                          
@@ -1174,9 +1086,9 @@ def verify_account_otp(conn, body, event):
 #     pending_holder_id = body.get("pending_holder_id")
 #     email = body.get("email")
 #     otp = str(random.randint(100000, 999999))
-#     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+#     with conn.cursor(cursor=DictCursor) as cur:
 #         cur.execute("""
-#             UPDATE pending_account_holder SET otp= %s, otp_generated_at = NOW() + INTERVAL '30 minutes'
+#             UPDATE pending_account_holder SET otp= %s, otp_generated_at = NOW() + INTERVAL 30 MINUTE
 #             WHERE pending_holder_id = %s
 #         """, (otp, pending_holder_id))
 #         conn.commit()
@@ -1214,43 +1126,30 @@ def update_account(conn, body, event):
     if all(v is None for v in [name, id_type, id_num, contact, access_group_id]):
         return _error_response(400, "No fields provided to update.")
     # 4. EXECUTION: Run the single, atomic, and secure query
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute( """
-            UPDATE personal_info p
-            SET 
-                name = COALESCE(%s, p.name), 
-                id_type = COALESCE(%s, p.id_type), 
-                id_num = COALESCE(%s, p.id_num), 
-                contact = COALESCE(%s, p.contact),
-                access_group_id = COALESCE(%s, p.access_group_id)
-            FROM
-                account_holders ah_sub -- The account we are editing
-            LEFT JOIN
-                account_holders ah_owner ON ah_sub.owner_account_holder_id = ah_owner.id
-                                        AND ah_owner.deleted_at IS NULL -- Find its (live) owner
-            WHERE
-                p.id = ah_sub.personal_info_id  -- Link p to ah_sub
-            AND ah_sub.id = %s               -- Target the specific account
-            AND ah_sub.deleted_at IS NULL    -- ... which must not be soft-deleted
-            AND (
-                ah_sub.user_id = %s           -- CASE 1: Caller is the account's user
-                OR
-                ah_owner.user_id = %s         -- CASE 2: Caller is the account's OWNER's user
-                OR
-                %s = True                     -- CASE 3: Caller is an admin
-                )
-            RETURNING 
-                ah_sub.id AS matched_account_holder_id,
-                ah_sub.user_id AS matched_user_id,
-                p.estate_id; 
-        """, (
-            name, id_type, id_num, contact, access_group_id,   # For COALESCE
-        account_holder_id_to_edit,                              # For ah_sub.id = %s
-            caller_user_id,                                      # For ah_sub.user_id = %s
-            caller_user_id,                                      # For ah_owner.user_id = %s
-            is_admin                                            # For %s = True
-        ))
+    with conn.cursor(cursor=DictCursor) as cur:
+        # Lock and authorize the same row before changing it in this transaction.
+        cur.execute("""
+            SELECT p.id AS personal_info_id,
+                   ah_sub.id AS matched_account_holder_id,
+                   ah_sub.user_id AS matched_user_id, p.estate_id
+            FROM personal_info p
+            JOIN account_holders ah_sub ON p.id = ah_sub.personal_info_id
+            LEFT JOIN account_holders ah_owner
+                ON ah_sub.owner_account_holder_id = ah_owner.id
+                AND ah_owner.deleted_at IS NULL
+            WHERE ah_sub.id = %s AND ah_sub.deleted_at IS NULL
+              AND (ah_sub.user_id = %s OR ah_owner.user_id = %s OR %s = TRUE)
+            FOR UPDATE
+        """, (account_holder_id_to_edit, caller_user_id, caller_user_id, is_admin))
         result = cur.fetchone()
+        if result:
+            cur.execute("""
+                UPDATE personal_info
+                SET name = COALESCE(%s, name), id_type = COALESCE(%s, id_type),
+                    id_num = COALESCE(%s, id_num), contact = COALESCE(%s, contact),
+                    access_group_id = COALESCE(%s, access_group_id)
+                WHERE id = %s
+            """, (name, id_type, id_num, contact, access_group_id, result["personal_info_id"]))
 
         if not result:
             conn.rollback()

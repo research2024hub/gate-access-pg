@@ -1,5 +1,6 @@
+from database import delete_row, insert_row, update_row
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log
 from middleware import verify_token, cors_wrap
 
@@ -25,13 +26,12 @@ def create_privilege(conn, body, event):
     if not name:
         return _error_response(400, "Missing 'name'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = insert_row(cur, """
             INSERT INTO privileges (name)
             VALUES (%s)
-            RETURNING id
-        """, (name.upper(),))
-        privilege_id = cur.fetchone()["id"]
+        """, (name.upper(),), table='privileges', columns='id')
+        privilege_id = _write_result["id"]
 
         log(conn, "PRIVILEGE_CREATION", f"Privilege '{privilege_id}' [{name}] created", user_id, None, None)
 
@@ -56,14 +56,13 @@ def update_privilege(conn, body, event):
     if not privilege_id or not name:
         return _error_response(400, "Missing 'id' or 'name'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = update_row(cur, """
             UPDATE privileges
             SET name = %s, date_updated = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING id
-        """, (name.upper(), privilege_id))
-        if not cur.fetchone():
+        """, (name.upper(), privilege_id), table='privileges', columns='id', where='id = %s', where_count=1)
+        if not _write_result:
             return _error_response(404, "Privilege not found.")
         
         log(conn, "PRIVILEGE_UDATE", f"Privilege '{privilege_id}' [{name}] updated", user_id, None, None)
@@ -87,12 +86,12 @@ def delete_privilege(conn, body, event):
     if not privilege_id:
         return _error_response(400, "Missing 'id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
-            DELETE FROM privileges WHERE id = %s RETURNING name
-        """, (privilege_id,))
+    with conn.cursor(cursor=DictCursor) as cur:
+        _write_result = delete_row(cur, """
+            DELETE FROM privileges WHERE id = %s
+        """, (privilege_id,), table='privileges', columns='name', where='id = %s', where_count=1)
 
-        result = cur.fetchone()
+        result = _write_result
 
         if not result:
             return _error_response(404, "Privilege not found.")
@@ -129,8 +128,8 @@ def get_privileges(conn, event):
     
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT COUNT(*) FROM privileges")
+    with conn.cursor(cursor=DictCursor) as cur:
+        cur.execute("SELECT COUNT(*) AS count FROM privileges")
         total = cur.fetchone()["count"]
 
         cur.execute("""
@@ -166,7 +165,7 @@ def get_privilege_by_id(conn, event):
     if not privilege_id:
         return _error_response(400, "Missing privilege ID.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         cur.execute("""
             SELECT id, name, date_created, date_updated
             FROM privileges WHERE id = %s

@@ -1,5 +1,5 @@
 import json
-import psycopg2
+import database
 from handlers.device_token import generate_gate_controller_token, generate_tablet_token
 import os
 from utils import _error_response as _base_error_response
@@ -14,7 +14,7 @@ def lambda_handler(event, context):
         return _error_response(500, "DATABASE_URL not set")
 
     try:
-        conn = psycopg2.connect(db_url)
+        conn = database.connect(db_url)
         
         # Ensure body is always a valid dictionary
         raw_body = event.get("body", "")

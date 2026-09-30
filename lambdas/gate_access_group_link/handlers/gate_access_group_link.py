@@ -1,5 +1,6 @@
+from database import delete_row, insert_row, update_row
 import json
-from psycopg2.extras import RealDictCursor
+from database import DictCursor
 from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, get_user_privileges_for_gate, get_user_privileges_for_access_group
 from middleware import verify_token, cors_wrap
 
@@ -29,7 +30,7 @@ def create_access_group_link(conn, body, event):
     if not gate_id or not access_group_id:
         return _error_response(400, "Missing 'gate_id' or 'access_group_id'.")
     # print("moving on")
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Verify gate and access group exist and are on the same estate
         cur.execute("""
             SELECT 
@@ -79,13 +80,14 @@ def create_access_group_link(conn, body, event):
         sql = f"""
             INSERT INTO gate_access_group_links ({','.join(columns)})
             VALUES ({','.join(placeholders)})
-            ON CONFLICT (gate_id, access_group_id) DO NOTHING
-            RETURNING gate_id, access_group_id
         """
-        cur.execute(sql, values)
+        created_link = insert_row(cur, sql, values, table="gate_access_group_links",
+                                  columns="gate_id, access_group_id", duplicate_ok=True,
+                                  key_columns=("gate_id", "access_group_id"),
+                                  key_values=(gate_id, access_group_id))
         print("data stored")
 
-        if not cur.fetchone():
+        if not created_link:
             return _error_response(409, "Access group already linked to this gate.")
 
         log(
@@ -121,7 +123,7 @@ def update_access_group_link(conn, body, event):
     if not gate_id or not access_group_id:
         return _error_response(400, "Missing 'gate_id' or 'access_group_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Verify the existing link and estates
         cur.execute("""
             SELECT 
@@ -152,16 +154,15 @@ def update_access_group_link(conn, body, event):
             return _error_response(403, "You do not have privileges to update access group links.")
 
         # Update only provided fields using COALESCE to retain existing values
-        cur.execute("""
+        _write_result = update_row(cur, """
             UPDATE gate_access_group_links
             SET 
                 opening_time = COALESCE(%s, opening_time),
                 closing_time = COALESCE(%s, closing_time)
             WHERE gate_id = %s AND access_group_id = %s
-            RETURNING gate_id, access_group_id
-        """, (opening_time, closing_time, gate_id, access_group_id))
+        """, (opening_time, closing_time, gate_id, access_group_id), table='gate_access_group_links', columns='gate_id, access_group_id', where='gate_id = %s AND access_group_id = %s', where_count=2, key_columns=('gate_id', 'access_group_id'))
 
-        if not cur.fetchone():
+        if not _write_result:
             return _error_response(404, "Access group link not found.")
 
         log(conn, "ACCESS_GROUP_GATE_LINK_UPDATE", 
@@ -190,7 +191,7 @@ def remove_access_group_link(conn, body, event):
     if not gate_id or not access_group_id:
         return _error_response(400, "Missing 'gate_id' or 'access_group_id'.")
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -200,12 +201,11 @@ def remove_access_group_link(conn, body, event):
         if not privileges.can_manage_access_groups():
             return _error_response(403, "You do not have privileges to manage access group links")
         
-        cur.execute("""
+        _write_result = delete_row(cur, """
             DELETE FROM gate_access_group_links
             WHERE gate_id = %s AND access_group_id = %s
-            RETURNING gate_id, access_group_id
-        """, (gate_id, access_group_id))
-        if not cur.fetchone():
+        """, (gate_id, access_group_id), table='gate_access_group_links', columns='gate_id, access_group_id', where='gate_id = %s AND access_group_id = %s', where_count=2)
+        if not _write_result:
             return _error_response(404, "Access group link not found.")
         
         cur.execute("""
@@ -249,7 +249,7 @@ def list_gate_access_groups(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_gate(cur, user_id, gate_id, is_admin)
 
@@ -261,7 +261,7 @@ def list_gate_access_groups(conn, event):
 
         # Count total linked access groups
         cur.execute("""
-            SELECT COUNT(*) FROM gate_access_group_links
+            SELECT COUNT(*) AS count FROM gate_access_group_links
             WHERE gate_id = %s
         """, (gate_id,))
         total = cur.fetchone()["count"]
@@ -318,7 +318,7 @@ def list_access_group_gates(conn, event):
 
     offset = (page - 1) * page_size
 
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    with conn.cursor(cursor=DictCursor) as cur:
         # Check privileges using enhanced helper
         privileges = get_user_privileges_for_access_group(cur, user_id, access_group_id, is_admin)
 
@@ -330,7 +330,7 @@ def list_access_group_gates(conn, event):
 
         # Count total
         cur.execute("""
-            SELECT COUNT(*)
+            SELECT COUNT(*) AS count
             FROM gate_access_group_links
             WHERE access_group_id = %s
         """, (access_group_id,))
