@@ -276,8 +276,8 @@ def monitor_heartbeat(conn):
                                     (device_id,)
                                 )
                                 cur.execute("""
-                                    INSERT INTO messagedb (topic, message)
-                                    VALUES(%s, %s)""",(user_topic,user_message) 
+                                    INSERT INTO messagedb (gate_id, topic, message)
+                                    VALUES(%s, %s, %s)""",(device_id,user_topic,user_message) 
                                 )
                                 conn.commit()
     
