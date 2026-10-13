@@ -248,3 +248,9 @@ $RECYCLE.BIN/
 .aider*
 .env
 .aws-sam/
+
+.env
+.env.*
+!.env.example
+*firebase-adminsdk*.json
+

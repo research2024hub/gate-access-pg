@@ -29,7 +29,7 @@ import random
 def generate_otp():
     return ''.join(str(random.randint(0, 9)) for _ in range(6))
 
-
+#This is currently not in use
 def send_email_gmail(to_email, subject, message):
     gmail_user = 'itcresearch340@gmail.com'  # e.g. "yourname@gmail.com"
     gmail_app_password = 'lwkpuzjpezobxyny'  # the 16-char app password
@@ -106,7 +106,7 @@ def send_user_otp(conn, body):
         "token": token,
         "email result" : result
     })
-
+#This is currently in use
 def sendemail(body):
     try:
         email = body.get('email')
