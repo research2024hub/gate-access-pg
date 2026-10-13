@@ -1,6 +1,6 @@
 import json
 from database import DictCursor
-from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_gmail, send_email
+from utils import _error_response as _base_error_response, _success_response as _base_success_response, process_db_results, log, send_gmail, send_email, as_utc
 from middleware import verify_token, cors_wrap
 import time
 import boto3
@@ -21,6 +21,7 @@ def _success_response(status_code: int, body: dict):
 def _error_response(status_code: int, message: str):
     return cors_wrap(_base_error_response(status_code, message))
 
+#This is no more in use
 def send_email_gmail(subject,message):
     # gmail_user = 'vdowana@itconsortiumgh.com'  # e.g. "yourname@gmail.com"
     gmail_app_password = 'acfyapfeypeguwqj'  # the 16-char app password
@@ -231,9 +232,9 @@ def monitor_heartbeat(conn):
 
             for row in rows:
                 device_id = row['id']
-                last_heartbeat = row['last_controller_heartbeat']
+                last_heartbeat = as_utc(row['last_controller_heartbeat'])
                 print("last alert at",last_heartbeat)
-                last_alert = row['last_alert_sent_at']
+                last_alert = as_utc(row['last_alert_sent_at'])
                 print("last alert at",last_alert)
                 name = row['name']
                 # This is now a LIST of emails: ['user1@gmail.com', 'user2@yahoo.com']
@@ -310,6 +311,7 @@ def monitor_heartbeat(conn):
                              
 
                             except Exception as e:
+                                conn.rollback()
                                 print(f"  !! Failed to send email/update DB: {e}")
                                 continue
                     else:
@@ -318,6 +320,7 @@ def monitor_heartbeat(conn):
             return _success_response(200, {"message": "successfully monitored devices"})
 
     except Exception as e:
+        conn.rollback()
         print(f"Critical Monitoring Error: {e}")
         return _error_response(500, "Monitoring execution failed.")
 # -------------------------
@@ -501,4 +504,3 @@ def parse_ts(ts):
 
 #     finally:
 #         conn.close()
-                           

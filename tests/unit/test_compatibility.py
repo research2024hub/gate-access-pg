@@ -640,3 +640,100 @@ def test_admin_registration_route_passes_request_for_authentication(monkeypatch)
     conn = app.database.connect.return_value
     app.register_admin_user.assert_called_once_with(conn, {'email': 'new@example.com'}, event)
     conn.close.assert_called_once()
+
+
+@pytest.fixture
+def heartbeat_app(modules, monkeypatch):
+    gate = load_module('test_heartbeat_gate', 'lambdas/heartbeat/handlers/gate.py')
+    monkeypatch.setitem(sys.modules, 'handlers', MagicMock())
+    monkeypatch.setitem(sys.modules, 'handlers.gate', gate)
+    monkeypatch.setenv('DATABASE_URL', 'test-only')
+    app = load_module('test_heartbeat_app', 'lambdas/heartbeat/app.py')
+    monkeypatch.setattr(app.database, 'connect', MagicMock())
+    return app, gate
+
+
+@pytest.mark.parametrize('event,status', [
+    ({'path': 'heartbeat'}, 200),
+    ({'path': '/heartbeat/'}, 200),
+    ({'source': 'aws.events', 'detail-type': 'Scheduled Event'}, 200),
+    ({'path': 'message'}, 501),
+    ({}, 400),
+])
+def test_heartbeat_loads_and_routes(heartbeat_app, monkeypatch, event, status):
+    app, _ = heartbeat_app
+    monitor = MagicMock(return_value={'statusCode': 200})
+    monkeypatch.setattr(app, 'monitor_heartbeat', monitor)
+    assert app.lambda_handler(event, None)['statusCode'] == status
+    if status == 200:
+        conn = app.database.connect.return_value
+        monitor.assert_called_once_with(conn)
+        conn.close.assert_called_once()
+    else:
+        app.database.connect.assert_not_called()
+        monitor.assert_not_called()
+
+
+def test_heartbeat_connection_failure_is_handled(heartbeat_app):
+    app, _ = heartbeat_app
+    app.database.connect.side_effect = RuntimeError('private connection details')
+    response = app.lambda_handler({'path': 'heartbeat'}, None)
+    assert response['statusCode'] == 500
+    assert 'private connection details' not in response['body']
+
+
+def test_heartbeat_handler_failure_rolls_back_and_closes(heartbeat_app, monkeypatch):
+    app, _ = heartbeat_app
+    monkeypatch.setattr(app, 'monitor_heartbeat', MagicMock(side_effect=RuntimeError('failed')))
+    assert app.lambda_handler({'path': 'heartbeat'}, None)['statusCode'] == 500
+    conn = app.database.connect.return_value
+    conn.rollback.assert_called_once()
+    conn.close.assert_called_once()
+
+
+def test_heartbeat_uses_utc_for_naive_mysql_timestamps(heartbeat_app, monkeypatch):
+    import os
+    import time
+    _, gate = heartbeat_app
+    now = datetime(2026, 10, 3, 12, tzinfo=timezone.utc).timestamp()
+    monkeypatch.setattr(gate.time, 'time', lambda: now)
+    sender = MagicMock()
+    monkeypatch.setattr(gate, 'send_email', sender)
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = [{
+        'id': 1, 'name': 'Test gate', 'user_emails': [],
+        'last_controller_heartbeat': datetime(2026, 10, 3, 11),
+        'last_alert_sent_at': None,
+    }]
+    old_tz = os.environ.get('TZ')
+    try:
+        os.environ['TZ'] = 'EST5'
+        time.tzset()
+        assert gate.monitor_heartbeat(conn)['statusCode'] == 200
+        sender.assert_called_once()
+        conn.commit.assert_called_once()
+    finally:
+        if old_tz is None:
+            os.environ.pop('TZ', None)
+        else:
+            os.environ['TZ'] = old_tz
+        time.tzset()
+
+
+def test_heartbeat_failed_message_insert_rolls_back_alert_timestamp(heartbeat_app, monkeypatch):
+    _, gate = heartbeat_app
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = [{
+        'id': 1, 'name': 'Test gate', 'user_emails': [],
+        'last_controller_heartbeat': datetime(2020, 1, 1),
+        'last_alert_sent_at': None,
+    }]
+    cur.execute.side_effect = [None, None, RuntimeError('insert failed')]
+    sender = MagicMock()
+    monkeypatch.setattr(gate, 'send_email', sender)
+    gate.monitor_heartbeat(conn)
+    conn.rollback.assert_called_once()
+    conn.commit.assert_not_called()
+    sender.assert_not_called()

@@ -1,43 +1,36 @@
-import json
 import database
-from handlers.gate import (monitor_heartbeat,process_messages)
+from handlers.gate import monitor_heartbeat
 import os
 from utils import _error_response as _base_error_response
 from middleware import cors_wrap
 
+
 def _error_response(status_code: int, message: str):
     return cors_wrap(_base_error_response(status_code, message))
-
-db_url = os.environ.get("DATABASE_URL")
-# conn = database.connect(db_url)
-# def lambda_handler(event, context):
-#     if not db_url:
-#         return _error_response(500, "DATABASE_URL not set")
-#     try:
-#         conn = database.connect(db_url)
-#         result = monitor_heartbeat(conn)
-#         conn.close()
-#         return result
-#     except Exception as e:
-#         return _error_response(500, str(e))
-#     finally:
-#         if 'conn' in locals():
-#             conn.close()
 
 
 def lambda_handler(event, context):
     path = event.get("path")
+    if path is None and event.get("source") == "aws.events" and event.get("detail-type") == "Scheduled Event":
+        path = "heartbeat"
+    if isinstance(path, str):
+        path = path.strip("/")
+    if path == "message":
+        return _error_response(501, "Message processing is disabled.")
+    if path != "heartbeat":
+        return _error_response(400, "Unknown heartbeat task.")
+
+    db_url = os.environ.get("DATABASE_URL")
     if not db_url:
         return _error_response(500, "DATABASE_URL not set")
-    conn = database.connect(db_url)
+    conn = None
     try:
-        if path == "heartbeat":
-            return monitor_heartbeat(conn)
-            
-        elif path == "message":
-            return process_messages(conn)
-        else:
-            print("Unknown task")
+        conn = database.connect(db_url)
+        return monitor_heartbeat(conn)
+    except Exception:
+        if conn is not None:
+            conn.rollback()
+        return _error_response(500, "Heartbeat execution failed.")
     finally:
-        if 'conn' in locals():
+        if conn is not None:
             conn.close()
